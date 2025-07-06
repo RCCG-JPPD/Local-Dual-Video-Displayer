@@ -1,4 +1,3 @@
-// main.js
 const path = require('path');
 const { app, BrowserWindow, screen, ipcMain, dialog } = require('electron');
 
