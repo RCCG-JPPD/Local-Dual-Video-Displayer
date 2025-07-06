@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Video Screen</title>
+  <style>
+    html,body { margin:0; background:black; }
+    video     { width:100vw; height:100vh; object-fit:contain; }
+  </style>
+</head>
+<body>
+  <video id="vid" autoplay></video>
+
+  <script>
+  const { ipcRenderer } = require('electron');
+  const vid = document.getElementById('vid');
+
+  // Expose current time → controller (only public window actually sends it)
+  setInterval(() => {
+    if (!isNaN(vid.duration)) {
+      ipcRenderer.send('video-time', vid.currentTime, vid.duration);
+    }
+  }, 500);
+
+  // Listen for commands from controller
+  ipcRenderer.on('playback-command', (_e, cmd, data) => {
+    switch (cmd) {
+      case 'load':        vid.src = `file://${data}`; vid.currentTime = 0; vid.play(); break;
+      case 'play':        vid.play();  break;
+      case 'pause':       vid.pause(); break;
+      case 'seek':        vid.currentTime = data; break;
+      case 'setVolume':   vid.volume = data; break;
+    }
+  });
+
+  // Start paused until first load
+  vid.pause();
+  </script>
+</body>
+</html>
