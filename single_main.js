@@ -6,17 +6,16 @@ const myDataDir = path.join(__dirname, 'electron_data');
 app.setPath('userData', myDataDir);
 app.setPath('cache',   path.join(myDataDir, 'Cache'));
 
-let publicWindow, privateWindow, controllerWindow;
+let publicWindow, controllerWindow;
 
 function createWindows () {
   const displays = screen.getAllDisplays();
-  if (displays.length < 3) {
-    dialog.showErrorBox('Display Error', 'Three monitors are required (public / controller / private).');
+  if (displays.length < 2) {
+    dialog.showErrorBox('Display Error', 'Two monitors are required (public / controller).');
     app.quit(); return;
   }
   publicDisplay = displays[1]; // reorder if needed
   controllerDisplay = displays[0];
-  privateDisplay = displays[2];
 
   const videoOpts = {
     fullscreen:   true,
@@ -29,9 +28,6 @@ function createWindows () {
   // ► PUBLIC VIDEO WINDOW (with audio)
   publicWindow = new BrowserWindow({ ...videoOpts, x: publicDisplay.bounds.x, y: publicDisplay.bounds.y });
 
-  // ► PRIVATE VIDEO WINDOW (muted)
-  privateWindow = new BrowserWindow({ ...videoOpts, x: privateDisplay.bounds.x, y: privateDisplay.bounds.y });
-  privateWindow.webContents.setAudioMuted(true);
 
   // ► CONTROLLER WINDOW
   controllerWindow = new BrowserWindow({
@@ -43,7 +39,6 @@ function createWindows () {
   // ── Load views
   const viewHTML = path.join(__dirname, 'video-view.html');
   publicWindow.loadFile(viewHTML);
-  privateWindow.loadFile(viewHTML);
   controllerWindow.loadFile(path.join(__dirname, 'controller.html'));
 
   // publicWindow.webContents.openDevTools({ mode: 'detach' });
@@ -51,7 +46,7 @@ function createWindows () {
   // ────────────────────── IPC ──────────────────────
   // 1) Controller ➜ both video windows
   ipcMain.on('controller-command', (_e, cmd, data) => {
-    [publicWindow, privateWindow].forEach(w => w.webContents.send('playback-command', cmd, data));
+    [publicWindow].forEach(w => w.webContents.send('playback-command', cmd, data));
   });
 
   // 2) Public video ➜ controller (time updates)
@@ -72,9 +67,9 @@ function createWindows () {
 
   // ── Force always-on-top
   const keepTop = w => { if (!w.isDestroyed()) { w.setAlwaysOnTop(true,'screen-saver'); w.moveTop(); } };
-  setInterval(() => [publicWindow, privateWindow, controllerWindow].forEach(keepTop), 1000);
+  setInterval(() => [publicWindow, controllerWindow].forEach(keepTop), 1000);
 
-  [publicWindow, privateWindow, controllerWindow].forEach(w=>{
+  [publicWindow, controllerWindow].forEach(w=>{
     ['minimize','hide'].forEach(evt=>{
       w.on(evt, e=>{ e.preventDefault(); w.restore(); keepTop(w); });
     });
