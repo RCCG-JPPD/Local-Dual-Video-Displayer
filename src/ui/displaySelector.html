@@ -440,8 +440,10 @@
       electronAPI.closeSelector();
     });
 
-    // Try URL query parameter first (synchronous, no IPC needed), fall back to IPC
-    if (!loadDisplaysFromURL()) {
+    // Primary path: data was embedded by main process as window.__DISPLAYS__
+    if (typeof window.__DISPLAYS__ !== 'undefined' && window.__DISPLAYS__.length > 0) {
+      applyDisplays(window.__DISPLAYS__);
+    } else if (!loadDisplaysFromURL()) {
       loadDisplaysFallback();
     }
   </script>

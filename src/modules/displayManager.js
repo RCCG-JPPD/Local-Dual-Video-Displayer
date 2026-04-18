@@ -5,6 +5,8 @@
 
 const { BrowserWindow, screen } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
 class DisplayManager {
   constructor(mainProcess) {
@@ -69,19 +71,23 @@ class DisplayManager {
       show: true,
     });
 
-    // Pass displays as a URL query parameter so the renderer can read them
-    // synchronously on page load — no IPC, no timing race, no executeJavaScript.
+    // Embed display data directly into the HTML before loading it.
+    // This is the most reliable cross-platform method: no IPC, no URL parsing,
+    // no timing race — the data is a JS literal in the file itself.
     const selectorPath = path.join(__dirname, '../ui/displaySelector.html');
-    const displaysJson = JSON.stringify(displays.map((d, i) => ({
+    const displayData = displays.map((d, i) => ({
       index: i,
       id: d.id,
       label: d.label || `Display ${i + 1}`,
       bounds: d.bounds,
       isPrimary: d.isPrimary,
-    })));
-    this.windows.selector.loadFile(selectorPath, {
-      query: { displays: displaysJson },
-    });
+    }));
+    const safeJson = JSON.stringify(displayData).replace(/<\/script>/gi, '<\\/script>');
+    const htmlTemplate = fs.readFileSync(selectorPath, 'utf8');
+    const htmlWithData = htmlTemplate.replace('</head>', `<script>window.__DISPLAYS__=${safeJson};</script>\n</head>`);
+    const tempPath = path.join(os.tmpdir(), 'dvd_selector.html');
+    fs.writeFileSync(tempPath, htmlWithData, 'utf8');
+    this.windows.selector.loadFile(tempPath);
 
     return this.windows.selector;
   }
