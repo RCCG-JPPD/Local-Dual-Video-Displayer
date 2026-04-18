@@ -267,11 +267,15 @@
     let displaysList = [];
     let roleAssignments = {}; // { displayId: 'role' }
 
-    // Receive displays list from main process
-    electronAPI.onDisplaysDetected((displays) => {
-      displaysList = displays;
-      renderDisplays();
-    });
+    // Fetch displays from main process using invoke (immune to timing races on Windows)
+    async function loadDisplays() {
+      try {
+        displaysList = await electronAPI.getDisplays();
+        renderDisplays();
+      } catch (err) {
+        console.error('Failed to load displays:', err);
+      }
+    }
 
     function renderDisplays() {
       const container = document.getElementById('displays-container');
@@ -386,8 +390,8 @@
       electronAPI.closeSelector();
     });
 
-    // Request displays on load
-    electronAPI.requestDisplays();
+    // Load displays on startup
+    loadDisplays();
   </script>
 </body>
 </html>

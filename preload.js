@@ -134,12 +134,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // DISPLAY SELECTOR SPECIFIC
   // ════════════════════════════════════════════════════════════════
 
-  // Selector requests displays list
-  requestDisplays: () => {
-    ipcRenderer.send('request-displays');
-  },
+  // Selector fetches displays synchronously (invoke = request/response, no timing race)
+  getDisplays: () => ipcRenderer.invoke('get-displays'),
 
-  // Selector receives displays
+  // Legacy push-based listener kept for compatibility
   onDisplaysDetected: (callback) => {
     ipcRenderer.on('displays-detected', (event, displays) => {
       callback(displays);

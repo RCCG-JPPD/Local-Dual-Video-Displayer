@@ -40,7 +40,18 @@ class IPCHandler {
       event.sender.send('config-saved');
     });
 
-    // Display selector requests the displays list (fallback for late-binding)
+    // Selector invokes this to get displays reliably (no timing race)
+    ipcMain.handle('get-displays', () => {
+      return this.displayManager.detectDisplays().map((d, i) => ({
+        index: i,
+        id: d.id,
+        label: d.label || `Display ${i + 1}`,
+        bounds: d.bounds,
+        isPrimary: d.isPrimary,
+      }));
+    });
+
+    // Legacy push-based handler kept for compatibility
     ipcMain.on('request-displays', (event) => {
       const displays = this.displayManager.detectDisplays();
       event.sender.send('displays-detected', displays.map((d, i) => ({
