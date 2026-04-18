@@ -289,10 +289,29 @@
       renderDisplays();
     }
 
-    // IPC-based fallback (fires if executeJavaScript somehow fails).
-    // applyDisplays() guard prevents double-render.
-    async function loadDisplays() {
-      if (typeof electronAPI === 'undefined' || !electronAPI) return;
+    // Read display data from the URL query string (passed by main process via loadFile query option).
+    // This is synchronous and requires no IPC or executeJavaScript.
+    function loadDisplaysFromURL() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const raw = params.get('displays');
+        if (raw) {
+          const displays = JSON.parse(raw);
+          applyDisplays(displays);
+          return true;
+        }
+      } catch (e) {
+        showError('Failed to parse display data from URL: ' + e.message);
+      }
+      return false;
+    }
+
+    // IPC fallback — only runs if URL approach fails (e.g. old main-process code).
+    async function loadDisplaysFallback() {
+      if (typeof electronAPI === 'undefined' || !electronAPI) {
+        showError('electronAPI unavailable. Please restart the app.');
+        return;
+      }
       try {
         if (electronAPI.getDisplays) {
           const d = await electronAPI.getDisplays();
@@ -300,6 +319,8 @@
         } else if (electronAPI.onDisplaysDetected) {
           electronAPI.onDisplaysDetected(d => applyDisplays(d));
           if (electronAPI.requestDisplays) electronAPI.requestDisplays();
+        } else {
+          showError('No display data source available. Please restart the app.');
         }
       } catch (err) {
         showError('IPC fallback failed: ' + (err && err.message ? err.message : String(err)));
@@ -419,8 +440,10 @@
       electronAPI.closeSelector();
     });
 
-    // Load displays on startup
-    loadDisplays();
+    // Try URL query parameter first (synchronous, no IPC needed), fall back to IPC
+    if (!loadDisplaysFromURL()) {
+      loadDisplaysFallback();
+    }
   </script>
 </body>
 </html>
