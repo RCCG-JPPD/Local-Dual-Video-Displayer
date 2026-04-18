@@ -142,7 +142,8 @@ class ConfigManager {
    * Check if configuration is valid (has displays assigned)
    */
   isConfigValid(config) {
-    return config.displays && config.displays.length > 0;
+    if (!config.displays || config.displays.length === 0) return false;
+    return config.displays.some(d => d.role && d.role !== 'unassigned' && d.role !== 'controller');
   }
 }
 

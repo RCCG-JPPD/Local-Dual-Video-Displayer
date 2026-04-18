@@ -14,6 +14,8 @@ class DisplayManager {
       public: null,
       private: null,
       clock: null,
+      web: null,
+      youtube: null,
       selector: null,
     };
     this.childWindowIds = new Set(); // Track child window IDs for lifecycle management
@@ -306,7 +308,6 @@ class DisplayManager {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
-        sandbox: true,
         preload: path.join(__dirname, '../../preload.js'),
       },
       show: false, // Don't show immediately
@@ -420,12 +421,12 @@ class DisplayManager {
         switch (displayConfig.role) {
           case 'public_video':
           case 'public':
-            this.createVideoWindow(displayConfig.displayIndex, 'public_video');
+            this.createVideoWindow(displayConfig.displayIndex, 'public');
             break;
 
           case 'private_video':
           case 'private':
-            this.createVideoWindow(displayConfig.displayIndex, 'private_video');
+            this.createVideoWindow(displayConfig.displayIndex, 'private');
             break;
 
           case 'clock':

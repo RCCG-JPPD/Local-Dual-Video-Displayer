@@ -148,34 +148,21 @@
     // PLAYBACK COMMANDS
     // ════════════════════════════════════════════════════════════════
 
-    // Listen for playback commands from controller
-    electronAPI.onVideoTime = function(callback) {
-      // This is an override - we'll send time updates continuously
-    };
-
-    // Send video time to controller every 500ms
-    setInterval(() => {
-      if (!isNaN(vid.duration) && windowRole === 'public') {
-        // Only public window sends time updates to controller
-        // Private window is silent
-      }
-    }, 500);
-
     // ════════════════════════════════════════════════════════════════
     // PLAYBACK CONTROL - IPC COMMANDS
     // ════════════════════════════════════════════════════════════════
 
-    // Handle IPC playback commands
-    electronAPI.onPlaybackCommand = function(callback) {
-      // Will be set up via IPC listener
-    };
-
-    // Create a custom event listener for playback commands
-    // This will be handled by the preload script sending IPC messages
-    window.addEventListener('playback-command', (e) => {
-      const { cmd, data } = e.detail;
+    // Handle IPC playback commands from controller
+    electronAPI.onPlaybackCommand((cmd, data) => {
       handlePlaybackCommand(cmd, data);
     });
+
+    // Send video time to controller every 500ms
+    setInterval(() => {
+      if (!isNaN(vid.duration) && windowRole === 'public') {
+        electronAPI.sendVideoTime(vid.currentTime, vid.duration);
+      }
+    }, 500);
 
     function handlePlaybackCommand(cmd, data) {
       console.log(`[${windowRole}] Playback command: ${cmd}`, data);

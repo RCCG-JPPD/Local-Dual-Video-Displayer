@@ -44,7 +44,12 @@ function initializeManagers() {
   configManager = new ConfigManager(app);
   displayManager = new DisplayManager(app);
   lifecycleManager = new WindowLifecycleManager(app);
-  ipcHandler = new IPCHandler(displayManager, configManager);
+  ipcHandler = new IPCHandler(displayManager, configManager, {
+    onReconfigure: () => {
+      displayManager.closeAllDisplayWindows();
+      showDisplaySelector();
+    },
+  });
 
   // Set up IPC listeners
   ipcHandler.setupListeners();

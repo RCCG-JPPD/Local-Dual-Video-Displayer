@@ -6,9 +6,10 @@
 const { ipcMain } = require('electron');
 
 class IPCHandler {
-  constructor(displayManager, configManager) {
+  constructor(displayManager, configManager, callbacks = {}) {
     this.displayManager = displayManager;
     this.configManager = configManager;
+    this.callbacks = callbacks;
   }
 
   /**
@@ -37,6 +38,18 @@ class IPCHandler {
 
       // Notify renderer that config was saved
       event.sender.send('config-saved');
+    });
+
+    // Display selector requests the displays list (fallback for late-binding)
+    ipcMain.on('request-displays', (event) => {
+      const displays = this.displayManager.detectDisplays();
+      event.sender.send('displays-detected', displays.map((d, i) => ({
+        index: i,
+        id: d.id,
+        label: d.label || `Display ${i + 1}`,
+        bounds: d.bounds,
+        isPrimary: d.isPrimary,
+      })));
     });
 
     // Selector requests to close
@@ -170,9 +183,10 @@ class IPCHandler {
 
     // Controller requests to reconfigure displays
     ipcMain.on('request-reconfigure-displays', (event) => {
-      // This would reopen the display selector
-      // Implementation in main.js that calls displayManager.createSelectorWindow()
       console.log('Reconfigure displays requested');
+      if (this.callbacks.onReconfigure) {
+        this.callbacks.onReconfigure();
+      }
       event.sender.send('reconfigure-requested');
     });
 

@@ -416,9 +416,17 @@
 
     function setupPreviewCards() {
       previewGrid.innerHTML = '';
+      previewContainers = {};
 
-      const roles = ['public', 'private', 'clock'];
-      roles.forEach(role => {
+      const roleLabels = {
+        public: 'Video (Public)',
+        private: 'Video (Private)',
+        clock: 'Clock',
+        web: 'Web Browser',
+        youtube: 'YouTube',
+      };
+
+      Object.entries(roleLabels).forEach(([role, label]) => {
         const card = document.createElement('div');
         card.className = 'preview-card';
         card.id = `preview-${role}`;
@@ -432,8 +440,7 @@
 
         const roleLabel = document.createElement('div');
         roleLabel.className = 'preview-role';
-        roleLabel.textContent = role === 'public' ? 'Video (Public)' :
-                               role === 'private' ? 'Video (Private)' : 'Clock';
+        roleLabel.textContent = label;
 
         const status = document.createElement('div');
         status.className = 'preview-status';
