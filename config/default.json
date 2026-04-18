@@ -1,0 +1,34 @@
+{
+  "displays": [],
+  "playback": {
+    "currentPlaylistIndex": 0,
+    "playlist": [],
+    "volume": 1.0,
+    "loopPlaylist": false,
+    "mutePrivateWindow": true
+  },
+  "controller": {
+    "x": null,
+    "y": null,
+    "width": 1000,
+    "height": 700,
+    "alwaysOnTop": true,
+    "rememberedPosition": false
+  },
+  "clock": {
+    "enabled": true,
+    "format": "24h",
+    "updateInterval": 1000
+  },
+  "preview": {
+    "enabled": true,
+    "updateInterval": 500,
+    "previewSize": {
+      "width": 200,
+      "height": 150
+    },
+    "quality": 0.7
+  },
+  "version": "2.0.0",
+  "lastModified": null
+}

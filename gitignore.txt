@@ -1,7 +1,3 @@
-electron_data/
-*/node_modules
-multi_screen_view/*.png
-
 # Node.js
 node_modules/
 build/

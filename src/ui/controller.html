@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Unified Controller</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    .controller-container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin-bottom: 5px;
+      color: #333;
+    }
+
+    .status-bar {
+      background: #ddd;
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      font-size: 12px;
+      color: #666;
+    }
+
+    /* PREVIEW SECTION */
+    .preview-section {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .preview-section h2 {
+      font-size: 16px;
+      margin-bottom: 15px;
+      color: #333;
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 15px;
+    }
+
+    .preview-card {
+      background: #f0f0f0;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .preview-image {
+      width: 100%;
+      height: 150px;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #666;
+      font-size: 12px;
+      overflow: hidden;
+    }
+
+    .preview-image img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .preview-info {
+      padding: 10px;
+      font-size: 12px;
+      color: #666;
+    }
+
+    .preview-role {
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 4px;
+    }
+
+    .preview-status {
+      color: #999;
+      font-size: 11px;
+    }
+
+    /* CONTROLS SECTION */
+    .controls-section {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .controls-section h2 {
+      font-size: 16px;
+      margin-bottom: 15px;
+      color: #333;
+    }
+
+    /* PLAYLIST */
+    .playlist-container {
+      margin-bottom: 20px;
+    }
+
+    .playlist-container h3 {
+      font-size: 14px;
+      margin-bottom: 10px;
+      color: #555;
+    }
+
+    #playlist {
+      width: 100%;
+      height: 150px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 8px;
+      font-size: 13px;
+      font-family: 'Segoe UI', sans-serif;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 8px 16px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: white;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    button:hover:not(:disabled) {
+      background: #f0f0f0;
+      border-color: #999;
+    }
+
+    button:active:not(:disabled) {
+      background: #e0e0e0;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: #667eea;
+      color: white;
+      border-color: #667eea;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #5568d3;
+      border-color: #5568d3;
+    }
+
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+      border-color: #ef4444;
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: #dc2626;
+      border-color: #dc2626;
+    }
+
+    /* PLAYBACK CONTROLS */
+    .playback-controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .playback-controls button {
+      padding: 10px 14px;
+      font-size: 14px;
+    }
+
+    .scrub-container {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    #scrub {
+      flex: 1;
+      min-width: 200px;
+    }
+
+    .time-display {
+      font-family: 'Monaco', monospace;
+      font-size: 13px;
+      color: #666;
+      min-width: 80px;
+      text-align: right;
+    }
+
+    .volume-container {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .volume-container label {
+      font-size: 13px;
+      color: #666;
+    }
+
+    #vol {
+      width: 150px;
+    }
+
+    /* DISPLAY MANAGEMENT */
+    .display-management {
+      border-top: 1px solid #e0e0e0;
+      padding-top: 15px;
+      margin-top: 15px;
+    }
+
+    .display-management h3 {
+      font-size: 13px;
+      margin-bottom: 10px;
+      color: #666;
+    }
+
+    .display-status {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 10px;
+    }
+
+    .display-status.warning {
+      color: #f59e0b;
+    }
+
+    .display-status.error {
+      color: #ef4444;
+    }
+
+    input[type="range"] {
+      cursor: pointer;
+    }
+
+    @media (max-width: 768px) {
+      .preview-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .playback-controls {
+        flex-direction: column;
+      }
+
+      .playback-controls button {
+        width: 100%;
+      }
+
+      .scrub-container {
+        flex-direction: column;
+      }
+
+      #scrub {
+        width: 100%;
+      }
+
+      .time-display {
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="controller-container">
+    <h1>📺 Unified Display Controller</h1>
+    <div class="status-bar" id="status-bar">Ready</div>
+
+    <!-- PREVIEW SECTION -->
+    <div class="preview-section">
+      <h2>🔴 Live Previews</h2>
+      <div class="preview-grid" id="preview-grid">
+        <!-- Preview cards will be generated here -->
+      </div>
+    </div>
+
+    <!-- CONTROLS SECTION -->
+    <div class="controls-section">
+      <h2>🎬 Playback Controls</h2>
+
+      <!-- Playlist -->
+      <div class="playlist-container">
+        <h3>Playlist</h3>
+        <select id="playlist" size="8"></select>
+        <div class="button-group">
+          <button id="addBtn" class="btn-primary">+ Add Video…</button>
+          <button id="removeBtn" class="btn-danger">✕ Remove</button>
+        </div>
+      </div>
+
+      <!-- Playback Buttons -->
+      <div class="playback-controls">
+        <button id="prevBtn">⏮ Previous</button>
+        <button id="playBtn">▶ Play / ⏸ Pause</button>
+        <button id="nextBtn">Next ⏭</button>
+        <button id="stopBtn">⏹ Stop</button>
+      </div>
+
+      <!-- Scrub Bar -->
+      <div class="scrub-container">
+        <input id="scrub" type="range" min="0" max="100" value="0">
+        <div class="time-display" id="time">00:00 / 00:00</div>
+      </div>
+
+      <!-- Volume -->
+      <div class="volume-container">
+        <label for="vol">🔊 Volume (Public)</label>
+        <input id="vol" type="range" min="0" max="1" step="0.01" value="1">
+      </div>
+
+      <!-- Display Management -->
+      <div class="display-management">
+        <h3>Display Configuration</h3>
+        <div class="display-status" id="display-status">Connected displays: Loading...</div>
+        <button id="reconfigBtn">⚙️ Reconfigure Displays</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { electronAPI } = window;
+
+    // ════════════════════════════════════════════════════════════════
+    // DOM ELEMENTS
+    // ════════════════════════════════════════════════════════════════
+
+    const playlistSel = document.getElementById('playlist');
+    const scrub = document.getElementById('scrub');
+    const timeLabel = document.getElementById('time');
+    const volSlider = document.getElementById('vol');
+    const playBtn = document.getElementById('playBtn');
+    const statusBar = document.getElementById('status-bar');
+    const previewGrid = document.getElementById('preview-grid');
+    const displayStatus = document.getElementById('display-status');
+
+    // ════════════════════════════════════════════════════════════════
+    // STATE
+    // ════════════════════════════════════════════════════════════════
+
+    let playlist = [];
+    let currentIndex = -1;
+    let isPlaying = false;
+    let duration = 0;
+    let config = {};
+    let previewContainers = {};
+
+    // ════════════════════════════════════════════════════════════════
+    // INITIALIZATION
+    // ════════════════════════════════════════════════════════════════
+
+    async function initialize() {
+      try {
+        // Load config
+        config = await electronAPI.getConfig();
+        console.log('Controller config loaded:', config);
+
+        // Load playlist from config
+        if (config.playback && config.playback.playlist) {
+          playlist = config.playback.playlist;
+          renderPlaylist();
+        }
+
+        // Set up preview cards for each display role
+        setupPreviewCards();
+
+        // Load window status
+        const windowStatus = await electronAPI.getWindowStatus();
+        console.log('Window status:', windowStatus);
+        updateDisplayStatus(windowStatus);
+
+        statusBar.textContent = `✓ Ready with ${playlist.length} video(s) queued`;
+      } catch (error) {
+        console.error('Initialization error:', error);
+        statusBar.textContent = '✗ Initialization failed';
+      }
+    }
+
+    function setupPreviewCards() {
+      previewGrid.innerHTML = '';
+
+      const roles = ['public', 'private', 'clock'];
+      roles.forEach(role => {
+        const card = document.createElement('div');
+        card.className = 'preview-card';
+        card.id = `preview-${role}`;
+
+        const image = document.createElement('div');
+        image.className = 'preview-image';
+        image.textContent = 'Waiting for preview...';
+
+        const info = document.createElement('div');
+        info.className = 'preview-info';
+
+        const roleLabel = document.createElement('div');
+        roleLabel.className = 'preview-role';
+        roleLabel.textContent = role === 'public' ? 'Video (Public)' :
+                               role === 'private' ? 'Video (Private)' : 'Clock';
+
+        const status = document.createElement('div');
+        status.className = 'preview-status';
+        status.textContent = 'Connecting...';
+
+        info.appendChild(roleLabel);
+        info.appendChild(status);
+        card.appendChild(image);
+        card.appendChild(info);
+        previewGrid.appendChild(card);
+
+        previewContainers[role] = { image, status };
+      });
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // PLAYLIST MANAGEMENT
+    // ════════════════════════════════════════════════════════════════
+
+    document.getElementById('addBtn').onclick = async () => {
+      const files = await electronAPI.selectVideoFiles();
+      files.forEach(f => {
+        if (!playlist.includes(f)) {
+          playlist.push(f);
+        }
+      });
+      renderPlaylist();
+      if (currentIndex === -1 && playlist.length > 0) {
+        load(0);
+      }
+    };
+
+    document.getElementById('removeBtn').onclick = () => {
+      if (currentIndex > -1) {
+        playlist.splice(currentIndex, 1);
+        if (currentIndex >= playlist.length) currentIndex--;
+        renderPlaylist();
+        if (currentIndex >= 0) {
+          load(currentIndex);
+        } else if (playlist.length > 0) {
+          load(0);
+        } else {
+          isPlaying = false;
+          playBtn.textContent = '▶ Play';
+        }
+      }
+    };
+
+    function renderPlaylist() {
+      playlistSel.innerHTML = playlist.map((p, i) =>
+        `<option value="${i}" ${i === currentIndex ? 'selected' : ''}>${pathBasename(p)}</option>`
+      ).join('');
+    }
+
+    function pathBasename(p) {
+      return p.split(/[\\/]/).pop();
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // PLAYBACK CONTROL
+    // ════════════════════════════════════════════════════════════════
+
+    function send(cmd, data) {
+      electronAPI.sendPlaybackCommand(cmd, data);
+    }
+
+    function load(i) {
+      if (i == null || i < 0 || i >= playlist.length) return;
+      currentIndex = i;
+      renderPlaylist();
+      send('load', playlist[currentIndex]);
+      isPlaying = true;
+      playBtn.textContent = '⏸ Pause';
+      statusBar.textContent = `Now playing: ${pathBasename(playlist[currentIndex])}`;
+    }
+
+    playBtn.onclick = () => {
+      if (currentIndex === -1) return;
+      if (isPlaying) {
+        send('pause');
+        isPlaying = false;
+        playBtn.textContent = '▶ Play';
+        statusBar.textContent = 'Paused';
+      } else {
+        send('play');
+        isPlaying = true;
+        playBtn.textContent = '⏸ Pause';
+        statusBar.textContent = 'Playing...';
+      }
+    };
+
+    document.getElementById('prevBtn').onclick = () => load((currentIndex - 1 + playlist.length) % playlist.length);
+    document.getElementById('nextBtn').onclick = () => load((currentIndex + 1) % playlist.length);
+    document.getElementById('stopBtn').onclick = () => {
+      send('stop');
+      isPlaying = false;
+      playBtn.textContent = '▶ Play';
+      statusBar.textContent = 'Stopped';
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    // SCRUB BAR
+    // ════════════════════════════════════════════════════════════════
+
+    scrub.oninput = () => send('seek', scrub.value * duration / 100);
+
+    // Listen for video time updates
+    electronAPI.onVideoTime((currentTime, dur) => {
+      duration = dur;
+      if (!scrub.dragging) scrub.value = (currentTime / dur) * 100 || 0;
+      timeLabel.textContent = fmt(currentTime) + ' / ' + fmt(dur);
+    });
+
+    function fmt(t) {
+      if (isNaN(t)) return '00:00';
+      const m = Math.floor(t / 60).toString().padStart(2, '0');
+      const s = Math.floor(t % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // VOLUME CONTROL
+    // ════════════════════════════════════════════════════════════════
+
+    volSlider.oninput = () => send('setVolume', parseFloat(volSlider.value));
+
+    // ════════════════════════════════════════════════════════════════
+    // PREVIEW UPDATES
+    // ════════════════════════════════════════════════════════════════
+
+    electronAPI.onPreviewUpdate((data) => {
+      if (!data || !data.role) return;
+
+      const container = previewContainers[data.role];
+      if (!container) return;
+
+      if (data.imageData) {
+        const img = document.createElement('img');
+        img.src = data.imageData;
+        img.style.maxWidth = '100%';
+        img.style.maxHeight = '100%';
+        container.image.innerHTML = '';
+        container.image.appendChild(img);
+      }
+
+      // Update status based on role
+      if (data.role === 'clock') {
+        container.status.textContent = data.time || 'Connected';
+      } else {
+        const timeStr = data.currentTime ? `${fmt(data.currentTime)} / ${fmt(data.duration)}` : 'Ready';
+        const status = data.isPaused ? `⏸ ${timeStr}` : `▶ ${timeStr}`;
+        container.status.textContent = status;
+      }
+    });
+
+    // ════════════════════════════════════════════════════════════════
+    // DISPLAY MANAGEMENT
+    // ════════════════════════════════════════════════════════════════
+
+    function updateDisplayStatus(windowStatus) {
+      if (!windowStatus) return;
+
+      const count = Object.values(windowStatus).filter(v => v).length;
+      displayStatus.textContent = `Connected displays: ${count}/4`;
+
+      if (!windowStatus.public) {
+        displayStatus.textContent += ' (⚠️ Public video disconnected)';
+        displayStatus.classList.add('warning');
+      } else if (!windowStatus.controller) {
+        displayStatus.textContent += ' (✓ All displays connected)';
+        displayStatus.classList.remove('warning', 'error');
+      }
+    }
+
+    document.getElementById('reconfigBtn').onclick = () => {
+      console.log('Reconfigure displays requested');
+      electronAPI.reconfigureDisplays();
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    // STARTUP
+    // ════════════════════════════════════════════════════════════════
+
+    initialize();
+  </script>
+</body>
+</html>

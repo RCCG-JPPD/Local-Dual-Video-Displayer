@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Clock Display</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      overflow: hidden;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .clock-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+    }
+
+    #clock-display {
+      font-size: 120px;
+      font-weight: 300;
+      letter-spacing: 2px;
+      color: #fff;
+      text-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+      font-variant-numeric: tabular-nums;
+      font-family: 'Monaco', 'Courier New', monospace;
+    }
+
+    #date-display {
+      font-size: 36px;
+      color: #aaa;
+      margin-top: 20px;
+      text-shadow: 0 1px 10px rgba(0, 0, 0, 0.5);
+    }
+
+    #period-indicator {
+      position: absolute;
+      top: 30px;
+      right: 50px;
+      font-size: 28px;
+      color: #888;
+      font-weight: 300;
+    }
+
+    /* Hidden preview canvas */
+    #preview-canvas {
+      display: none;
+      position: absolute;
+      top: -9999px;
+      left: -9999px;
+    }
+  </style>
+</head>
+<body>
+  <div class="clock-container">
+    <div id="period-indicator"></div>
+    <div id="clock-display">00:00:00</div>
+    <div id="date-display">Loading...</div>
+  </div>
+
+  <!-- Hidden canvas for preview rendering -->
+  <canvas id="preview-canvas"></canvas>
+
+  <script>
+    const { electronAPI } = window;
+
+    const clockDisplay = document.getElementById('clock-display');
+    const dateDisplay = document.getElementById('date-display');
+    const periodIndicator = document.getElementById('period-indicator');
+    const previewCanvas = document.getElementById('preview-canvas');
+    const clockContainer = document.querySelector('.clock-container');
+
+    let clockConfig = {
+      format: '24h', // '12h' or '24h'
+      updateInterval: 1000,
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    // INITIALIZATION
+    // ════════════════════════════════════════════════════════════════
+
+    function initialize() {
+      // Load config
+      electronAPI.getConfig().then(config => {
+        if (config.clock) {
+          clockConfig = { ...clockConfig, ...config.clock };
+        }
+        console.log('Clock display initialized with config:', clockConfig);
+        setupPreviewCanvas();
+        startClock();
+      }).catch(err => {
+        console.error('Error loading config:', err);
+        // Use defaults
+        setupPreviewCanvas();
+        startClock();
+      });
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // CLOCK RENDERING
+    // ════════════════════════════════════════════════════════════════
+
+    function formatTime(date) {
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      const seconds = String(date.getSeconds()).padStart(2, '0');
+
+      if (clockConfig.format === '12h') {
+        let h = parseInt(hours);
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        h = h % 12 || 12;
+        periodIndicator.textContent = ampm;
+        return `${String(h).padStart(2, '0')}:${minutes}:${seconds}`;
+      } else {
+        periodIndicator.textContent = '';
+        return `${hours}:${minutes}:${seconds}`;
+      }
+    }
+
+    function formatDate(date) {
+      const options = {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      };
+      return date.toLocaleDateString('en-US', options);
+    }
+
+    function updateClock() {
+      const now = new Date();
+      clockDisplay.textContent = formatTime(now);
+      dateDisplay.textContent = formatDate(now);
+
+      // Capture preview after update
+      capturePreviewFrame();
+    }
+
+    function startClock() {
+      // Update immediately
+      updateClock();
+
+      // Then update at interval
+      setInterval(updateClock, clockConfig.updateInterval);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // CANVAS PREVIEW
+    // ════════════════════════════════════════════════════════════════
+
+    function setupPreviewCanvas() {
+      if (!previewCanvas) return;
+
+      previewCanvas.width = clockContainer.offsetWidth;
+      previewCanvas.height = clockContainer.offsetHeight;
+    }
+
+    function capturePreviewFrame() {
+      try {
+        if (!previewCanvas || !clockContainer) return;
+
+        const ctx = previewCanvas.getContext('2d');
+        if (!ctx) return;
+
+        // Draw background gradient
+        const gradient = ctx.createLinearGradient(0, 0, 0, previewCanvas.height);
+        gradient.addColorStop(0, '#1a1a2e');
+        gradient.addColorStop(1, '#16213e');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+
+        // Draw time text
+        ctx.font = 'bold 80px Monaco';
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+        ctx.shadowBlur = 20;
+
+        const now = new Date();
+        const timeStr = formatTime(now);
+        ctx.fillText(timeStr, previewCanvas.width / 2, previewCanvas.height / 2 - 40);
+
+        // Draw date text
+        ctx.font = '32px Arial';
+        ctx.fillStyle = '#aaa';
+        const dateStr = formatDate(now);
+        ctx.fillText(dateStr, previewCanvas.width / 2, previewCanvas.height / 2 + 40);
+
+        // Send preview data
+        const imageData = previewCanvas.toDataURL('image/jpeg', 0.8);
+        electronAPI.sendPreviewData({
+          role: 'clock',
+          imageData: imageData,
+          timestamp: Date.now(),
+          time: timeStr,
+          date: dateStr,
+        });
+      } catch (error) {
+        console.error('Error capturing preview frame:', error);
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // STARTUP
+    // ════════════════════════════════════════════════════════════════
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      setupPreviewCanvas();
+      capturePreviewFrame();
+    });
+
+    // Initialize
+    initialize();
+
+    console.log('Clock display initialized');
+  </script>
+</body>
+</html>
