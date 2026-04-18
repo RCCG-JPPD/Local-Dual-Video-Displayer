@@ -14,8 +14,8 @@ function createWindows () {
     dialog.showErrorBox('Display Error', 'Three monitors are required (public / controller / private).');
     app.quit(); return;
   }
-  publicDisplay = displays[1]; // reorder if needed
-  controllerDisplay = displays[0];
+  publicDisplay = displays[0]; // reorder if needed
+  controllerDisplay = displays[1];
   privateDisplay = displays[2];
 
   const videoOpts = {

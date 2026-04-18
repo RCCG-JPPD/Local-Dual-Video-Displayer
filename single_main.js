@@ -14,8 +14,8 @@ function createWindows () {
     dialog.showErrorBox('Display Error', 'Two monitors are required (public / controller).');
     app.quit(); return;
   }
-  publicDisplay = displays[1]; // reorder if needed
-  controllerDisplay = displays[0];
+  publicDisplay = displays[2]; // reorder if needed
+  controllerDisplay = displays[3];
 
   const videoOpts = {
     fullscreen:   true,
