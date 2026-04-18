@@ -267,13 +267,52 @@
     let displaysList = [];
     let roleAssignments = {}; // { displayId: 'role' }
 
-    // Fetch displays from main process using invoke (immune to timing races on Windows)
+    function showError(msg) {
+      const div = document.getElementById('error-message');
+      div.textContent = msg;
+      div.classList.add('show');
+      if (electronAPI && electronAPI.log) electronAPI.log('error', msg);
+      else console.error(msg);
+    }
+
+    function applyDisplays(displays) {
+      if (!displays || displays.length === 0) {
+        showError('No displays returned from main process. Please restart the app.');
+        return;
+      }
+      displaysList = displays;
+      document.getElementById('error-message').classList.remove('show');
+      renderDisplays();
+      if (electronAPI && electronAPI.log) electronAPI.log('info', `Loaded ${displays.length} display(s)`);
+    }
+
     async function loadDisplays() {
       try {
-        displaysList = await electronAPI.getDisplays();
-        renderDisplays();
+        if (!electronAPI) {
+          showError('electronAPI is not available. The preload script failed to load.');
+          return;
+        }
+
+        if (electronAPI.log) electronAPI.log('info', 'loadDisplays() called');
+
+        // Preferred: invoke (no timing race, synchronous request/response)
+        if (electronAPI.getDisplays) {
+          const displays = await electronAPI.getDisplays();
+          applyDisplays(displays);
+          return;
+        }
+
+        // Fallback: push-based with 5-second timeout (covers old preload versions)
+        if (electronAPI.log) electronAPI.log('info', 'getDisplays not found, using push fallback');
+        const displays = await new Promise((resolve, reject) => {
+          const t = setTimeout(() => reject(new Error('Timeout: no displays-detected after 5s')), 5000);
+          electronAPI.onDisplaysDetected((d) => { clearTimeout(t); resolve(d); });
+          if (electronAPI.requestDisplays) electronAPI.requestDisplays();
+        });
+        applyDisplays(displays);
+
       } catch (err) {
-        console.error('Failed to load displays:', err);
+        showError('Error loading displays: ' + (err && err.message ? err.message : String(err)));
       }
     }
 

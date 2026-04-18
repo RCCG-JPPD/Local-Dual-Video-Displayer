@@ -53,18 +53,18 @@ class DisplayManager {
       throw new Error('No displays detected');
     }
 
-    // Create selector on primary display
-    const primaryDisplay = displays[0];
+    // Always open selector on the primary display (the one at (0,0) or marked isPrimary)
+    const primaryDisplay = displays.find(d => d.isPrimary) || displays.find(d => d.bounds.x === 0 && d.bounds.y === 0) || displays[0];
 
     this.windows.selector = new BrowserWindow({
-      x: primaryDisplay.bounds.x + 100,
-      y: primaryDisplay.bounds.y + 100,
+      x: Math.floor(primaryDisplay.bounds.x) + 100,
+      y: Math.floor(primaryDisplay.bounds.y) + 100,
       width: 900,
       height: 700,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
-        preload: path.join(__dirname, '../../preload.js'), // Will create this later
+        preload: path.join(__dirname, '../../preload.js'),
       },
       show: true,
     });

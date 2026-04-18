@@ -137,12 +137,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Selector fetches displays synchronously (invoke = request/response, no timing race)
   getDisplays: () => ipcRenderer.invoke('get-displays'),
 
-  // Legacy push-based listener kept for compatibility
+  // Push-based listener (kept so main-process did-finish-load push also works)
   onDisplaysDetected: (callback) => {
     ipcRenderer.on('displays-detected', (event, displays) => {
       callback(displays);
     });
   },
+
+  // Send log messages to main process terminal (essential for Windows debugging)
+  log: (level, msg) => ipcRenderer.send('renderer-log', level, msg),
 
   // Selector saves configuration
   saveDisplayConfig: (displays) => {

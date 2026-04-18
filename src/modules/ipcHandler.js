@@ -201,6 +201,12 @@ class IPCHandler {
       event.sender.send('reconfigure-requested');
     });
 
+    // Renderer can send log messages that appear in the terminal (useful for Windows debugging)
+    ipcMain.on('renderer-log', (event, level, msg) => {
+      if (level === 'error') console.error('[Renderer]', msg);
+      else console.log('[Renderer]', msg);
+    });
+
     console.log('IPC listeners initialized');
   }
 }
