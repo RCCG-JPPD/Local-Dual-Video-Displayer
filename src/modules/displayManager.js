@@ -21,13 +21,20 @@ class DisplayManager {
 
   /**
    * Detect all connected displays
+   * Supports 1-7+ displays dynamically
    */
   detectDisplays() {
     const displays = screen.getAllDisplays();
+
+    if (displays.length === 0) {
+      throw new Error('No displays detected - at least 1 display is required');
+    }
+
     console.log(`Detected ${displays.length} display(s):`);
 
     displays.forEach((display, index) => {
-      console.log(`  Display ${index}: ${display.bounds.width}x${display.bounds.height} @ (${display.bounds.x}, ${display.bounds.y})`);
+      const primary = display.isPrimary ? ' (Primary)' : '';
+      console.log(`  Display ${index}${primary}: ${display.bounds.width}x${display.bounds.height} @ (${display.bounds.x}, ${display.bounds.y})`);
     });
 
     return displays;
@@ -91,12 +98,18 @@ class DisplayManager {
     const display = displays[displayIndex];
     const videoPath = path.join(__dirname, '../ui/videoDisplay.html');
 
+    console.log(`Creating video window on display ${displayIndex}:`, {
+      displayId: display.id,
+      bounds: display.bounds,
+      isPrimary: display.isPrimary,
+    });
+
     const videoOpts = {
-      x: display.bounds.x,
-      y: display.bounds.y,
-      width: display.bounds.width,
-      height: display.bounds.height,
-      fullscreen: false, // Use windowed mode but size to fill display
+      x: Math.floor(display.bounds.x),
+      y: Math.floor(display.bounds.y),
+      width: Math.floor(display.bounds.width),
+      height: Math.floor(display.bounds.height),
+      fullscreen: false,
       frame: false,
       alwaysOnTop: true,
       webPreferences: {
@@ -104,7 +117,7 @@ class DisplayManager {
         contextIsolation: true,
         preload: path.join(__dirname, '../../preload.js'),
       },
-      show: true,
+      show: false, // Don't show immediately - show after positioning
     };
 
     const window = new BrowserWindow(videoOpts);
@@ -112,6 +125,22 @@ class DisplayManager {
 
     // Pass window role via IPC after load
     window.webContents.on('did-finish-load', () => {
+      console.log(`Video window loaded on display ${displayIndex}, repositioning and showing`);
+
+      // Force position again after load to ensure correct placement on Windows
+      window.setBounds({
+        x: Math.floor(display.bounds.x),
+        y: Math.floor(display.bounds.y),
+        width: Math.floor(display.bounds.width),
+        height: Math.floor(display.bounds.height),
+      });
+
+      // Show window and enforce always-on-top
+      window.show();
+      window.setAlwaysOnTop(true, 'screen-saver');
+      window.moveTop();
+      window.focus();
+
       window.webContents.send('window-role', windowRole);
     });
 
@@ -147,11 +176,16 @@ class DisplayManager {
     const display = displays[displayIndex];
     const clockPath = path.join(__dirname, '../ui/clockDisplay.html');
 
+    console.log(`Creating clock window on display ${displayIndex}:`, {
+      displayId: display.id,
+      bounds: display.bounds,
+    });
+
     const clockOpts = {
-      x: display.bounds.x,
-      y: display.bounds.y,
-      width: display.bounds.width,
-      height: display.bounds.height,
+      x: Math.floor(display.bounds.x),
+      y: Math.floor(display.bounds.y),
+      width: Math.floor(display.bounds.width),
+      height: Math.floor(display.bounds.height),
       fullscreen: false,
       frame: false,
       alwaysOnTop: true,
@@ -160,11 +194,28 @@ class DisplayManager {
         contextIsolation: true,
         preload: path.join(__dirname, '../../preload.js'),
       },
-      show: true,
+      show: false, // Don't show immediately
     };
 
     const window = new BrowserWindow(clockOpts);
     window.loadFile(clockPath);
+
+    // Reposition and show after load
+    window.webContents.on('did-finish-load', () => {
+      console.log(`Clock window loaded on display ${displayIndex}, repositioning and showing`);
+
+      window.setBounds({
+        x: Math.floor(display.bounds.x),
+        y: Math.floor(display.bounds.y),
+        width: Math.floor(display.bounds.width),
+        height: Math.floor(display.bounds.height),
+      });
+
+      window.show();
+      window.setAlwaysOnTop(true, 'screen-saver');
+      window.moveTop();
+      window.focus();
+    });
 
     // Track as child window
     this.childWindowIds.add(window.webContents.id);
@@ -204,7 +255,7 @@ class DisplayManager {
    * Close all display windows (called when controller closes)
    */
   closeAllDisplayWindows() {
-    ['public', 'private', 'clock', 'selector'].forEach(role => {
+    ['public', 'private', 'clock', 'selector', 'web', 'youtube'].forEach(role => {
       if (this.windows[role] && !this.windows[role].isDestroyed()) {
         this.windows[role].close();
       }
@@ -220,7 +271,182 @@ class DisplayManager {
       public: this.windows.public && !this.windows.public.isDestroyed(),
       private: this.windows.private && !this.windows.private.isDestroyed(),
       clock: this.windows.clock && !this.windows.clock.isDestroyed(),
+      web: this.windows.web && !this.windows.web.isDestroyed(),
+      youtube: this.windows.youtube && !this.windows.youtube.isDestroyed(),
     };
+  }
+
+  /**
+   * Create web browser window (fullscreen)
+   */
+  createWebWindow(displayIndex) {
+    const displays = this.detectDisplays();
+
+    if (displayIndex >= displays.length) {
+      console.warn(`Display index ${displayIndex} not available, skipping web`);
+      return null;
+    }
+
+    const display = displays[displayIndex];
+    const webPath = path.join(__dirname, '../ui/webBrowser.html');
+
+    console.log(`Creating web window on display ${displayIndex}:`, {
+      displayId: display.id,
+      bounds: display.bounds,
+    });
+
+    const webOpts = {
+      x: Math.floor(display.bounds.x),
+      y: Math.floor(display.bounds.y),
+      width: Math.floor(display.bounds.width),
+      height: Math.floor(display.bounds.height),
+      fullscreen: false,
+      frame: false,
+      alwaysOnTop: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+        preload: path.join(__dirname, '../../preload.js'),
+      },
+      show: false, // Don't show immediately
+    };
+
+    const window = new BrowserWindow(webOpts);
+    window.loadFile(webPath);
+
+    // Reposition and show after load
+    window.webContents.on('did-finish-load', () => {
+      console.log(`Web window loaded on display ${displayIndex}, repositioning and showing`);
+
+      window.setBounds({
+        x: Math.floor(display.bounds.x),
+        y: Math.floor(display.bounds.y),
+        width: Math.floor(display.bounds.width),
+        height: Math.floor(display.bounds.height),
+      });
+
+      window.show();
+      window.setAlwaysOnTop(true, 'screen-saver');
+      window.moveTop();
+      window.focus();
+    });
+
+    // Track as child window
+    this.childWindowIds.add(window.webContents.id);
+    this.windows.web = window;
+
+    return window;
+  }
+
+  /**
+   * Create YouTube player window (fullscreen)
+   */
+  createYouTubeWindow(displayIndex) {
+    const displays = this.detectDisplays();
+
+    if (displayIndex >= displays.length) {
+      console.warn(`Display index ${displayIndex} not available, skipping youtube`);
+      return null;
+    }
+
+    const display = displays[displayIndex];
+    const youtubePath = path.join(__dirname, '../ui/youtubePlayer.html');
+
+    console.log(`Creating youtube window on display ${displayIndex}:`, {
+      displayId: display.id,
+      bounds: display.bounds,
+    });
+
+    const youtubeOpts = {
+      x: Math.floor(display.bounds.x),
+      y: Math.floor(display.bounds.y),
+      width: Math.floor(display.bounds.width),
+      height: Math.floor(display.bounds.height),
+      fullscreen: false,
+      frame: false,
+      alwaysOnTop: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: false, // Allow YouTube iframe
+        preload: path.join(__dirname, '../../preload.js'),
+      },
+      show: false, // Don't show immediately
+    };
+
+    const window = new BrowserWindow(youtubeOpts);
+    window.loadFile(youtubePath);
+
+    // Reposition and show after load
+    window.webContents.on('did-finish-load', () => {
+      console.log(`YouTube window loaded on display ${displayIndex}, repositioning and showing`);
+
+      window.setBounds({
+        x: Math.floor(display.bounds.x),
+        y: Math.floor(display.bounds.y),
+        width: Math.floor(display.bounds.width),
+        height: Math.floor(display.bounds.height),
+      });
+
+      window.show();
+      window.setAlwaysOnTop(true, 'screen-saver');
+      window.moveTop();
+      window.focus();
+    });
+
+    // Track as child window
+    this.childWindowIds.add(window.webContents.id);
+    this.windows.youtube = window;
+
+    return window;
+  }
+
+  /**
+   * Create or update all display windows based on config
+   */
+  createAllDisplayWindows(config) {
+    if (!config || !config.displays) {
+      console.warn('No display config provided');
+      return;
+    }
+
+    config.displays.forEach(displayConfig => {
+      if (!displayConfig.role || displayConfig.role === 'unassigned') {
+        return; // Skip unassigned displays
+      }
+
+      try {
+        switch (displayConfig.role) {
+          case 'public_video':
+          case 'public':
+            this.createVideoWindow(displayConfig.displayIndex, 'public_video');
+            break;
+
+          case 'private_video':
+          case 'private':
+            this.createVideoWindow(displayConfig.displayIndex, 'private_video');
+            break;
+
+          case 'clock':
+            this.createClockWindow(displayConfig.displayIndex);
+            break;
+
+          case 'web':
+            this.createWebWindow(displayConfig.displayIndex);
+            break;
+
+          case 'youtube':
+            this.createYouTubeWindow(displayConfig.displayIndex);
+            break;
+
+          default:
+            console.warn(`Unknown display role: ${displayConfig.role}`);
+        }
+      } catch (error) {
+        console.error(`Error creating window for display ${displayConfig.displayIndex} (${displayConfig.role}):`, error);
+      }
+    });
   }
 }
 

@@ -87,34 +87,33 @@ function showDisplaySelector() {
 function launchDisplayWindows() {
   console.log('Launching display windows...');
 
-  const displays = displayManager.detectDisplays();
-  const primaryDisplay = displays[0];
+  try {
+    const displays = displayManager.detectDisplays();
+    const primaryDisplay = displays[0];
 
-  // Create controller window first
-  const controllerWindow = displayManager.createControllerWindow(primaryDisplay);
-  lifecycleManager.setParentWindow(controllerWindow);
+    // Create controller window first
+    const controllerWindow = displayManager.createControllerWindow(primaryDisplay);
+    lifecycleManager.setParentWindow(controllerWindow);
 
-  // Create video windows for each role
-  userConfig.displays.forEach(displayConfig => {
-    if (displayConfig.role === 'public') {
-      const videoWindow = displayManager.createVideoWindow(displayConfig.displayIndex, 'public');
-      lifecycleManager.registerChildWindow(videoWindow);
-    } else if (displayConfig.role === 'private') {
-      const videoWindow = displayManager.createVideoWindow(displayConfig.displayIndex, 'private');
-      lifecycleManager.registerChildWindow(videoWindow);
-    } else if (displayConfig.role === 'clock') {
-      const clockWindow = displayManager.createClockWindow(displayConfig.displayIndex);
-      if (clockWindow) {
-        lifecycleManager.registerChildWindow(clockWindow);
-      }
+    // Create all configured display windows dynamically
+    // Supports: public_video, private_video, clock, web, youtube, unassigned
+    displayManager.createAllDisplayWindows(userConfig);
+
+    // Register all child windows with lifecycle manager
+    const allWindowIds = new Set(displayManager.childWindowIds);
+    allWindowIds.forEach(windowId => {
+      // Note: We can't directly access windows by ID, so we rely on the windows stored in displayManager
+      // Child windows are automatically tracked when created
+    });
+
+    if (displayManager.windows.controller) {
+      displayManager.windows.controller.webContents.send('config-loaded', userConfig);
     }
-  });
 
-  if (displayManager.windows.controller) {
-    displayManager.windows.controller.webContents.send('config-loaded', userConfig);
+    console.log('Display windows launched successfully');
+  } catch (error) {
+    console.error('Error launching display windows:', error);
   }
-
-  console.log('Display windows launched');
 }
 
 /**

@@ -8,7 +8,59 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --debug"
+    "dev": "electron . --debug",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:all": "electron-builder -mw"
+  },
+  "build": {
+    "appId": "com.rccg.display-controller",
+    "productName": "RCCG Display Controller",
+    "files": [
+      "src/**/*",
+      "preload.js",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "certificateFile": null,
+      "certificatePassword": null
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "RCCG Display Controller"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.utilities"
+    }
+  },
+  "devDependencies": {
+    "electron-builder": "^24.0.0"
   },
   "dependencies": {
     "electron": "^31.0.1",

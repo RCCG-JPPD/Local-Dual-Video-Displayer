@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Web Browser Display</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: white;
+      overflow: hidden;
+    }
+
+    #web-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #web-frame {
+      flex: 1;
+      border: none;
+      width: 100%;
+      height: 100%;
+    }
+
+    #preview-canvas {
+      display: none;
+      position: absolute;
+      top: -9999px;
+      left: -9999px;
+    }
+  </style>
+</head>
+<body>
+  <div id="web-container">
+    <iframe id="web-frame" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+  </div>
+
+  <!-- Hidden canvas for preview rendering -->
+  <canvas id="preview-canvas"></canvas>
+
+  <script>
+    const { electronAPI } = window;
+
+    const webFrame = document.getElementById('web-frame');
+    const webContainer = document.getElementById('web-container');
+    const previewCanvas = document.getElementById('preview-canvas');
+
+    let currentUrl = 'about:blank';
+    let updatePreviewInterval;
+
+    // ════════════════════════════════════════════════════════════════
+    // INITIALIZATION
+    // ════════════════════════════════════════════════════════════════
+
+    function initialize() {
+      console.log('Web browser display initialized');
+      setupPreviewCanvas();
+
+      // Listen for URL updates from controller
+      electronAPI.onWebUrlChange((url) => {
+        console.log('Loading URL:', url);
+        navigateToUrl(url);
+      });
+
+      // Start periodic preview capture
+      startPreviewCapture();
+    }
+
+    function setupPreviewCanvas() {
+      if (!previewCanvas) return;
+      previewCanvas.width = webContainer.offsetWidth;
+      previewCanvas.height = webContainer.offsetHeight;
+    }
+
+    function navigateToUrl(url) {
+      if (!url) return;
+
+      // Ensure URL has protocol
+      if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('about:')) {
+        url = 'https://' + url;
+      }
+
+      currentUrl = url;
+
+      // For web display, we need to use a proxy or internal server
+      // For now, create a simple HTML page that can be embedded
+      if (url === 'about:blank' || url.startsWith('about:')) {
+        webFrame.src = url;
+      } else {
+        // Use data URL with iframe for embedding web content
+        // This helps bypass CORS and security restrictions
+        const iframeHtml = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <style>
+              * { margin: 0; padding: 0; }
+              body { width: 100%; height: 100%; }
+              iframe { width: 100%; height: 100%; border: none; }
+            </style>
+          </head>
+          <body>
+            <iframe src="${url}" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share"></iframe>
+          </body>
+          </html>
+        `;
+        webFrame.src = 'data:text/html,' + encodeURIComponent(iframeHtml);
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // PREVIEW CAPTURE
+    // ════════════════════════════════════════════════════════════════
+
+    function setupPreviewCanvas() {
+      if (!previewCanvas) return;
+      previewCanvas.width = webContainer.offsetWidth;
+      previewCanvas.height = webContainer.offsetHeight;
+    }
+
+    function capturePreviewFrame() {
+      try {
+        if (!previewCanvas || !webContainer) return;
+
+        const ctx = previewCanvas.getContext('2d');
+        if (!ctx) return;
+
+        // Draw white background
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+
+        // Draw border
+        ctx.strokeStyle = '#ddd';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(0, 0, previewCanvas.width, previewCanvas.height);
+
+        // Draw text showing URL
+        ctx.fillStyle = '#333';
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Web Browser', previewCanvas.width / 2, 30);
+        ctx.font = '12px Arial';
+        ctx.fillStyle = '#666';
+        const displayUrl = currentUrl.length > 50 ? currentUrl.substring(0, 47) + '...' : currentUrl;
+        ctx.fillText(displayUrl, previewCanvas.width / 2, previewCanvas.height - 20);
+
+        // Send preview data
+        const imageData = previewCanvas.toDataURL('image/jpeg', 0.7);
+        electronAPI.sendPreviewData({
+          role: 'web',
+          imageData: imageData,
+          timestamp: Date.now(),
+          url: currentUrl,
+        });
+      } catch (error) {
+        console.error('Error capturing preview frame:', error);
+      }
+    }
+
+    function startPreviewCapture() {
+      updatePreviewInterval = setInterval(capturePreviewFrame, 1000);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // STARTUP
+    // ════════════════════════════════════════════════════════════════
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      setupPreviewCanvas();
+      capturePreviewFrame();
+    });
+
+    // Start loading blank page initially
+    webFrame.src = 'about:blank';
+
+    // Initialize
+    initialize();
+
+    console.log('Web browser display ready');
+  </script>
+</body>
+</html>

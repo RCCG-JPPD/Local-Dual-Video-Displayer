@@ -44,6 +44,38 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // ════════════════════════════════════════════════════════════════
+  // WEB BROWSER CONTROL
+  // ════════════════════════════════════════════════════════════════
+
+  // Send URL to web browsers
+  sendWebUrl: (url) => {
+    ipcRenderer.send('web-url-change', url);
+  },
+
+  // Web displays listen for URL changes
+  onWebUrlChange: (callback) => {
+    ipcRenderer.on('web-url-change', (event, url) => {
+      callback(url);
+    });
+  },
+
+  // ════════════════════════════════════════════════════════════════
+  // YOUTUBE CONTROL
+  // ════════════════════════════════════════════════════════════════
+
+  // Send YouTube video ID/URL to players
+  sendYouTubeUrl: (url) => {
+    ipcRenderer.send('youtube-url-change', url);
+  },
+
+  // YouTube displays listen for URL changes
+  onYouTubeUrlChange: (callback) => {
+    ipcRenderer.on('youtube-url-change', (event, url) => {
+      callback(url);
+    });
+  },
+
+  // ════════════════════════════════════════════════════════════════
   // FILE OPERATIONS
   // ════════════════════════════════════════════════════════════════
 

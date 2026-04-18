@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>YouTube Player Display</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+    }
+
+    #youtube-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #youtube-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    #preview-canvas {
+      display: none;
+      position: absolute;
+      top: -9999px;
+      left: -9999px;
+    }
+  </style>
+</head>
+<body>
+  <div id="youtube-container">
+    <iframe
+      id="youtube-frame"
+      width="100%"
+      height="100%"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      allowfullscreen>
+    </iframe>
+  </div>
+
+  <!-- Hidden canvas for preview rendering -->
+  <canvas id="preview-canvas"></canvas>
+
+  <script>
+    const { electronAPI } = window;
+
+    const youtubeFrame = document.getElementById('youtube-frame');
+    const youtubeContainer = document.getElementById('youtube-container');
+    const previewCanvas = document.getElementById('preview-canvas');
+
+    let currentVideoId = '';
+    let lastUpdateTime = 0;
+    let updatePreviewInterval;
+
+    // ════════════════════════════════════════════════════════════════
+    // YOUTUBE URL HANDLING
+    // ════════════════════════════════════════════════════════════════
+
+    function extractVideoId(urlOrId) {
+      // Handle various YouTube URL formats
+      let videoId = urlOrId;
+
+      // Standard YouTube URL
+      if (urlOrId.includes('youtube.com/watch?v=')) {
+        const match = urlOrId.match(/v=([^&]+)/);
+        videoId = match ? match[1] : urlOrId;
+      }
+      // Short URL
+      else if (urlOrId.includes('youtu.be/')) {
+        const match = urlOrId.match(/youtu\.be\/([^?]+)/);
+        videoId = match ? match[1] : urlOrId;
+      }
+      // Already a video ID
+      else if (urlOrId.length === 11) {
+        videoId = urlOrId;
+      }
+
+      return videoId;
+    }
+
+    function loadYouTubeVideo(videoId) {
+      if (!videoId) return;
+
+      currentVideoId = extractVideoId(videoId);
+
+      // YouTube embedded URL with specific parameters for sync
+      const startTime = Math.floor(Date.now() / 1000) % 60; // Start from seconds into current minute for sync
+      const embedUrl = `https://www.youtube.com/embed/${currentVideoId}?autoplay=1&controls=1&modestbranding=1&rel=0&start=${startTime}`;
+
+      youtubeFrame.src = embedUrl;
+      console.log(`Loading YouTube video: ${currentVideoId}`);
+
+      capturePreviewFrame();
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // INITIALIZATION
+    // ════════════════════════════════════════════════════════════════
+
+    function initialize() {
+      console.log('YouTube display initialized');
+      setupPreviewCanvas();
+
+      // Listen for YouTube video ID/URL updates from controller
+      electronAPI.onYouTubeUrlChange((url) => {
+        console.log('YouTube URL received:', url);
+        loadYouTubeVideo(url);
+      });
+
+      // Start periodic preview capture
+      startPreviewCapture();
+
+      // Load blank initially
+      youtubeFrame.src = 'about:blank';
+    }
+
+    function setupPreviewCanvas() {
+      if (!previewCanvas) return;
+      previewCanvas.width = youtubeContainer.offsetWidth;
+      previewCanvas.height = youtubeContainer.offsetHeight;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // PREVIEW CAPTURE
+    // ════════════════════════════════════════════════════════════════
+
+    function capturePreviewFrame() {
+      try {
+        if (!previewCanvas || !youtubeContainer) return;
+
+        const now = Date.now();
+        if (now - lastUpdateTime < 1000) return; // Throttle updates
+
+        const ctx = previewCanvas.getContext('2d');
+        if (!ctx) return;
+
+        // Draw black background
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+
+        // Draw YouTube logo or info
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 24px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('YouTube', previewCanvas.width / 2, 40);
+
+        // Draw video ID if playing
+        if (currentVideoId) {
+          ctx.font = '14px Arial';
+          ctx.fillStyle = '#aaa';
+          ctx.fillText(`Video: ${currentVideoId}`, previewCanvas.width / 2, previewCanvas.height - 20);
+        } else {
+          ctx.font = '14px Arial';
+          ctx.fillStyle = '#666';
+          ctx.fillText('Waiting for video...', previewCanvas.width / 2, previewCanvas.height - 20);
+        }
+
+        // Send preview data
+        const imageData = previewCanvas.toDataURL('image/jpeg', 0.7);
+        electronAPI.sendPreviewData({
+          role: 'youtube',
+          imageData: imageData,
+          timestamp: Date.now(),
+          videoId: currentVideoId,
+        });
+
+        lastUpdateTime = now;
+      } catch (error) {
+        console.error('Error capturing preview frame:', error);
+      }
+    }
+
+    function startPreviewCapture() {
+      updatePreviewInterval = setInterval(capturePreviewFrame, 1000);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // PLAYBACK SYNC (via IPC)
+    // ════════════════════════════════════════════════════════════════
+
+    // Receive playback commands (play, pause, seek) from controller
+    electronAPI.onPlaybackCommand((cmd, data) => {
+      console.log(`YouTube playback command: ${cmd}`, data);
+
+      // Note: YouTube iframe API has limited cross-origin control
+      // Synchronized playback is handled by:
+      // 1. Starting all videos at the same time from controller
+      // 2. Using same start time in URL parameter
+      // 3. Controller ensures minimal delay between window launches
+    });
+
+    // ════════════════════════════════════════════════════════════════
+    // STARTUP
+    // ════════════════════════════════════════════════════════════════
+
+    window.addEventListener('resize', () => {
+      setupPreviewCanvas();
+      capturePreviewFrame();
+    });
+
+    // Initialize
+    initialize();
+
+    console.log('YouTube player ready');
+  </script>
+</body>
+</html>

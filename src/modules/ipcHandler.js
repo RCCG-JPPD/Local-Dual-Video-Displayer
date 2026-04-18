@@ -125,6 +125,32 @@ class IPCHandler {
     });
 
     // ════════════════════════════════════════════════════════════════
+    // WEB BROWSER CONTROL
+    // ════════════════════════════════════════════════════════════════
+
+    // Controller sends URL to web browsers
+    ipcMain.on('web-url-change', (event, url) => {
+      const webWindow = this.displayManager.windows.web;
+
+      if (webWindow && !webWindow.isDestroyed()) {
+        webWindow.webContents.send('web-url-change', url);
+      }
+    });
+
+    // ════════════════════════════════════════════════════════════════
+    // YOUTUBE PLAYBACK CONTROL
+    // ════════════════════════════════════════════════════════════════
+
+    // Controller sends YouTube video ID/URL to players
+    ipcMain.on('youtube-url-change', (event, url) => {
+      const youtubeWindow = this.displayManager.windows.youtube;
+
+      if (youtubeWindow && !youtubeWindow.isDestroyed()) {
+        youtubeWindow.webContents.send('youtube-url-change', url);
+      }
+    });
+
+    // ════════════════════════════════════════════════════════════════
     // CONFIGURATION / STATE
     // ════════════════════════════════════════════════════════════════
 
