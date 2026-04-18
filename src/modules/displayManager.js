@@ -72,15 +72,19 @@ class DisplayManager {
     const selectorPath = path.join(__dirname, '../ui/displaySelector.html');
     this.windows.selector.loadFile(selectorPath);
 
-    // Send detected displays to selector UI
+    // Push display data to selector by calling applyDisplays() directly in the renderer.
+    // executeJavaScript bypasses IPC entirely - no timing race possible.
     this.windows.selector.webContents.on('did-finish-load', () => {
-      this.windows.selector.webContents.send('displays-detected', displays.map((d, i) => ({
+      const displaysData = JSON.stringify(displays.map((d, i) => ({
         index: i,
         id: d.id,
         label: d.label || `Display ${i + 1}`,
         bounds: d.bounds,
         isPrimary: d.isPrimary,
       })));
+      this.windows.selector.webContents.executeJavaScript(
+        `applyDisplays(${displaysData})`
+      ).catch(err => console.error('executeJavaScript error:', err));
     });
 
     return this.windows.selector;

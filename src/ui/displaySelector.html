@@ -265,54 +265,44 @@
     const { electronAPI } = window;
 
     let displaysList = [];
-    let roleAssignments = {}; // { displayId: 'role' }
+    let roleAssignments = {};
+    let displaysLoaded = false; // guard against double-load from both IPC and executeJavaScript
 
     function showError(msg) {
+      console.error('DisplaySelector error:', msg);
       const div = document.getElementById('error-message');
-      div.textContent = msg;
-      div.classList.add('show');
-      if (electronAPI && electronAPI.log) electronAPI.log('error', msg);
-      else console.error(msg);
+      if (div) { div.textContent = msg; div.classList.add('show'); }
     }
 
+    // Called either from executeJavaScript (primary) or IPC fallback.
+    // Guard ensures it only runs once even if both fire.
     function applyDisplays(displays) {
+      if (displaysLoaded) return;
       if (!displays || displays.length === 0) {
-        showError('No displays returned from main process. Please restart the app.');
+        showError('No displays returned. Please restart the app.');
         return;
       }
+      displaysLoaded = true;
       displaysList = displays;
-      document.getElementById('error-message').classList.remove('show');
+      const errDiv = document.getElementById('error-message');
+      if (errDiv) errDiv.classList.remove('show');
       renderDisplays();
-      if (electronAPI && electronAPI.log) electronAPI.log('info', `Loaded ${displays.length} display(s)`);
     }
 
+    // IPC-based fallback (fires if executeJavaScript somehow fails).
+    // applyDisplays() guard prevents double-render.
     async function loadDisplays() {
+      if (typeof electronAPI === 'undefined' || !electronAPI) return;
       try {
-        if (!electronAPI) {
-          showError('electronAPI is not available. The preload script failed to load.');
-          return;
-        }
-
-        if (electronAPI.log) electronAPI.log('info', 'loadDisplays() called');
-
-        // Preferred: invoke (no timing race, synchronous request/response)
         if (electronAPI.getDisplays) {
-          const displays = await electronAPI.getDisplays();
-          applyDisplays(displays);
-          return;
-        }
-
-        // Fallback: push-based with 5-second timeout (covers old preload versions)
-        if (electronAPI.log) electronAPI.log('info', 'getDisplays not found, using push fallback');
-        const displays = await new Promise((resolve, reject) => {
-          const t = setTimeout(() => reject(new Error('Timeout: no displays-detected after 5s')), 5000);
-          electronAPI.onDisplaysDetected((d) => { clearTimeout(t); resolve(d); });
+          const d = await electronAPI.getDisplays();
+          applyDisplays(d);
+        } else if (electronAPI.onDisplaysDetected) {
+          electronAPI.onDisplaysDetected(d => applyDisplays(d));
           if (electronAPI.requestDisplays) electronAPI.requestDisplays();
-        });
-        applyDisplays(displays);
-
+        }
       } catch (err) {
-        showError('Error loading displays: ' + (err && err.message ? err.message : String(err)));
+        showError('IPC fallback failed: ' + (err && err.message ? err.message : String(err)));
       }
     }
 
