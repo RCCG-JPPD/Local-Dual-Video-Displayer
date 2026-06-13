@@ -29,6 +29,18 @@
       border: none;
       width: 100%;
       height: 100%;
+      display: inline-flex; /* webview needs an explicit display */
+    }
+
+    #placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #888;
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      font-size: 20px;
     }
 
     #preview-canvas {
@@ -41,7 +53,8 @@
 </head>
 <body>
   <div id="web-container">
-    <iframe id="web-frame" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+    <div id="placeholder">Waiting for a web page…</div>
+    <webview id="web-frame" allowpopups></webview>
   </div>
 
   <!-- Hidden canvas for preview rendering -->
@@ -50,11 +63,12 @@
   <script>
     const { electronAPI } = window;
 
-    const webFrame = document.getElementById('web-frame');
+    const webFrame = document.getElementById('web-frame'); // <webview>
     const webContainer = document.getElementById('web-container');
     const previewCanvas = document.getElementById('preview-canvas');
+    const placeholder = document.getElementById('placeholder');
 
-    let currentUrl = 'about:blank';
+    let currentUrl = '';
     let updatePreviewInterval;
 
     // ════════════════════════════════════════════════════════════════
@@ -84,48 +98,22 @@
     function navigateToUrl(url) {
       if (!url) return;
 
-      // Ensure URL has protocol
-      if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('about:')) {
+      // Ensure URL has a protocol
+      if (!/^https?:\/\//i.test(url) && !url.startsWith('about:')) {
         url = 'https://' + url;
       }
 
       currentUrl = url;
+      if (placeholder) placeholder.style.display = 'none';
 
-      // For web display, we need to use a proxy or internal server
-      // For now, create a simple HTML page that can be embedded
-      if (url === 'about:blank' || url.startsWith('about:')) {
-        webFrame.src = url;
-      } else {
-        // Use data URL with iframe for embedding web content
-        // This helps bypass CORS and security restrictions
-        const iframeHtml = `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <style>
-              * { margin: 0; padding: 0; }
-              body { width: 100%; height: 100%; }
-              iframe { width: 100%; height: 100%; border: none; }
-            </style>
-          </head>
-          <body>
-            <iframe src="${url}" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share"></iframe>
-          </body>
-          </html>
-        `;
-        webFrame.src = 'data:text/html,' + encodeURIComponent(iframeHtml);
-      }
+      // <webview> is a real embedded Chromium view, so it loads sites that
+      // refuse to be embedded in an <iframe> (X-Frame-Options / frame-ancestors).
+      webFrame.src = url;
     }
 
     // ════════════════════════════════════════════════════════════════
     // PREVIEW CAPTURE
     // ════════════════════════════════════════════════════════════════
-
-    function setupPreviewCanvas() {
-      if (!previewCanvas) return;
-      previewCanvas.width = webContainer.offsetWidth;
-      previewCanvas.height = webContainer.offsetHeight;
-    }
 
     function capturePreviewFrame() {
       try {
@@ -180,10 +168,12 @@
       capturePreviewFrame();
     });
 
-    // Start loading blank page initially
-    webFrame.src = 'about:blank';
+    // Escape hatch: press Esc to close this fullscreen display window.
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') window.close();
+    });
 
-    // Initialize
+    // Initialize (placeholder stays until the controller sends a URL)
     initialize();
 
     console.log('Web browser display ready');

@@ -273,6 +273,44 @@
       cursor: pointer;
     }
 
+    /* URL INPUT ROWS (YouTube / Web) */
+    .url-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .url-row input[type="text"] {
+      flex: 1;
+      min-width: 220px;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+
+    .url-row input[type="text"]:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .section-hint {
+      font-size: 12px;
+      color: #999;
+      margin-top: 8px;
+    }
+
+    /* A section whose display role isn't assigned to any screen */
+    .controls-section.unavailable {
+      opacity: 0.55;
+    }
+
+    .controls-section.unavailable input,
+    .controls-section.unavailable button {
+      pointer-events: none;
+    }
+
     @media (max-width: 768px) {
       .preview-grid {
         grid-template-columns: 1fr;
@@ -313,9 +351,9 @@
       </div>
     </div>
 
-    <!-- CONTROLS SECTION -->
-    <div class="controls-section">
-      <h2>🎬 Playback Controls</h2>
+    <!-- LOCAL VIDEO SECTION -->
+    <div class="controls-section" id="section-localvideo">
+      <h2>🎬 Local Video</h2>
 
       <!-- Playlist -->
       <div class="playlist-container">
@@ -347,12 +385,33 @@
         <input id="vol" type="range" min="0" max="1" step="0.01" value="1">
       </div>
 
-      <!-- Display Management -->
-      <div class="display-management">
-        <h3>Display Configuration</h3>
-        <div class="display-status" id="display-status">Connected displays: Loading...</div>
-        <button id="reconfigBtn">⚙️ Reconfigure Displays</button>
+    </div>
+
+    <!-- YOUTUBE SECTION -->
+    <div class="controls-section" id="section-youtube">
+      <h2>▶️ YouTube</h2>
+      <div class="url-row">
+        <input id="ytUrl" type="text" placeholder="Paste a YouTube link or video ID…">
+        <button id="ytPlayBtn" class="btn-primary">Play on YouTube screen</button>
       </div>
+      <div class="section-hint" id="ytHint"></div>
+    </div>
+
+    <!-- WEB PAGE SECTION -->
+    <div class="controls-section" id="section-web">
+      <h2>🌐 Web Page</h2>
+      <div class="url-row">
+        <input id="webUrl" type="text" placeholder="Enter a website address (e.g. example.com)…">
+        <button id="webOpenBtn" class="btn-primary">Open on Web screen</button>
+      </div>
+      <div class="section-hint" id="webHint"></div>
+    </div>
+
+    <!-- DISPLAYS SECTION -->
+    <div class="controls-section">
+      <h2>🖥️ Displays</h2>
+      <div class="display-status" id="display-status">Connected displays: Loading...</div>
+      <button id="reconfigBtn">⚙️ Reconfigure Displays</button>
     </div>
   </div>
 
@@ -401,6 +460,9 @@
 
         // Set up preview cards for each display role
         setupPreviewCards();
+
+        // Enable only the sections whose role is assigned to a screen
+        applyRoleAvailability(config);
 
         // Load window status
         const windowStatus = await electronAPI.getWindowStatus();
@@ -619,6 +681,53 @@
       console.log('Reconfigure displays requested');
       electronAPI.reconfigureDisplays();
     };
+
+    // ════════════════════════════════════════════════════════════════
+    // YOUTUBE / WEB CONTROLS
+    // ════════════════════════════════════════════════════════════════
+
+    const ytUrl = document.getElementById('ytUrl');
+    const webUrl = document.getElementById('webUrl');
+
+    function sendYouTube() {
+      const url = ytUrl.value.trim();
+      if (!url) return;
+      electronAPI.sendYouTubeUrl(url);
+      statusBar.textContent = `▶️ Sent to YouTube screen: ${url}`;
+    }
+
+    function sendWeb() {
+      const url = webUrl.value.trim();
+      if (!url) return;
+      electronAPI.sendWebUrl(url);
+      statusBar.textContent = `🌐 Opened on Web screen: ${url}`;
+    }
+
+    document.getElementById('ytPlayBtn').onclick = sendYouTube;
+    document.getElementById('webOpenBtn').onclick = sendWeb;
+    ytUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendYouTube(); });
+    webUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendWeb(); });
+
+    // Dim + disable sections whose display role isn't assigned to any screen,
+    // so the controller only offers what the current setup can actually show.
+    function applyRoleAvailability(cfg) {
+      const roles = new Set((cfg.displays || []).map(d => d.role));
+
+      const sections = {
+        localvideo: roles.has('public') || roles.has('private'),
+        youtube: roles.has('youtube'),
+        web: roles.has('web'),
+      };
+
+      Object.entries(sections).forEach(([key, available]) => {
+        const el = document.getElementById(`section-${key}`);
+        if (el) el.classList.toggle('unavailable', !available);
+      });
+
+      const hint = 'No screen is assigned to this. Use “Reconfigure Displays” to add one.';
+      document.getElementById('ytHint').textContent = sections.youtube ? '' : hint;
+      document.getElementById('webHint').textContent = sections.web ? '' : hint;
+    }
 
     // ════════════════════════════════════════════════════════════════
     // STARTUP

@@ -242,8 +242,9 @@
     <p class="subtitle">Select which displays to use for video, clock, and controls</p>
 
     <div class="instructions">
-      💡 Select a role for each display. You can assign Video (Public), Video (Private), or Clock to different displays.
-      One display should be assigned as Controller for the control panel.
+      💡 Pick what each screen shows: <strong>Video (Public)</strong> / <strong>Video (Private)</strong> for local videos,
+      <strong>YouTube</strong>, a <strong>Web Page</strong>, or a <strong>Clock</strong>. Leave the screen you're working on
+      as <strong>Unassigned</strong> — the control panel always opens on your main screen. Any screen can be reconfigured later.
     </div>
 
     <div id="error-message" class="error-message"></div>
@@ -349,6 +350,8 @@
           <div class="role-selector">
             <button class="role-btn" data-role="public">Video (Public)</button>
             <button class="role-btn" data-role="private">Video (Private)</button>
+            <button class="role-btn" data-role="youtube">YouTube</button>
+            <button class="role-btn" data-role="web">Web Page</button>
             <button class="role-btn" data-role="clock">Clock</button>
             <button class="role-btn" data-role="controller">Controller</button>
             <button class="role-btn" data-role="unassigned">Unassigned</button>
@@ -392,7 +395,7 @@
 
     function updateSummary() {
       const summary = document.getElementById('summary');
-      const roles = ['public', 'private', 'clock', 'controller'];
+      const roles = ['public', 'private', 'youtube', 'web', 'clock', 'controller'];
       let html = '';
 
       roles.forEach(role => {
@@ -402,6 +405,8 @@
         let roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
         if (role === 'public') roleLabel = 'Video (Public)';
         if (role === 'private') roleLabel = 'Video (Private)';
+        if (role === 'youtube') roleLabel = 'YouTube';
+        if (role === 'web') roleLabel = 'Web Page';
 
         const assigned = displayId ? `Display ${displayNum}` : 'Not assigned';
         const className = displayId ? '' : 'unassigned';

@@ -222,6 +222,11 @@
       capturePreviewFrame();
     });
 
+    // Escape hatch: press Esc to close this fullscreen display window.
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') window.close();
+    });
+
     // Initialize
     initialize();
 

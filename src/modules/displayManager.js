@@ -243,7 +243,7 @@ class DisplayManager {
       y: primaryDisplay.bounds.y + 50,
       width: 1000,
       height: 700,
-      alwaysOnTop: true,
+      alwaysOnTop: false, // Control panel behaves like a normal app window
       minimizable: true, // Allow minimize (but won't close children)
       webPreferences: {
         nodeIntegration: false,
@@ -314,6 +314,7 @@ class DisplayManager {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
+        webviewTag: true, // Allow <webview> to embed arbitrary sites (bypasses X-Frame-Options)
         preload: path.join(__dirname, '../../preload.js'),
       },
       show: false, // Don't show immediately

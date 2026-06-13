@@ -170,7 +170,8 @@
       switch (cmd) {
         case 'load':
           console.log(`Loading video: ${data}`);
-          vid.src = `file://${data}`;
+          // Build a correct file:// URL (handles Windows C:\ paths & spaces)
+          vid.src = electronAPI.toFileURL(data);
           vid.currentTime = 0;
           vid.play();
           isPlaying = true;
@@ -232,6 +233,12 @@
     // Handle video errors
     vid.addEventListener('error', (e) => {
       console.error('Video error:', e);
+    });
+
+    // Escape hatch: press Esc to close this fullscreen display window
+    // (so a user on a single screen is never trapped behind it).
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') window.close();
     });
 
     // Listen for config loaded to get window role

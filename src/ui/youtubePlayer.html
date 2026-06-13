@@ -95,9 +95,8 @@
 
       currentVideoId = extractVideoId(videoId);
 
-      // YouTube embedded URL with specific parameters for sync
-      const startTime = Math.floor(Date.now() / 1000) % 60; // Start from seconds into current minute for sync
-      const embedUrl = `https://www.youtube.com/embed/${currentVideoId}?autoplay=1&controls=1&modestbranding=1&rel=0&start=${startTime}`;
+      // YouTube embedded URL — autoplay from the start with native controls.
+      const embedUrl = `https://www.youtube.com/embed/${currentVideoId}?autoplay=1&controls=1&modestbranding=1&rel=0`;
 
       youtubeFrame.src = embedUrl;
       console.log(`Loading YouTube video: ${currentVideoId}`);
@@ -208,6 +207,11 @@
     window.addEventListener('resize', () => {
       setupPreviewCanvas();
       capturePreviewFrame();
+    });
+
+    // Escape hatch: press Esc to close this fullscreen display window.
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') window.close();
     });
 
     // Initialize

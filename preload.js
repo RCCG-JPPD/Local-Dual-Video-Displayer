@@ -82,6 +82,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Open file dialog for video selection
   selectVideoFiles: () => ipcRenderer.invoke('open-file-dialog'),
 
+  // Convert an absolute filesystem path into a correct file:// URL.
+  // Uses Node's pathToFileURL so Windows drive letters (C:\), spaces and
+  // unicode are encoded properly — `file://${path}` breaks on Windows.
+  toFileURL: (p) => require('url').pathToFileURL(p).href,
+
   // ════════════════════════════════════════════════════════════════
   // DISPLAY CONFIGURATION
   // ════════════════════════════════════════════════════════════════

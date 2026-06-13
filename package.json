@@ -20,8 +20,7 @@
     "files": [
       "src/**/*",
       "preload.js",
-      "package.json",
-      "node_modules/**/*"
+      "package.json"
     ],
     "directories": {
       "buildResources": "build"
@@ -60,10 +59,7 @@
     }
   },
   "devDependencies": {
-    "electron-builder": "^24.0.0"
-  },
-  "dependencies": {
     "electron": "^31.0.1",
-    "robotjs": "^0.6.0"
+    "electron-builder": "^24.0.0"
   }
 }

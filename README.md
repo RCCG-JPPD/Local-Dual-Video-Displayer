@@ -1,101 +1,90 @@
-# Multi-Screen Video Player (Electron)
+# RCCG Display Controller
 
-A simple Electron-based video player that spans three displays:
+A cross-platform (Windows-first) **multi-display controller** built on Electron. You open one app, pick what each
+of your screens should show, and drive them all from a single control panel.
 
-1. **Public Screen** – fullscreen video with audio  
-2. **Private Screen** – fullscreen video, muted  
-3. **Controller Screen** – windowed UI for playlist, playback, scrub bar, and volume control
+Each connected screen can be assigned a role:
 
-All windows stay always-on-top (screen-saver level) and restore themselves if minimized or hidden.
+- **Video (Public)** — a local video, fullscreen, with audio.
+- **Video (Private)** — the same local video, fullscreen, muted (confidence/operator monitor). Public + private are
+  controlled together from the controller (load / play / pause / seek / volume).
+- **YouTube** — plays a YouTube link fullscreen.
+- **Web Page** — shows any website fullscreen (rendered in a real embedded Chromium view).
+- **Clock** — a fullscreen clock.
 
----
-
-## 🔧 Features
-
-- **Cross-platform video formats**  
-  Plays any format supported by your OS (MP4, MOV, MKV, AVI, WebM, M4V, WMV, etc.)
-
-- **Flexible file picker**  
-  Choose one or more videos from anywhere on your PC via a native dialog.
-
-- **Playlist management**  
-  • Add / Remove files  
-  • Next / Previous navigation  
-  • Auto-advance through the list
-
-- **Playback controls**  
-  • Play / Pause toggle  
-  • Scrub bar with elapsed and total time  
-  • Volume slider (affects **public** window only)
-
-- **Persistent “always on top”**  
-  All three windows periodically reset their top-most status and prevent being hidden or minimized.
+The control panel shows **live preview thumbnails** of every active screen.
 
 ---
 
-## 🚀 Quick Start
+## Quick start
 
-### Prerequisites
+Requirements: **Node.js & npm**. No native build tools needed — the app has no native dependencies.
 
-- **Node.js & npm** installed  
-- **Windows** (tested on Windows 10/11)
-
-### Installation
-
-1. Clone or download this repo  
-2. Install dependencies  
-   ```bash
-   npm install
-
-	3.	Run the app
-
+```bash
+npm install
 npm start
+```
 
+On first launch you'll see the **display selector**: choose a role for each screen and click **Confirm & Continue**.
+The control panel opens on your main screen, and the assigned content windows open on the screens you picked.
+Your choice is remembered; use **Reconfigure Displays** in the controller to change it.
 
+Press **Esc** on any fullscreen content window to close just that window (handy when testing on a single screen).
 
-⸻
+---
 
-🗂 Project Structure
+## Building a Windows installer
 
-your-app/
-├── main.js            # Main process: window creation, IPC, dialogs, always-on-top enforcement
-├── video-view.html    # Shared view for public & private video windows
-├── controller.html    # Controller UI: playlist, controls, scrub bar, volume
-└── electron_data/     # Auto-created: app data & Chromium cache
+```bash
+npm run build:win    # run this ON Windows
+```
 
+This produces an NSIS installer and a portable `.exe` in `dist/`. (Cross-building from macOS/Linux needs Wine and
+isn't recommended.) An optional custom app icon can be added — see [build/README.md](build/README.md).
 
-⸻
+Other build scripts: `npm run build:mac`, `npm run build` (current platform), `npm run build:all`.
 
-⚙️ How It Works
-	1.	main.js
-	•	Sets userData and cache to electron_data/.
-	•	Creates three BrowserWindow instances, positioned on monitors 1, 2, and 3.
-	•	Mutes the private screen.
-	•	Exposes an IPC handler for open-file-dialog to pick videos.
-	•	Forwards all playback commands (load, play, pause, seek, setVolume) from the controller to both video windows.
-	•	Listens for video-time updates from the public window to update the scrub bar and time labels on the controller.
-	•	Runs a repeating timer to keep windows always on top and prevent minimization/hiding.
-	2.	video-view.html
-	•	Hosts a single <video> element that loads & plays files via IPC commands.
-	•	Sends back current time & duration at 500 ms intervals.
-	3.	controller.html
-	•	Renders a <select>-based playlist.
-	•	“Add…” button opens native file picker (via ipcRenderer.invoke).
-	•	Play/Pause, Next/Prev buttons control playback.
-	•	A <input type="range"> scrub bar and time display reflect & control playback position.
-	•	A volume slider sends setVolume commands (0–1 range).
+---
 
-⸻
+## Project structure
 
-🛠 Future Enhancements
-	•	Persisted playlists (save & restore on launch)
-	•	Drag-and-drop support in controller pane
-	•	Keyboard shortcuts (Space, ←/→, Up/Down for volume)
-	•	Thumbnail previews in playlist items
-	•	Theming / custom CSS for controller UI
+```
+src/
+├── main.js                 # Main process: app lifecycle, startup, single-instance
+├── modules/
+│   ├── displayManager.js   # Detect displays; create selector / controller / content windows
+│   ├── configManager.js    # Load/save config (Electron userData)
+│   ├── ipcHandler.js        # All IPC routing between controller and content windows
+│   └── windowLifecycle.js  # Parent/child window lifecycle (closing controller quits the app)
+├── utils/
+│   └── config.js           # Default config schema
+└── ui/
+    ├── displaySelector.html # First-run screen role picker
+    ├── controller.html      # Control panel (previews, local video, YouTube, web, displays)
+    ├── videoDisplay.html    # Local video window (public/private)
+    ├── youtubePlayer.html   # YouTube window
+    ├── webBrowser.html      # Web page window (<webview>)
+    └── clockDisplay.html    # Clock window
+preload.js                  # Secure contextBridge IPC API exposed to the renderers
+```
 
-⸻
+## How it works
 
-📄 License
+1. **Startup** ([src/main.js](src/main.js)) loads saved config. If none is valid, it shows the **display selector**.
+2. The selector assigns a **role** to each screen and saves it via `ConfigManager`.
+3. `DisplayManager.createAllDisplayWindows()` opens one fullscreen window per assigned role, plus the controller.
+4. The **controller** sends commands over IPC (via `preload.js`'s `electronAPI`) to the content windows, and each
+   content window streams a small JPEG **preview** back to the controller.
 
-This project is released under the MIT License. See LICENSE for details.
+Config and cache live in Electron's standard per-user location (`app.getPath('userData')`), so it works the same in
+development and in an installed build.
+
+## Notes & limitations
+
+- **Web Page** uses a Chromium `<webview>`, which loads sites that block plain `<iframe>` embedding. Some sites with
+  strict policies may still refuse to load.
+- **YouTube** uses the standard embed player; videos that disable embedding won't play.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

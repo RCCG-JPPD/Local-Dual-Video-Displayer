@@ -3,7 +3,6 @@
  * Electron main process for cross-platform video + clock + controller
  */
 
-const path = require('path');
 const { app } = require('electron');
 
 // Modules
@@ -23,13 +22,18 @@ let ipcHandler;
 let userConfig;
 
 // ════════════════════════════════════════════════════════════════
-// DATA PATH SETUP
+// SINGLE INSTANCE
 // ════════════════════════════════════════════════════════════════
 
-// Redirect Electron's data & cache into a local folder
-const myDataDir = path.join(__dirname, '../../electron_data');
-app.setPath('userData', myDataDir);
-app.setPath('cache', path.join(myDataDir, 'Cache'));
+// Ensure only one copy of the app runs. The 'second-instance' handler
+// (below) focuses the existing controller when a second launch is attempted.
+// Note: config/cache use Electron's standard per-user location
+// (app.getPath('userData')), which works in both dev and packaged builds —
+// see ConfigManager. We intentionally do NOT redirect userData into the app
+// folder, because that folder is read-only inside a packaged app.asar.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+}
 
 // ════════════════════════════════════════════════════════════════
 // APPLICATION LIFECYCLE
@@ -96,9 +100,16 @@ function launchDisplayWindows() {
     const displays = displayManager.detectDisplays();
     const primaryDisplay = displays[0];
 
-    // Create controller window first
-    const controllerWindow = displayManager.createControllerWindow(primaryDisplay);
-    lifecycleManager.setParentWindow(controllerWindow);
+    // Create controller window first — but reuse the existing one if we're
+    // re-launching after a reconfigure (otherwise we'd spawn a duplicate
+    // controller, and closing it quits the app via the lifecycle manager).
+    const existingController = displayManager.windows.controller;
+    if (existingController && !existingController.isDestroyed()) {
+      console.log('Reusing existing controller window');
+    } else {
+      const controllerWindow = displayManager.createControllerWindow(primaryDisplay);
+      lifecycleManager.setParentWindow(controllerWindow);
+    }
 
     // Create all configured display windows dynamically
     // Supports: public_video, private_video, clock, web, youtube, unassigned
