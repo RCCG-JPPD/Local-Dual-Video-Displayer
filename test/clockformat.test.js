@@ -10,9 +10,10 @@ test('formatClock 24h without seconds', () => {
   assert.equal(formatClock(new Date(2025, 0, 1, 9, 7, 3), { showSeconds: false, hour12: false }), '09:07');
 });
 
-test('formatClock 12h', () => {
-  assert.equal(formatClock(new Date(2025, 0, 1, 14, 5, 0), { showSeconds: false, hour12: true }), '2:05 PM');
+test('formatClock 12h (2-digit hour, matches toLocaleTimeString en-US)', () => {
+  assert.equal(formatClock(new Date(2025, 0, 1, 14, 5, 0), { showSeconds: false, hour12: true }), '02:05 PM');
   assert.equal(formatClock(new Date(2025, 0, 1, 0, 5, 0), { showSeconds: false, hour12: true }), '12:05 AM');
+  assert.equal(formatClock(new Date(2025, 0, 1, 9, 5, 0), { showSeconds: false, hour12: true }), '09:05 AM');
 });
 
 test('formatDuration shows MM:SS under an hour', () => {

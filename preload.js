@@ -8,7 +8,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 const { extractVideoId } = require('./src/utils/youtube');
 const { normalizeUrl } = require('./src/utils/weburl');
 const { formatClock, formatDuration, secondsUntil } = require('./src/utils/clockformat');
-const { getActiveHoliday, HOLIDAY_KEYS } = require('./src/utils/holidays');
+const { getActiveHoliday, HOLIDAY_KEYS, ANIMATIONS } = require('./src/utils/holidays');
+const { THEMES, resolveTheme } = require('./src/utils/clockThemes');
 
 // Expose safe IPC APIs to renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -25,6 +26,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   secondsUntil: (target, now) => secondsUntil(target, now),
   getActiveHoliday: (date) => getActiveHoliday(date),
   holidayList: () => HOLIDAY_KEYS,
+  animationList: () => ANIMATIONS,
+  clockThemes: () => THEMES,
+  resolveClockTheme: (themeKey, holidayKey) => resolveTheme(themeKey, holidayKey),
 
   // ════════════════════════════════════════════════════════════════
   // CONFIG & STATE
@@ -91,6 +95,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('youtube-url-change', (event, url) => {
       callback(url);
     });
+  },
+
+  // Controller → YouTube playback commands (play/pause/setVolume/mute)
+  sendYouTubeCommand: (cmd, data) => ipcRenderer.send('youtube-command', cmd, data),
+  onYouTubeCommand: (callback) => {
+    ipcRenderer.on('youtube-command', (event, cmd, data) => callback(cmd, data));
   },
 
   // ════════════════════════════════════════════════════════════════

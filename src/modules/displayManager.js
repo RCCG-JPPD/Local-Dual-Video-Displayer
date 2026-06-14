@@ -19,7 +19,7 @@ const CLOCK_SIZES = {
   medium: { w: 460, h: 150 },
   large: { w: 680, h: 210 },
 };
-const CLOCK_MARGIN = 24;
+const CLOCK_MARGIN = 0; // clock widget sits flush in the corner (no gap)
 
 /** Compute the clock widget's rectangle within a display, for a size + corner. */
 function clockRect(bounds, sizeKey, corner) {
@@ -260,7 +260,9 @@ class DisplayManager {
   }
 
   createYouTubeWindow(displayIndex) {
-    return this._createContentWindow(displayIndex, 'youtube', 'youtubePlayer.html', { sandbox: false });
+    // webviewTag lets the player navigate a real youtube.com context (avoids the
+    // file:// embed "Error 153") and lets us script play/pause/volume.
+    return this._createContentWindow(displayIndex, 'youtube', 'youtubePlayer.html', { sandbox: false, webviewTag: true });
   }
 
   /**
@@ -324,6 +326,7 @@ class DisplayManager {
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: false,
+        webviewTag: true, // the controller embeds a <webview> browser for the Web Page feature
         preload: PRELOAD,
       },
       show: true,

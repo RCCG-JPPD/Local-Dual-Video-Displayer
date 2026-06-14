@@ -4,201 +4,81 @@
   <meta charset="UTF-8">
   <title>YouTube Player Display</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+    #yt {
+      width: 100%; height: 100%; border: none; display: inline-flex;
     }
-
-    html, body {
-      width: 100%;
-      height: 100%;
-      background: #000;
-      overflow: hidden;
+    #placeholder {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      color: #888; font-family: 'Segoe UI', sans-serif; font-size: 22px;
     }
-
-    #youtube-container {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    #youtube-frame {
-      width: 100%;
-      height: 100%;
-      border: none;
-    }
-
-    #preview-canvas {
-      display: none;
-      position: absolute;
-      top: -9999px;
-      left: -9999px;
-    }
+    #preview-canvas { display: none; position: absolute; top: -9999px; left: -9999px; }
   </style>
 </head>
 <body>
-  <div id="youtube-container">
-    <iframe
-      id="youtube-frame"
-      width="100%"
-      height="100%"
-      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-      allowfullscreen>
-    </iframe>
-  </div>
-
-  <!-- Hidden canvas for preview rendering -->
+  <div id="placeholder">Waiting for a YouTube video…</div>
+  <!-- A real webview navigates to youtube.com itself, so the file:// embed
+       restriction ("Error 153") does not apply, and we can script the <video>. -->
+  <webview id="yt" allowpopups></webview>
   <canvas id="preview-canvas"></canvas>
 
   <script>
     // electronAPI is a preload global (contextBridge) — don't redeclare it.
-
-    const youtubeFrame = document.getElementById('youtube-frame');
-    const youtubeContainer = document.getElementById('youtube-container');
+    const yt = document.getElementById('yt');
+    const placeholder = document.getElementById('placeholder');
     const previewCanvas = document.getElementById('preview-canvas');
-
     let currentVideoId = '';
-    let lastUpdateTime = 0;
-    let updatePreviewInterval;
+    let webviewReady = false;
 
-    // ════════════════════════════════════════════════════════════════
-    // YOUTUBE URL HANDLING
-    // ════════════════════════════════════════════════════════════════
+    function loadYouTubeVideo(input) {
+      const id = electronAPI.extractYouTubeId(input);
+      if (!id) { console.warn('Could not parse a YouTube video ID from:', input); return; }
+      currentVideoId = id;
+      placeholder.style.display = 'none';
+      // enablejsapi so the page exposes the player; we also script <video> directly.
+      yt.src = `https://www.youtube.com/embed/${id}?autoplay=1&controls=1&rel=0&modestbranding=1&playsinline=1&enablejsapi=1`;
+    }
 
-    function loadYouTubeVideo(videoId) {
-      if (!videoId) return;
+    yt.addEventListener('dom-ready', () => { webviewReady = true; });
 
-      currentVideoId = electronAPI.extractYouTubeId(videoId);
-      if (!currentVideoId) {
-        console.warn('Could not parse a YouTube video ID from:', videoId);
-        return;
+    electronAPI.onYouTubeUrlChange((url) => loadYouTubeVideo(url));
+
+    // Drive the embedded player from the controller by scripting its <video>.
+    function ytExec(js) {
+      if (!webviewReady) return;
+      yt.executeJavaScript(js).catch(() => {});
+    }
+    electronAPI.onYouTubeCommand((cmd, data) => {
+      switch (cmd) {
+        case 'play':  ytExec("var v=document.querySelector('video'); if(v) v.play();"); break;
+        case 'pause': ytExec("var v=document.querySelector('video'); if(v) v.pause();"); break;
+        case 'toggle': ytExec("var v=document.querySelector('video'); if(v){ v.paused? v.play() : v.pause(); }"); break;
+        case 'setVolume': {
+          const vol = Math.max(0, Math.min(1, Number(data) || 0));
+          ytExec(`var v=document.querySelector('video'); if(v){ v.muted=false; v.volume=${vol}; }`);
+          break;
+        }
+        case 'mute': ytExec(`var v=document.querySelector('video'); if(v) v.muted=${data ? 'true' : 'false'};`); break;
       }
+    });
 
-      // YouTube embedded URL — autoplay from the start with native controls.
-      const embedUrl = `https://www.youtube.com/embed/${currentVideoId}?autoplay=1&controls=1&modestbranding=1&rel=0`;
-
-      youtubeFrame.src = embedUrl;
-      console.log(`Loading YouTube video: ${currentVideoId}`);
-
-      capturePreviewFrame();
-    }
-
-    // ════════════════════════════════════════════════════════════════
-    // INITIALIZATION
-    // ════════════════════════════════════════════════════════════════
-
-    function initialize() {
-      console.log('YouTube display initialized');
-      setupPreviewCanvas();
-
-      // Listen for YouTube video ID/URL updates from controller
-      electronAPI.onYouTubeUrlChange((url) => {
-        console.log('YouTube URL received:', url);
-        loadYouTubeVideo(url);
-      });
-
-      // Start periodic preview capture
-      startPreviewCapture();
-
-      // Load blank initially
-      youtubeFrame.src = 'about:blank';
-    }
-
-    function setupPreviewCanvas() {
-      if (!previewCanvas) return;
-      previewCanvas.width = youtubeContainer.offsetWidth;
-      previewCanvas.height = youtubeContainer.offsetHeight;
-    }
-
-    // ════════════════════════════════════════════════════════════════
-    // PREVIEW CAPTURE
-    // ════════════════════════════════════════════════════════════════
-
+    // ── controller thumbnail (kept lightweight) ──
     function capturePreviewFrame() {
       try {
-        if (!previewCanvas || !youtubeContainer) return;
-
-        const now = Date.now();
-        if (now - lastUpdateTime < 1000) return; // Throttle updates
-
+        previewCanvas.width = 320; previewCanvas.height = 180;
         const ctx = previewCanvas.getContext('2d');
-        if (!ctx) return;
-
-        // Draw black background
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
-
-        // Draw YouTube logo or info
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 24px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('YouTube', previewCanvas.width / 2, 40);
-
-        // Draw video ID if playing
-        if (currentVideoId) {
-          ctx.font = '14px Arial';
-          ctx.fillStyle = '#aaa';
-          ctx.fillText(`Video: ${currentVideoId}`, previewCanvas.width / 2, previewCanvas.height - 20);
-        } else {
-          ctx.font = '14px Arial';
-          ctx.fillStyle = '#666';
-          ctx.fillText('Waiting for video...', previewCanvas.width / 2, previewCanvas.height - 20);
-        }
-
-        // Send preview data
-        const imageData = previewCanvas.toDataURL('image/jpeg', 0.7);
-        electronAPI.sendPreviewData({
-          role: 'youtube',
-          imageData: imageData,
-          timestamp: Date.now(),
-          videoId: currentVideoId,
-        });
-
-        lastUpdateTime = now;
-      } catch (error) {
-        console.error('Error capturing preview frame:', error);
-      }
+        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 320, 180);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 24px Arial'; ctx.textAlign = 'center';
+        ctx.fillText('YouTube', 160, 40);
+        ctx.font = '14px Arial'; ctx.fillStyle = '#aaa';
+        ctx.fillText(currentVideoId ? `Video: ${currentVideoId}` : 'Waiting for video…', 160, 160);
+        electronAPI.sendPreviewData({ role: 'youtube', imageData: previewCanvas.toDataURL('image/jpeg', 0.7), videoId: currentVideoId });
+      } catch (_) {}
     }
+    setInterval(capturePreviewFrame, 1500);
 
-    function startPreviewCapture() {
-      updatePreviewInterval = setInterval(capturePreviewFrame, 1000);
-    }
-
-    // ════════════════════════════════════════════════════════════════
-    // PLAYBACK SYNC (via IPC)
-    // ════════════════════════════════════════════════════════════════
-
-    // Receive playback commands (play, pause, seek) from controller
-    electronAPI.onPlaybackCommand((cmd, data) => {
-      console.log(`YouTube playback command: ${cmd}`, data);
-
-      // Note: YouTube iframe API has limited cross-origin control
-      // Synchronized playback is handled by:
-      // 1. Starting all videos at the same time from controller
-      // 2. Using same start time in URL parameter
-      // 3. Controller ensures minimal delay between window launches
-    });
-
-    // ════════════════════════════════════════════════════════════════
-    // STARTUP
-    // ════════════════════════════════════════════════════════════════
-
-    window.addEventListener('resize', () => {
-      setupPreviewCanvas();
-      capturePreviewFrame();
-    });
-
-    // Escape hatch: press Esc to close this fullscreen display window.
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') window.close();
-    });
-
-    // Initialize
-    initialize();
-
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.close(); });
     console.log('YouTube player ready');
   </script>
 </body>

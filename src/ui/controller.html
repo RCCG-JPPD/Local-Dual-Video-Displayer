@@ -301,6 +301,19 @@
       margin-top: 8px;
     }
 
+    /* Controller web browser */
+    .web-toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+    .web-toolbar input {
+      flex: 1; min-width: 160px; padding: 8px 10px;
+      border: 1px solid #ddd; border-radius: 4px; font-size: 13px;
+    }
+    .web-toolbar input:focus { outline: none; border-color: #667eea; }
+    .ctl-web {
+      width: 100%; height: 380px; border: 1px solid #ddd; border-radius: 6px;
+      background: #fff; display: inline-flex;
+    }
+    .controls-section.unavailable webview { pointer-events: none; }
+
     /* Clock settings grid */
     .clock-grid {
       display: grid;
@@ -439,19 +452,32 @@
       <h2>▶️ YouTube</h2>
       <div class="url-row">
         <input id="ytUrl" type="text" placeholder="Paste a YouTube link or video ID…">
-        <button id="ytPlayBtn" class="btn-primary">Play on YouTube screen</button>
+        <button id="ytPlayBtn" class="btn-primary">Load on YouTube screen</button>
+      </div>
+      <div class="playback-controls" style="margin-top:12px;">
+        <button id="ytPlay">▶ Play</button>
+        <button id="ytPause">⏸ Pause</button>
+        <button id="ytMute">🔇 Mute</button>
+        <span style="display:flex;align-items:center;gap:8px;">
+          <label for="ytVol" style="font-size:13px;color:#666;">🔊 Volume</label>
+          <input id="ytVol" type="range" min="0" max="1" step="0.01" value="1" style="width:140px;">
+        </span>
       </div>
       <div class="section-hint" id="ytHint"></div>
     </div>
 
-    <!-- WEB PAGE SECTION -->
+    <!-- WEB PAGE SECTION — browse here; the page mirrors onto the Web screen(s) -->
     <div class="controls-section" id="section-web">
       <h2>🌐 Web Page</h2>
-      <div class="url-row">
+      <div class="web-toolbar">
+        <button id="webBack" title="Back">◀</button>
+        <button id="webFwd" title="Forward">▶</button>
+        <button id="webReload" title="Reload">⟳</button>
         <input id="webUrl" type="text" placeholder="Enter a website address (e.g. example.com)…">
-        <button id="webOpenBtn" class="btn-primary">Open on Web screen</button>
+        <button id="webGo" class="btn-primary">Go</button>
       </div>
-      <div class="section-hint" id="webHint"></div>
+      <webview id="ctlWeb" class="ctl-web" src="about:blank" allowpopups></webview>
+      <div class="section-hint" id="webHint">Browse here — the page is mirrored onto your Web screen(s).</div>
     </div>
 
     <!-- CLOCK SECTION -->
@@ -487,7 +513,7 @@
             <option value="light">Light (white bg)</option>
           </select>
         </label>
-        <label>Holiday animation
+        <label>Effect / animation
           <select id="clkHoliday"></select>
         </label>
         <label class="clk-check"><input type="checkbox" id="clkSeconds"> Show seconds</label>
@@ -556,7 +582,6 @@
     let isPlaying = false;
     let duration = 0;
     let config = {};
-    let previewContainers = {};
 
     // ════════════════════════════════════════════════════════════════
     // INITIALIZATION
@@ -574,14 +599,11 @@
           renderPlaylist();
         }
 
-        // Set up preview cards for each display role
-        setupPreviewCards();
+        // Apply role availability + clock controls for the current config
+        refreshControllerForConfig(config);
 
-        // Enable only the sections whose role is assigned to a screen
-        applyRoleAvailability(config);
-
-        // Populate the Clock controls from saved settings
-        initClockControls(config);
+        // Start live whole-screen previews
+        startScreenPreviews();
 
         // Load window status
         const windowStatus = await electronAPI.getWindowStatus();
@@ -595,44 +617,61 @@
       }
     }
 
-    function setupPreviewCards() {
+    const ROLE_LABELS = { video: 'Video', youtube: 'YouTube', web: 'Web Page', clock: 'Clock' };
+
+    // Re-apply everything that depends on the current config (used on first load
+    // AND after Reconfigure, via onConfigLoaded — so sections/clock re-enable live).
+    function refreshControllerForConfig(cfg) {
+      applyRoleAvailability(cfg);
+      initClockControls(cfg);
+    }
+
+    // ── Live WHOLE-SCREEN previews (desktopCapturer): one card per assigned screen ──
+    let previewTimer = null;
+    function startScreenPreviews() {
+      refreshScreenPreviews();
+      if (previewTimer) clearInterval(previewTimer);
+      previewTimer = setInterval(refreshScreenPreviews, 1500);
+    }
+
+    async function refreshScreenPreviews() {
+      let previews = [];
+      try { previews = await electronAPI.getScreenPreviews(); } catch (_) {}
+      const byId = new Map((previews || []).filter(p => p.id != null).map(p => [String(p.id), p.dataURL]));
+
+      const displays = (config.displays || []).filter(d => d.role && d.role !== 'unassigned');
       previewGrid.innerHTML = '';
-      previewContainers = {};
+      if (!displays.length) {
+        previewGrid.innerHTML = '<div class="preview-status" style="padding:10px">No screens assigned yet — use “Reconfigure Displays”.</div>';
+        return;
+      }
 
-      const roleLabels = {
-        video: 'Video',
-        youtube: 'YouTube',
-        web: 'Web Page',
-        clock: 'Clock',
-      };
-
-      Object.entries(roleLabels).forEach(([role, label]) => {
+      displays.forEach((d, i) => {
         const card = document.createElement('div');
         card.className = 'preview-card';
-        card.id = `preview-${role}`;
 
         const image = document.createElement('div');
         image.className = 'preview-image';
-        image.textContent = 'Waiting for preview...';
+        const url = byId.get(String(d.id)) || (previews[i] && previews[i].dataURL);
+        if (url) {
+          const im = document.createElement('img');
+          im.src = url;
+          image.appendChild(im);
+        } else {
+          image.textContent = 'No preview';
+        }
 
         const info = document.createElement('div');
         info.className = 'preview-info';
-
         const roleLabel = document.createElement('div');
         roleLabel.className = 'preview-role';
-        roleLabel.textContent = label;
-
-        const status = document.createElement('div');
-        status.className = 'preview-status';
-        status.textContent = 'Connecting...';
-
+        const num = (d.displayIndex != null ? d.displayIndex : i) + 1;
+        roleLabel.textContent = `Screen ${num} · ${ROLE_LABELS[d.role] || d.role}`;
         info.appendChild(roleLabel);
-        info.appendChild(status);
+
         card.appendChild(image);
         card.appendChild(info);
         previewGrid.appendChild(card);
-
-        previewContainers[role] = { image, status };
       });
     }
 
@@ -678,6 +717,14 @@
     function pathBasename(p) {
       return p.split(/[\\/]/).pop();
     }
+
+    // Double-click (or Enter on) a playlist item to play it.
+    playlistSel.addEventListener('dblclick', () => {
+      if (playlistSel.selectedIndex >= 0) load(playlistSel.selectedIndex);
+    });
+    playlistSel.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && playlistSel.selectedIndex >= 0) load(playlistSel.selectedIndex);
+    });
 
     // ════════════════════════════════════════════════════════════════
     // PLAYBACK CONTROL
@@ -747,33 +794,20 @@
 
     volSlider.oninput = () => send('setVolume', parseFloat(volSlider.value));
 
-    // ════════════════════════════════════════════════════════════════
-    // PREVIEW UPDATES
-    // ════════════════════════════════════════════════════════════════
+    // Previews are now live whole-screen thumbnails (see refreshScreenPreviews).
 
-    electronAPI.onPreviewUpdate((data) => {
-      if (!data || !data.role) return;
-
-      const container = previewContainers[data.role];
-      if (!container) return;
-
-      if (data.imageData) {
-        const img = document.createElement('img');
-        img.src = data.imageData;
-        img.style.maxWidth = '100%';
-        img.style.maxHeight = '100%';
-        container.image.innerHTML = '';
-        container.image.appendChild(img);
+    // Re-sync the controller when the config changes (after Reconfigure) so the
+    // YouTube / Web / Clock sections re-enable without restarting the app.
+    electronAPI.onConfigLoaded((cfg) => {
+      if (!cfg) return;
+      config = cfg;
+      if (cfg.playback && Array.isArray(cfg.playback.playlist)) {
+        playlist = cfg.playback.playlist;
+        renderPlaylist();
       }
-
-      // Update status based on role
-      if (data.role === 'clock') {
-        container.status.textContent = data.time || 'Connected';
-      } else {
-        const timeStr = data.currentTime ? `${fmt(data.currentTime)} / ${fmt(data.duration)}` : 'Ready';
-        const status = data.isPaused ? `⏸ ${timeStr}` : `▶ ${timeStr}`;
-        container.status.textContent = status;
-      }
+      refreshControllerForConfig(cfg);
+      refreshScreenPreviews();
+      electronAPI.getWindowStatus().then(updateDisplayStatus).catch(() => {});
     });
 
     // ════════════════════════════════════════════════════════════════
@@ -807,11 +841,10 @@
     document.getElementById('helpBtn').onclick = () => electronAPI.openHelp();
 
     // ════════════════════════════════════════════════════════════════
-    // YOUTUBE / WEB CONTROLS
+    // YOUTUBE CONTROL
     // ════════════════════════════════════════════════════════════════
 
     const ytUrl = document.getElementById('ytUrl');
-    const webUrl = document.getElementById('webUrl');
 
     function sendYouTube() {
       const url = ytUrl.value.trim();
@@ -820,17 +853,51 @@
       statusBar.textContent = `▶️ Sent to YouTube screen: ${url}`;
     }
 
-    function sendWeb() {
-      const url = webUrl.value.trim();
-      if (!url) return;
-      electronAPI.sendWebUrl(url);
-      statusBar.textContent = `🌐 Opened on Web screen: ${url}`;
+    document.getElementById('ytPlayBtn').onclick = sendYouTube;
+    ytUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendYouTube(); });
+
+    // YouTube playback controls (drive the embedded player on the YouTube screen).
+    let ytMuted = false;
+    document.getElementById('ytPlay').onclick = () => electronAPI.sendYouTubeCommand('play');
+    document.getElementById('ytPause').onclick = () => electronAPI.sendYouTubeCommand('pause');
+    document.getElementById('ytVol').oninput = (e) => electronAPI.sendYouTubeCommand('setVolume', parseFloat(e.target.value));
+    document.getElementById('ytMute').onclick = () => {
+      ytMuted = !ytMuted;
+      electronAPI.sendYouTubeCommand('mute', ytMuted);
+      document.getElementById('ytMute').textContent = ytMuted ? '🔈 Unmute' : '🔇 Mute';
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    // WEB BROWSER — browse in the controller; mirror the page to web screens
+    // ════════════════════════════════════════════════════════════════
+
+    const ctlWeb = document.getElementById('ctlWeb');
+    const webUrl = document.getElementById('webUrl');
+    let webReady = false;
+
+    function goWeb() {
+      const url = electronAPI.normalizeWebUrl(webUrl.value);
+      if (url) ctlWeb.src = url; // setting src navigates (works before/after dom-ready)
     }
 
-    document.getElementById('ytPlayBtn').onclick = sendYouTube;
-    document.getElementById('webOpenBtn').onclick = sendWeb;
-    ytUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendYouTube(); });
-    webUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendWeb(); });
+    document.getElementById('webGo').onclick = goWeb;
+    webUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') goWeb(); });
+    document.getElementById('webBack').onclick = () => { if (webReady && ctlWeb.canGoBack()) ctlWeb.goBack(); };
+    document.getElementById('webFwd').onclick = () => { if (webReady && ctlWeb.canGoForward()) ctlWeb.goForward(); };
+    document.getElementById('webReload').onclick = () => { if (webReady) ctlWeb.reload(); };
+
+    ctlWeb.addEventListener('dom-ready', () => { webReady = true; });
+
+    // Mirror whatever the controller browses (typed URL or clicked links) to the web screens.
+    function mirrorWeb(url) {
+      if (!url || url === 'about:blank') return;
+      webUrl.value = url;
+      electronAPI.sendWebUrl(url);
+    }
+    ctlWeb.addEventListener('did-navigate', (e) => mirrorWeb(e.url));
+    ctlWeb.addEventListener('did-navigate-in-page', (e) => { if (e.isMainFrame) mirrorWeb(e.url); });
+    // Keep target=_blank / popups inside the same embedded browser.
+    ctlWeb.addEventListener('new-window', (e) => { if (e.url) ctlWeb.src = e.url; });
 
     // ════════════════════════════════════════════════════════════════
     // CLOCK CONTROLS
@@ -853,16 +920,22 @@
       hint: document.getElementById('clkHint'),
     };
 
+    const titleCase = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
     function initClockControls(cfg) {
       const c = (cfg && cfg.clock) || {};
 
-      // Populate holiday dropdown: Auto, Off, then each holiday.
-      clk.holiday.innerHTML = '<option value="auto">Auto (by date)</option><option value="off">Off</option>'
-        + (electronAPI.holidayList() || []).map(h => `<option value="${h.key}">${h.name}</option>`).join('');
+      // Populate Theme dropdown from the shared theme list.
+      clk.theme.innerHTML = (electronAPI.clockThemes() || [])
+        .map(t => `<option value="${t.key}">${t.name}</option>`).join('');
+
+      // Populate the Effect dropdown: Auto (by holiday), Off, then each effect.
+      clk.holiday.innerHTML = '<option value="auto">Auto (by holiday)</option><option value="off">Off</option>'
+        + (electronAPI.animationList() || []).map(a => `<option value="${a}">${titleCase(a)}</option>`).join('');
 
       clk.mode.value = c.mode || 'time';
-      clk.size.value = c.size || 'large';
-      clk.corner.value = c.corner || 'center';
+      clk.size.value = c.size || 'medium';
+      clk.corner.value = c.corner || 'bottom-right';
       clk.theme.value = c.theme || 'dark';
       clk.holiday.value = c.holiday || 'auto';
       clk.seconds.checked = c.showSeconds !== false;
@@ -925,7 +998,9 @@
 
       const hint = 'No screen is assigned to this. Use “Reconfigure Displays” to add one.';
       document.getElementById('ytHint').textContent = sections.youtube ? '' : hint;
-      document.getElementById('webHint').textContent = sections.web ? '' : hint;
+      document.getElementById('webHint').textContent = sections.web
+        ? 'Browse here — the page is mirrored onto your Web screen(s).'
+        : hint;
     }
 
     // ════════════════════════════════════════════════════════════════

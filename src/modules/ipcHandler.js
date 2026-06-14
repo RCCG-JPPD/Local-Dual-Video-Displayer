@@ -119,6 +119,11 @@ class IPCHandler {
       this.broadcastToRole('youtube', 'youtube-url-change', url);
     });
 
+    // Controller → YouTube screens: play / pause / setVolume / mute.
+    ipcMain.on('youtube-command', (event, cmd, data) => {
+      this.broadcastToRole('youtube', 'youtube-command', cmd, data);
+    });
+
     // ════════════════════════════════════════════════════════════════
     // CLOCK SETTINGS
     // ════════════════════════════════════════════════════════════════

@@ -157,9 +157,9 @@
       handlePlaybackCommand(cmd, data);
     });
 
-    // Send video time to controller every 500ms
+    // Send video time to controller every 500ms (main forwards only the primary video window)
     setInterval(() => {
-      if (!isNaN(vid.duration) && windowRole === 'public') {
+      if (!isNaN(vid.duration) && windowRole === 'video') {
         electronAPI.sendVideoTime(vid.currentTime, vid.duration);
       }
     }, 500);

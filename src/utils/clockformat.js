@@ -20,7 +20,8 @@ function formatClock(date, opts = {}) {
     suffix = h >= 12 ? ' PM' : ' AM';
     h = h % 12 || 12;
   }
-  const hh = hour12 ? String(h) : pad(h);
+  // Pad the hour to 2 digits in both 24h and 12h (matches toLocaleTimeString 'en-US').
+  const hh = pad(h);
   let out = `${hh}:${pad(m)}`;
   if (showSeconds) out += `:${pad(s)}`;
   return out + suffix;

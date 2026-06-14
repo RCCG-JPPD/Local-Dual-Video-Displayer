@@ -73,8 +73,8 @@ function holidaysForYear(year) {
   ];
 }
 
-/** Animation keys, ordered, used by both clock and controller dropdown. */
-const ANIMATIONS = ['fireworks', 'snow', 'petals', 'stars', 'flames'];
+/** Animation/effect keys, ordered, used by both clock and controller dropdown. */
+const ANIMATIONS = ['fireworks', 'snow', 'petals', 'stars', 'flames', 'sunrays', 'leaves', 'bubbles', 'hearts'];
 
 /** Stable list of holidays + their default animation, for the controller UI. */
 const HOLIDAY_KEYS = [

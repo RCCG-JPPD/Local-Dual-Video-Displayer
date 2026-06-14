@@ -8,14 +8,10 @@
 
     html, body {
       width: 100%; height: 100%; overflow: hidden;
-      font-family: 'Segoe UI', Tahoma, sans-serif;
+      background: #0d1117; color: #ffffff; /* overridden by theme */
       -webkit-app-region: drag; /* let the operator drag the widget, like the old clock */
       cursor: default;
     }
-
-    /* The whole (small) window is a solid card; the clock fills it. */
-    body.theme-dark  { background: #0d1117; color: #ffffff; }
-    body.theme-light { background: #ffffff; color: #111111; }
 
     /* Holiday animation canvas sits behind the clock text. */
     #fx { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
@@ -24,20 +20,19 @@
       position: fixed; inset: 0; z-index: 1;
       display: flex; align-items: center; justify-content: center;
     }
+    /* Match the old church clock: system sans-serif, big, dynamically scaled. */
     #clock {
-      font-weight: 300;
-      letter-spacing: 1px;
+      font-weight: 400;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
       font-variant-numeric: tabular-nums;
-      font-family: 'Monaco', 'Courier New', monospace;
       line-height: 1;
       white-space: nowrap;
-      text-shadow: 0 2px 14px rgba(0, 0, 0, 0.3);
     }
 
     #preview-canvas { display: none; position: absolute; top: -9999px; left: -9999px; }
   </style>
 </head>
-<body class="theme-dark">
+<body>
   <canvas id="fx"></canvas>
   <div id="stage"><div id="clock">00:00:00</div></div>
   <canvas id="preview-canvas"></canvas>
@@ -61,7 +56,12 @@
 
     function applySettings(next) {
       settings = { ...settings, ...(next || {}) };
-      bodyEl.className = `theme-${settings.theme === 'light' ? 'light' : 'dark'}`;
+
+      // Apply theme (auto tints to the active holiday).
+      const holidayKey = electronAPI.getActiveHoliday(new Date())?.key;
+      const theme = electronAPI.resolveClockTheme(settings.theme, holidayKey);
+      bodyEl.style.background = theme.bg;
+      clockEl.style.color = theme.text;
 
       const cd = settings.countdown || { hours: 0, minutes: 0, seconds: 0 };
       const key = `${cd.hours}:${cd.minutes}:${cd.seconds}`;
@@ -78,12 +78,16 @@
     }
 
     function resolveAnimation(s) {
-      if (s.holiday === 'off') return null;
-      if (s.holiday === 'auto') {
+      const effect = s.holiday; // 'auto' | 'off' | <effect key>
+      if (effect === 'off') return null;
+      if (effect === 'auto') {
         const a = electronAPI.getActiveHoliday(new Date());
         return a ? a.animation : null;
       }
-      const found = (electronAPI.holidayList() || []).find(x => x.key === s.holiday);
+      // A specific effect was forced.
+      if ((electronAPI.animationList() || []).includes(effect)) return effect;
+      // Back-compat: a holiday key → its animation.
+      const found = (electronAPI.holidayList() || []).find(x => x.key === effect);
       return found ? found.animation : null;
     }
 
@@ -139,6 +143,8 @@
       currentAnim = key; particles = [];
       if (rafId) cancelAnimationFrame(rafId);
       ctx.clearRect(0, 0, fx.width, fx.height);
+      // The sunrays effect casts a shadow on the clock; clear it for other effects.
+      if (key !== 'sunrays') clockEl.style.textShadow = '';
       if (currentAnim) loop();
     }
     const rand = (a, b) => a + Math.random() * (b - a);
@@ -165,6 +171,18 @@
           if (frame % 40 === 0 && particles.filter(p => p.t === 'rocket').length < 3)
             particles.push({ t: 'rocket', x: rand(w * 0.2, w * 0.8), y: h, vy: rand(-6, -9), target: rand(h * 0.15, h * 0.5), c: pick(['#ff5252', '#ffd740', '#40c4ff', '#69f0ae', '#e040fb']) });
           break;
+        case 'leaves':
+          if (particles.length < 70 && frame % 4 === 0)
+            particles.push({ t: 'leaf', x: rand(0, w), y: -8, r: rand(4, 8), vy: rand(0.6, 1.5), a: rand(0, 6.28), va: rand(-0.06, 0.06), c: pick(['#d2691e', '#b5651d', '#cd853f', '#8b4513', '#e9962e']) });
+          break;
+        case 'bubbles':
+          if (particles.length < 70 && frame % 3 === 0)
+            particles.push({ t: 'bubble', x: rand(0, w), y: h + 8, r: rand(4, 12), vy: rand(0.5, 1.6), sw: rand(0, 6.28) });
+          break;
+        case 'hearts':
+          if (particles.length < 60 && frame % 5 === 0)
+            particles.push({ t: 'heart', x: rand(0, w), y: h + 8, r: rand(6, 12), vy: rand(0.6, 1.4), sw: rand(0, 6.28), c: pick(['#ff4d6d', '#ff8fa3', '#ffb3c1', '#e5383b']) });
+          break;
       }
     }
     function explode(x, y, c) {
@@ -176,6 +194,26 @@
     function step() {
       const w = fx.width, h = fx.height;
       ctx.clearRect(0, 0, w, h);
+
+      // Sun beaming in: a soft moving glow + a directional shadow cast on the clock.
+      if (currentAnim === 'sunrays') {
+        const t = frame / 180;
+        const sx = w * (0.2 + 0.15 * Math.sin(t));
+        const sy = h * 0.18;
+        const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, Math.max(w, h) * 0.9);
+        g.addColorStop(0, 'rgba(255,236,150,0.45)');
+        g.addColorStop(0.25, 'rgba(255,210,120,0.18)');
+        g.addColorStop(1, 'rgba(255,210,120,0)');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+        // rays
+        ctx.save(); ctx.translate(sx, sy); ctx.globalAlpha = 0.12; ctx.strokeStyle = '#fff6cf'; ctx.lineWidth = 2;
+        for (let r = 0; r < 12; r++) { const ang = t * 0.3 + (r * Math.PI) / 6; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(ang) * w, Math.sin(ang) * w); ctx.stroke(); }
+        ctx.restore();
+        // shadow offset away from the sun
+        const ox = (10 + 4 * Math.sin(t)).toFixed(1);
+        clockEl.style.textShadow = `${ox}px 10px 8px rgba(0,0,0,0.45)`;
+      }
+
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
         if (p.t === 'snow') { p.sw += 0.02; p.y += p.vy; p.x += Math.sin(p.sw) * 0.5; ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill(); if (p.y > h + 6) particles.splice(i, 1); }
@@ -184,7 +222,20 @@
         else if (p.t === 'flame') { p.y -= p.vy; p.life -= 0.015; p.r *= 0.99; ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill(); ctx.globalAlpha = 1; if (p.life <= 0) particles.splice(i, 1); }
         else if (p.t === 'rocket') { p.y += p.vy; p.vy += 0.1; ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, 6.28); ctx.fill(); if (p.y <= p.target || p.vy >= 0) { explode(p.x, p.y, p.c); particles.splice(i, 1); } }
         else if (p.t === 'spark') { p.x += p.vx; p.y += p.vy; p.vy += 0.05; p.life -= 0.025; ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, 6.28); ctx.fill(); ctx.globalAlpha = 1; if (p.life <= 0) particles.splice(i, 1); }
+        else if (p.t === 'leaf') { p.y += p.vy; p.x += Math.sin(p.y / 28) * 0.9; p.a += p.va; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.fillStyle = p.c; ctx.beginPath(); ctx.ellipse(0, 0, p.r, p.r / 2, 0, 0, 6.28); ctx.fill(); ctx.restore(); if (p.y > h + 8) particles.splice(i, 1); }
+        else if (p.t === 'bubble') { p.sw += 0.03; p.y -= p.vy; p.x += Math.sin(p.sw) * 0.6; ctx.strokeStyle = 'rgba(180,220,255,0.7)'; ctx.fillStyle = 'rgba(180,220,255,0.12)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill(); ctx.stroke(); if (p.y < -10) particles.splice(i, 1); }
+        else if (p.t === 'heart') { p.sw += 0.03; p.y -= p.vy; p.x += Math.sin(p.sw) * 0.7; drawHeart(p.x, p.y, p.r, p.c); if (p.y < -12) particles.splice(i, 1); }
       }
+    }
+    function drawHeart(x, y, s, c) {
+      ctx.save(); ctx.translate(x, y); ctx.scale(s / 16, s / 16); ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.moveTo(0, 4);
+      ctx.bezierCurveTo(0, 0, -8, -2, -8, -7);
+      ctx.bezierCurveTo(-8, -12, -2, -12, 0, -7);
+      ctx.bezierCurveTo(2, -12, 8, -12, 8, -7);
+      ctx.bezierCurveTo(8, -2, 0, 0, 0, 4);
+      ctx.fill(); ctx.restore();
     }
     function loop() { frame++; spawn(); step(); rafId = requestAnimationFrame(loop); }
 
