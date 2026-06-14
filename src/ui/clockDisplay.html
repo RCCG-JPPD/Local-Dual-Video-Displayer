@@ -2,159 +2,111 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Clock Display</title>
+  <title>Clock</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     html, body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      width: 100%; height: 100%; overflow: hidden;
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      -webkit-app-region: drag; /* let the operator drag the widget, like the old clock */
+      cursor: default;
     }
 
-    /* Theme: solid full-screen background, clock in a corner. */
+    /* The whole (small) window is a solid card; the clock fills it. */
     body.theme-dark  { background: #0d1117; color: #ffffff; }
     body.theme-light { background: #ffffff; color: #111111; }
 
-    /* Animation canvas sits behind the clock text. */
+    /* Holiday animation canvas sits behind the clock text. */
     #fx { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
 
-    /* Flex container fills the screen; alignment chooses the corner. */
-    #wrap {
+    #stage {
       position: fixed; inset: 0; z-index: 1;
-      display: flex; padding: 5vmin;
+      display: flex; align-items: center; justify-content: center;
     }
-    #wrap.h-left   { justify-content: flex-start; }
-    #wrap.h-center { justify-content: center; }
-    #wrap.h-right  { justify-content: flex-end; }
-    #wrap.v-top    { align-items: flex-start; }
-    #wrap.v-center { align-items: center; }
-    #wrap.v-bottom { align-items: flex-end; }
-
-    .clock-block { text-align: center; }
     #clock {
       font-weight: 300;
-      letter-spacing: 2px;
+      letter-spacing: 1px;
       font-variant-numeric: tabular-nums;
       font-family: 'Monaco', 'Courier New', monospace;
       line-height: 1;
-      text-shadow: 0 2px 24px rgba(0, 0, 0, 0.35);
+      white-space: nowrap;
+      text-shadow: 0 2px 14px rgba(0, 0, 0, 0.3);
     }
-    /* Size presets scale with the screen. */
-    .size-small  #clock { font-size: 8vmin; }
-    .size-medium #clock { font-size: 14vmin; }
-    .size-large  #clock { font-size: 22vmin; }
-
-    #date { margin-top: 1.2vmin; opacity: 0.7; }
-    .size-small  #date { font-size: 2.4vmin; }
-    .size-medium #date { font-size: 3.2vmin; }
-    .size-large  #date { font-size: 4vmin; }
-
-    #holiday-label {
-      margin-top: 1vmin; opacity: 0.85; font-weight: 600;
-      letter-spacing: 1px; text-transform: uppercase;
-    }
-    .size-small  #holiday-label { font-size: 1.8vmin; }
-    .size-medium #holiday-label { font-size: 2.4vmin; }
-    .size-large  #holiday-label { font-size: 3vmin; }
 
     #preview-canvas { display: none; position: absolute; top: -9999px; left: -9999px; }
   </style>
 </head>
-<body class="theme-dark size-large">
+<body class="theme-dark">
   <canvas id="fx"></canvas>
-  <div id="wrap" class="h-center v-center">
-    <div class="clock-block">
-      <div id="clock">00:00:00</div>
-      <div id="date">Loading…</div>
-      <div id="holiday-label"></div>
-    </div>
-  </div>
-
+  <div id="stage"><div id="clock">00:00:00</div></div>
   <canvas id="preview-canvas"></canvas>
 
   <script>
     // electronAPI is a preload global (contextBridge) — don't redeclare it.
     const bodyEl = document.body;
-    const wrapEl = document.getElementById('wrap');
     const clockEl = document.getElementById('clock');
-    const dateEl = document.getElementById('date');
-    const holidayLabelEl = document.getElementById('holiday-label');
     const previewCanvas = document.getElementById('preview-canvas');
 
-    // Default settings; overwritten by config + live updates.
     let settings = {
-      mode: 'time', theme: 'dark', size: 'large', corner: 'center',
+      mode: 'time', theme: 'dark', size: 'medium', corner: 'bottom-right',
       showSeconds: true, hour12: false,
       countdown: { hours: 0, minutes: 5, seconds: 0 },
       targetTime: '', holiday: 'auto',
     };
 
-    // For fixed-duration countdown: the moment it should reach zero.
     let countdownDeadline = null;
     let lastCountdownKey = '';
+    let lastTextLen = -1;
 
-    // ── apply settings (layout, theme, size, corner, animation) ──
     function applySettings(next) {
       settings = { ...settings, ...(next || {}) };
+      bodyEl.className = `theme-${settings.theme === 'light' ? 'light' : 'dark'}`;
 
-      bodyEl.className = `theme-${settings.theme === 'light' ? 'light' : 'dark'} size-${settings.size || 'large'}`;
-
-      const corner = settings.corner || 'center';
-      const h = corner.includes('left') ? 'h-left' : corner.includes('right') ? 'h-right' : 'h-center';
-      const v = corner.includes('top') ? 'v-top' : corner.includes('bottom') ? 'v-bottom' : 'v-center';
-      wrapEl.className = `${h} ${v}`;
-
-      // Reset a fixed-duration countdown whenever its inputs change.
       const cd = settings.countdown || { hours: 0, minutes: 0, seconds: 0 };
       const key = `${cd.hours}:${cd.minutes}:${cd.seconds}`;
       if (settings.mode === 'countdown' && key !== lastCountdownKey) {
-        const total = (Number(cd.hours) || 0) * 3600 + (Number(cd.minutes) || 0) * 60 + (Number(cd.seconds) || 0);
+        const total = (+cd.hours || 0) * 3600 + (+cd.minutes || 0) * 60 + (+cd.seconds || 0);
         countdownDeadline = new Date(Date.now() + total * 1000);
         lastCountdownKey = key;
       }
       if (settings.mode !== 'countdown') lastCountdownKey = '';
 
       setAnimation(resolveAnimation(settings));
+      lastTextLen = -1; // force a re-fit (size/window may have changed)
       render();
     }
 
     function resolveAnimation(s) {
       if (s.holiday === 'off') return null;
       if (s.holiday === 'auto') {
-        const active = electronAPI.getActiveHoliday(new Date());
-        return active ? active.animation : null;
+        const a = electronAPI.getActiveHoliday(new Date());
+        return a ? a.animation : null;
       }
       const found = (electronAPI.holidayList() || []).find(x => x.key === s.holiday);
       return found ? found.animation : null;
     }
 
-    function activeHolidayName() {
-      if (settings.holiday === 'off') return '';
-      if (settings.holiday === 'auto') {
-        const a = electronAPI.getActiveHoliday(new Date());
-        return a ? a.name : '';
-      }
-      const found = (electronAPI.holidayList() || []).find(x => x.key === settings.holiday);
-      return found ? found.name : '';
-    }
-
-    // New Year's Eve → auto countdown to midnight (overrides 'time' display).
     function newYearDeadline() {
       const now = new Date();
-      const isNYE = electronAPI.getActiveHoliday(now)?.key === 'newyear';
-      if (!isNYE) return null;
-      const target = new Date(now.getFullYear(), 11, 31, 24, 0, 0); // next midnight Jan 1
-      if (target <= now) return null;
-      return target;
+      if (electronAPI.getActiveHoliday(now)?.key !== 'newyear') return null;
+      const target = new Date(now.getFullYear(), 11, 31, 24, 0, 0);
+      return target > now ? target : null;
+    }
+
+    // Scale the clock font so the text nearly fills the widget width.
+    function fitText() {
+      const target = window.innerWidth * 0.86;
+      let fs = 12;
+      clockEl.style.fontSize = fs + 'px';
+      while (clockEl.scrollWidth < target && fs < 500) { fs += 6; clockEl.style.fontSize = fs + 'px'; }
+      clockEl.style.fontSize = Math.max(12, fs - 6) + 'px';
     }
 
     function render() {
       const now = new Date();
       let text;
-
-      const nyd = (settings.holiday !== 'off') ? newYearDeadline() : null;
+      const nyd = settings.holiday !== 'off' ? newYearDeadline() : null;
 
       if (settings.mode === 'countdown' && countdownDeadline) {
         text = electronAPI.formatDuration(electronAPI.secondsUntil(countdownDeadline, now));
@@ -167,159 +119,95 @@
       }
 
       clockEl.textContent = text;
-      dateEl.textContent = now.toLocaleDateString(undefined, {
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-      });
-      holidayLabelEl.textContent = activeHolidayName();
+      if (text.length !== lastTextLen) { fitText(); lastTextLen = text.length; }
     }
 
     setInterval(render, 1000);
+    window.addEventListener('resize', () => { lastTextLen = -1; render(); });
 
-    // ════════════════════════════════════════════════════════════════
-    // ANIMATIONS (particle canvas)
-    // ════════════════════════════════════════════════════════════════
-
+    // ── holiday animations (particle canvas) ──
     const fx = document.getElementById('fx');
     const ctx = fx.getContext('2d');
-    let particles = [];
-    let currentAnim = null;
-    let rafId = null;
-    let frame = 0;
-    const MAX = 260;
-
+    let particles = [], currentAnim = null, rafId = null, frame = 0;
+    const MAX = 200;
     function sizeCanvas() { fx.width = window.innerWidth; fx.height = window.innerHeight; }
     sizeCanvas();
-    window.addEventListener('resize', () => { sizeCanvas(); });
+    window.addEventListener('resize', sizeCanvas);
 
     function setAnimation(key) {
       if (key === currentAnim) return;
-      currentAnim = key;
-      particles = [];
+      currentAnim = key; particles = [];
       if (rafId) cancelAnimationFrame(rafId);
       ctx.clearRect(0, 0, fx.width, fx.height);
       if (currentAnim) loop();
     }
-
     const rand = (a, b) => a + Math.random() * (b - a);
-    const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+    const pick = (a) => a[Math.floor(Math.random() * a.length)];
 
     function spawn() {
       const w = fx.width, h = fx.height;
       switch (currentAnim) {
         case 'snow':
-          if (particles.length < 180 && frame % 2 === 0)
-            particles.push({ t: 'snow', x: rand(0, w), y: -10, r: rand(2, 5), vy: rand(0.6, 1.8), sway: rand(0, Math.PI * 2) });
+          if (particles.length < 90 && frame % 3 === 0)
+            particles.push({ t: 'snow', x: rand(0, w), y: -6, r: rand(1.5, 3.5), vy: rand(0.5, 1.4), sw: rand(0, 6.28) });
           break;
         case 'petals':
-          if (particles.length < 140 && frame % 3 === 0)
-            particles.push({ t: 'petal', x: rand(0, w), y: -10, r: rand(4, 8), vy: rand(0.8, 2), a: rand(0, Math.PI * 2), va: rand(-0.05, 0.05), c: pick(['#ff9ec4', '#ffd0e0', '#b6e3a1', '#fff0b3']) });
+          if (particles.length < 70 && frame % 4 === 0)
+            particles.push({ t: 'petal', x: rand(0, w), y: -6, r: rand(3, 6), vy: rand(0.7, 1.6), a: rand(0, 6.28), va: rand(-0.05, 0.05), c: pick(['#ff9ec4', '#ffd0e0', '#b6e3a1', '#fff0b3']) });
           break;
         case 'stars':
-          if (particles.length < 160)
-            while (particles.length < 160) particles.push({ t: 'star', x: rand(0, w), y: rand(0, h), r: rand(0.6, 2.2), ph: rand(0, Math.PI * 2), sp: rand(0.02, 0.06) });
+          while (particles.length < 80) particles.push({ t: 'star', x: rand(0, w), y: rand(0, h), r: rand(0.5, 1.8), ph: rand(0, 6.28), sp: rand(0.02, 0.06) });
           break;
         case 'flames':
-          if (particles.length < 220)
-            for (let i = 0; i < 4; i++) particles.push({ t: 'flame', x: rand(0, w), y: h + 10, r: rand(2, 6), vy: rand(1.2, 3), life: 1, c: pick(['#ff5722', '#ff9800', '#ffc107', '#ff3d00']) });
+          if (particles.length < 140) for (let i = 0; i < 3; i++) particles.push({ t: 'flame', x: rand(0, w), y: h + 6, r: rand(2, 5), vy: rand(1, 2.4), life: 1, c: pick(['#ff5722', '#ff9800', '#ffc107']) });
           break;
         case 'fireworks':
-          if (frame % 35 === 0 && particles.filter(p => p.t === 'rocket').length < 4)
-            particles.push({ t: 'rocket', x: rand(w * 0.15, w * 0.85), y: h, vy: rand(-9, -12), target: rand(h * 0.15, h * 0.5), c: pick(['#ff5252', '#ffd740', '#40c4ff', '#69f0ae', '#e040fb']) });
+          if (frame % 40 === 0 && particles.filter(p => p.t === 'rocket').length < 3)
+            particles.push({ t: 'rocket', x: rand(w * 0.2, w * 0.8), y: h, vy: rand(-6, -9), target: rand(h * 0.15, h * 0.5), c: pick(['#ff5252', '#ffd740', '#40c4ff', '#69f0ae', '#e040fb']) });
           break;
       }
     }
-
-    function explode(x, y, color) {
-      const n = 36;
-      for (let i = 0; i < n && particles.length < MAX; i++) {
-        const ang = (Math.PI * 2 * i) / n;
-        const sp = rand(2, 5);
-        particles.push({ t: 'spark', x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 1, c: color });
+    function explode(x, y, c) {
+      for (let i = 0; i < 24 && particles.length < MAX; i++) {
+        const ang = (6.28 * i) / 24, sp = rand(1.5, 3.5);
+        particles.push({ t: 'spark', x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 1, c });
       }
     }
-
     function step() {
       const w = fx.width, h = fx.height;
       ctx.clearRect(0, 0, w, h);
-
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
-        if (p.t === 'snow') {
-          p.sway += 0.02; p.y += p.vy; p.x += Math.sin(p.sway) * 0.6;
-          ctx.fillStyle = 'rgba(255,255,255,0.9)';
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
-          if (p.y > h + 10) particles.splice(i, 1);
-        } else if (p.t === 'petal') {
-          p.y += p.vy; p.x += Math.sin(p.y / 40) * 0.8; p.a += p.va;
-          ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.fillStyle = p.c;
-          ctx.fillRect(-p.r, -p.r / 2, p.r * 2, p.r); ctx.restore();
-          if (p.y > h + 10) particles.splice(i, 1);
-        } else if (p.t === 'star') {
-          p.ph += p.sp; const a = 0.4 + 0.6 * Math.abs(Math.sin(p.ph));
-          ctx.fillStyle = `rgba(255,236,150,${a})`;
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
-        } else if (p.t === 'flame') {
-          p.y -= p.vy; p.life -= 0.012; p.r *= 0.99;
-          ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.c;
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
-          if (p.life <= 0) particles.splice(i, 1);
-        } else if (p.t === 'rocket') {
-          p.y += p.vy; p.vy += 0.12;
-          ctx.fillStyle = p.c;
-          ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2); ctx.fill();
-          if (p.y <= p.target || p.vy >= 0) { explode(p.x, p.y, p.c); particles.splice(i, 1); }
-        } else if (p.t === 'spark') {
-          p.x += p.vx; p.y += p.vy; p.vy += 0.06; p.life -= 0.02;
-          ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.c;
-          ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
-          if (p.life <= 0) particles.splice(i, 1);
-        }
+        if (p.t === 'snow') { p.sw += 0.02; p.y += p.vy; p.x += Math.sin(p.sw) * 0.5; ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill(); if (p.y > h + 6) particles.splice(i, 1); }
+        else if (p.t === 'petal') { p.y += p.vy; p.x += Math.sin(p.y / 30) * 0.6; p.a += p.va; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.fillStyle = p.c; ctx.fillRect(-p.r, -p.r / 2, p.r * 2, p.r); ctx.restore(); if (p.y > h + 6) particles.splice(i, 1); }
+        else if (p.t === 'star') { p.ph += p.sp; ctx.fillStyle = `rgba(255,236,150,${0.4 + 0.6 * Math.abs(Math.sin(p.ph))})`; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill(); }
+        else if (p.t === 'flame') { p.y -= p.vy; p.life -= 0.015; p.r *= 0.99; ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill(); ctx.globalAlpha = 1; if (p.life <= 0) particles.splice(i, 1); }
+        else if (p.t === 'rocket') { p.y += p.vy; p.vy += 0.1; ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, 6.28); ctx.fill(); if (p.y <= p.target || p.vy >= 0) { explode(p.x, p.y, p.c); particles.splice(i, 1); } }
+        else if (p.t === 'spark') { p.x += p.vx; p.y += p.vy; p.vy += 0.05; p.life -= 0.025; ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, 6.28); ctx.fill(); ctx.globalAlpha = 1; if (p.life <= 0) particles.splice(i, 1); }
       }
     }
+    function loop() { frame++; spawn(); step(); rafId = requestAnimationFrame(loop); }
 
-    function loop() {
-      frame++;
-      spawn();
-      step();
-      rafId = requestAnimationFrame(loop);
-    }
-
-    // ════════════════════════════════════════════════════════════════
-    // CONTROLLER PREVIEW (small thumbnail for the controller grid)
-    // ════════════════════════════════════════════════════════════════
-
+    // ── controller thumbnail ──
     function capturePreviewFrame() {
       try {
-        if (!previewCanvas) return;
-        previewCanvas.width = 320; previewCanvas.height = 200;
+        previewCanvas.width = 320; previewCanvas.height = 120;
         const c = previewCanvas.getContext('2d');
         const light = settings.theme === 'light';
-        c.fillStyle = light ? '#ffffff' : '#0d1117';
-        c.fillRect(0, 0, 320, 200);
+        c.fillStyle = light ? '#ffffff' : '#0d1117'; c.fillRect(0, 0, 320, 120);
         c.fillStyle = light ? '#111111' : '#ffffff';
-        c.font = 'bold 48px Monaco, monospace';
-        c.textAlign = 'center'; c.textBaseline = 'middle';
-        c.fillText(clockEl.textContent, 160, 100);
+        c.font = 'bold 56px Monaco, monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillText(clockEl.textContent, 160, 60);
         electronAPI.sendPreviewData({ role: 'clock', imageData: previewCanvas.toDataURL('image/jpeg', 0.7), time: clockEl.textContent });
       } catch (_) {}
     }
     setInterval(capturePreviewFrame, 1000);
 
-    // ════════════════════════════════════════════════════════════════
-    // STARTUP
-    // ════════════════════════════════════════════════════════════════
-
-    electronAPI.getConfig().then(cfg => {
-      if (cfg && cfg.clock) applySettings(cfg.clock);
-      else applySettings({});
-    }).catch(() => applySettings({}));
-
+    // ── startup ──
+    electronAPI.getConfig().then(cfg => applySettings(cfg && cfg.clock ? cfg.clock : {})).catch(() => applySettings({}));
     electronAPI.onClockSettings(applySettings);
-
-    // Esc closes this fullscreen display window.
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.close(); });
-
-    console.log('Clock display initialized');
+    console.log('Clock widget initialized');
   </script>
 </body>
 </html>

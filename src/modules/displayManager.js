@@ -13,6 +13,29 @@ const path = require('path');
 const PRELOAD = path.join(__dirname, '../../preload.js');
 const UI_DIR = path.join(__dirname, '../ui');
 
+// Clock widget window sizes (small floating window, not fullscreen).
+const CLOCK_SIZES = {
+  small: { w: 300, h: 110 },
+  medium: { w: 460, h: 150 },
+  large: { w: 680, h: 210 },
+};
+const CLOCK_MARGIN = 24;
+
+/** Compute the clock widget's rectangle within a display, for a size + corner. */
+function clockRect(bounds, sizeKey, corner) {
+  const { w, h } = CLOCK_SIZES[sizeKey] || CLOCK_SIZES.medium;
+  const bx = Math.floor(bounds.x), by = Math.floor(bounds.y);
+  const bw = Math.floor(bounds.width), bh = Math.floor(bounds.height);
+  const c = corner || 'bottom-right';
+  let x = bx + Math.floor((bw - w) / 2);
+  let y = by + Math.floor((bh - h) / 2);
+  if (c.includes('left')) x = bx + CLOCK_MARGIN;
+  if (c.includes('right')) x = bx + bw - w - CLOCK_MARGIN;
+  if (c.includes('top')) y = by + CLOCK_MARGIN;
+  if (c.includes('bottom')) y = by + bh - h - CLOCK_MARGIN;
+  return { x, y, w, h };
+}
+
 class DisplayManager {
   constructor(mainProcess) {
     this.main = mainProcess;
@@ -145,7 +168,7 @@ class DisplayManager {
       if (onLoad) onLoad(window);
     });
 
-    const entry = { window, role };
+    const entry = { window, role, displayIndex };
     this.contentWindows.push(entry);
     window.on('closed', () => {
       this.contentWindows = this.contentWindows.filter(e => e.window !== window);
@@ -165,8 +188,70 @@ class DisplayManager {
     });
   }
 
-  createClockWindow(displayIndex) {
-    return this._createContentWindow(displayIndex, 'clock', 'clockDisplay.html');
+  /**
+   * Create the clock as a SMALL floating widget in a corner of its display
+   * (not a fullscreen window). Size + corner come from the clock settings.
+   */
+  createClockWindow(displayIndex, clockSettings = {}) {
+    const displays = this.detectDisplays();
+    if (displayIndex == null || displayIndex < 0 || displayIndex >= displays.length) {
+      console.warn(`Display index ${displayIndex} not available for clock, skipping`);
+      return null;
+    }
+
+    const display = displays[displayIndex];
+    const r = clockRect(display.bounds, clockSettings.size, clockSettings.corner);
+    console.log(`Creating clock widget on display ${displayIndex}:`, r);
+
+    const window = new BrowserWindow({
+      x: r.x, y: r.y, width: r.w, height: r.h,
+      frame: false,
+      resizable: false,
+      minimizable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: false,
+        preload: PRELOAD,
+      },
+      show: true,
+    });
+
+    window.setAlwaysOnTop(true, 'screen-saver');
+    window.loadFile(path.join(UI_DIR, 'clockDisplay.html'));
+
+    // Keep it pinned above other always-on-top windows (mirrors the old clock).
+    const enforce = setInterval(() => {
+      if (window.isDestroyed()) { clearInterval(enforce); return; }
+      window.setAlwaysOnTop(true, 'screen-saver');
+      window.moveTop();
+    }, 1000);
+
+    const entry = { window, role: 'clock', displayIndex };
+    this.contentWindows.push(entry);
+    window.on('closed', () => {
+      clearInterval(enforce);
+      this.contentWindows = this.contentWindows.filter(e => e.window !== window);
+    });
+
+    return window;
+  }
+
+  /**
+   * Resize/reposition every clock widget when its size or corner changes.
+   */
+  applyClockWindowLayout(clockSettings = {}) {
+    const displays = this.detectDisplays();
+    this.contentWindows
+      .filter(e => e.role === 'clock' && e.window && !e.window.isDestroyed())
+      .forEach(e => {
+        const d = displays[e.displayIndex];
+        if (!d) return;
+        const r = clockRect(d.bounds, clockSettings.size, clockSettings.corner);
+        e.window.setBounds({ x: r.x, y: r.y, width: r.w, height: r.h });
+      });
   }
 
   createWebWindow(displayIndex) {
@@ -205,7 +290,7 @@ class DisplayManager {
             break;
           }
           case 'clock':
-            this.createClockWindow(displayConfig.displayIndex);
+            this.createClockWindow(displayConfig.displayIndex, config.clock || {});
             break;
           case 'web':
             this.createWebWindow(displayConfig.displayIndex);

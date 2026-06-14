@@ -40,8 +40,8 @@ module.exports = {
   clock: {
     mode: 'time',          // 'time' | 'countdown' | 'timer'
     theme: 'dark',         // 'dark' (black bg/white text) | 'light' (white bg/black text)
-    size: 'large',         // 'small' | 'medium' | 'large'
-    corner: 'center',      // 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'
+    size: 'medium',        // 'small' | 'medium' | 'large'
+    corner: 'bottom-right', // 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'
     showSeconds: true,
     hour12: false,         // false = 24h, true = 12h with AM/PM
     countdown: { hours: 0, minutes: 5, seconds: 0 }, // for mode 'countdown'

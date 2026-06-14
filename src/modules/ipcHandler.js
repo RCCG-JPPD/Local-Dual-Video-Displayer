@@ -123,9 +123,11 @@ class IPCHandler {
     // CLOCK SETTINGS
     // ════════════════════════════════════════════════════════════════
 
-    // Controller updates clock settings → persist + live-update every clock screen.
+    // Controller updates clock settings → persist, resize/reposition the clock
+    // widgets (size/corner), and live-update their contents (theme/mode/text).
     ipcMain.on('clock-settings', (event, settings) => {
       this.configManager.updateConfig({ clock: settings });
+      this.displayManager.applyClockWindowLayout(settings);
       this.broadcastToRole('clock', 'clock-settings', settings);
     });
 

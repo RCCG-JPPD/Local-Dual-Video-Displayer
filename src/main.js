@@ -3,7 +3,7 @@
  * Electron main process for cross-platform video + clock + controller
  */
 
-const { app } = require('electron');
+const { app, globalShortcut } = require('electron');
 
 // Modules
 const ConfigManager = require('./modules/configManager');
@@ -49,10 +49,7 @@ function initializeManagers() {
   displayManager = new DisplayManager(app);
   lifecycleManager = new WindowLifecycleManager(app);
   ipcHandler = new IPCHandler(displayManager, configManager, {
-    onReconfigure: () => {
-      displayManager.closeAllDisplayWindows();
-      showDisplaySelector();
-    },
+    onReconfigure: reopenSelector,
   });
 
   // Set up IPC listeners
@@ -88,6 +85,17 @@ function showDisplaySelector() {
       app.quit();
     }
   });
+}
+
+/**
+ * Close all content windows and reopen the screen picker.
+ * Used by the controller's "Reconfigure Displays" button and the global
+ * escape-hatch hotkey (so you can recover even if every screen is covered).
+ */
+function reopenSelector() {
+  console.log('Reopening display selector...');
+  displayManager.closeAllDisplayWindows();
+  showDisplaySelector();
 }
 
 /**
@@ -134,6 +142,13 @@ function startup() {
   try {
     initializeManagers();
 
+    // `--reset` (e.g. `npm start -- --reset`) wipes the saved setup so you
+    // always get a fresh screen picker — handy if you mis-assigned every screen.
+    if (process.argv.includes('--reset')) {
+      console.log('Reset flag detected - clearing saved configuration');
+      configManager.resetConfig();
+    }
+
     // Load existing config
     userConfig = configManager.loadConfig();
     console.log('Config loaded:', userConfig.version);
@@ -159,7 +174,26 @@ function startup() {
 app.on('ready', () => {
   console.log('Electron app ready');
   startup();
+  registerShortcuts();
 });
+
+/**
+ * Global escape-hatch hotkeys (work even when every screen is covered):
+ *  - Ctrl/Cmd+Shift+R → reopen the screen picker (re-assign roles).
+ *  - Ctrl/Cmd+Shift+Q → quit the whole app.
+ */
+function registerShortcuts() {
+  globalShortcut.register('CommandOrControl+Shift+R', () => {
+    console.log('Global shortcut: reopen selector');
+    if (displayManager) reopenSelector();
+  });
+  globalShortcut.register('CommandOrControl+Shift+Q', () => {
+    console.log('Global shortcut: quit');
+    app.quit();
+  });
+}
+
+app.on('will-quit', () => globalShortcut.unregisterAll());
 
 app.on('window-all-closed', () => {
   console.log('All windows closed');
