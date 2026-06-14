@@ -9,6 +9,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --debug",
+    "test": "node --test",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
@@ -25,6 +26,13 @@
     "directories": {
       "buildResources": "build"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "RCCG-JPPD",
+        "repo": "Local-Dual-Video-Displayer"
+      }
+    ],
     "win": {
       "target": [
         {

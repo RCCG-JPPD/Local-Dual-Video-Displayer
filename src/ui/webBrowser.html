@@ -61,7 +61,7 @@
   <canvas id="preview-canvas"></canvas>
 
   <script>
-    const { electronAPI } = window;
+    // electronAPI is a preload global (contextBridge) — don't redeclare it.
 
     const webFrame = document.getElementById('web-frame'); // <webview>
     const webContainer = document.getElementById('web-container');
@@ -96,19 +96,15 @@
     }
 
     function navigateToUrl(url) {
-      if (!url) return;
+      const normalized = electronAPI.normalizeWebUrl(url);
+      if (!normalized) return;
 
-      // Ensure URL has a protocol
-      if (!/^https?:\/\//i.test(url) && !url.startsWith('about:')) {
-        url = 'https://' + url;
-      }
-
-      currentUrl = url;
+      currentUrl = normalized;
       if (placeholder) placeholder.style.display = 'none';
 
       // <webview> is a real embedded Chromium view, so it loads sites that
       // refuse to be embedded in an <iframe> (X-Frame-Options / frame-ancestors).
-      webFrame.src = url;
+      webFrame.src = currentUrl;
     }
 
     // ════════════════════════════════════════════════════════════════

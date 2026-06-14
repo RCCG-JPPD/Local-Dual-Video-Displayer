@@ -8,10 +8,11 @@ module.exports = {
   displays: [
     // Each display object contains:
     // {
-    //   id: string (unique identifier from electron screen.getAllDisplays())
+    //   id: number (unique identifier from electron screen.getAllDisplays())
     //   displayIndex: number (0, 1, 2, etc)
-    //   role: 'public' | 'private' | 'clock' | 'controller' | 'unassigned'
-    //   label: string (e.g., "Display 1 - Public Screen")
+    //   role: 'video' | 'youtube' | 'web' | 'clock' | 'unassigned'
+    //         (the same role may be assigned to several screens)
+    //   label: string (e.g., "Display 1")
     //   bounds: { x, y, width, height }
     // }
   ],

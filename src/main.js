@@ -111,16 +111,9 @@ function launchDisplayWindows() {
       lifecycleManager.setParentWindow(controllerWindow);
     }
 
-    // Create all configured display windows dynamically
-    // Supports: public_video, private_video, clock, web, youtube, unassigned
+    // Create all configured content windows dynamically.
+    // Supports any number of: video, clock, web, youtube (one per assigned screen).
     displayManager.createAllDisplayWindows(userConfig);
-
-    // Register all child windows with lifecycle manager
-    const allWindowIds = new Set(displayManager.childWindowIds);
-    allWindowIds.forEach(windowId => {
-      // Note: We can't directly access windows by ID, so we rely on the windows stored in displayManager
-      // Child windows are automatically tracked when created
-    });
 
     if (displayManager.windows.controller) {
       displayManager.windows.controller.webContents.send('config-loaded', userConfig);

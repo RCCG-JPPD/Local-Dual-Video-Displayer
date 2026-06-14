@@ -311,6 +311,35 @@
       pointer-events: none;
     }
 
+    /* ── Interactive tutorial (spotlight tour) ── */
+    .tour-highlight {
+      position: relative;
+      z-index: 10000;
+      border-radius: 8px;
+      box-shadow: 0 0 0 4px #667eea, 0 0 0 9999px rgba(15, 23, 42, 0.72);
+      transition: box-shadow 0.2s;
+    }
+    #tour-box {
+      position: fixed;
+      z-index: 10001;
+      max-width: 320px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+      padding: 18px 20px;
+      display: none;
+    }
+    #tour-box.show { display: block; }
+    #tour-box h4 { font-size: 15px; color: #333; margin-bottom: 6px; }
+    #tour-box p { font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 14px; }
+    .tour-controls { display: flex; align-items: center; gap: 8px; }
+    .tour-step { font-size: 12px; color: #999; margin-right: auto; }
+    .tour-controls button {
+      padding: 6px 14px; border-radius: 5px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid #ddd; background: #fff;
+    }
+    .tour-controls .tour-next { background: #667eea; color: #fff; border-color: #667eea; }
+    .tour-controls .tour-skip { border: none; color: #999; background: transparent; }
+
     @media (max-width: 768px) {
       .preview-grid {
         grid-template-columns: 1fr;
@@ -381,7 +410,7 @@
 
       <!-- Volume -->
       <div class="volume-container">
-        <label for="vol">🔊 Volume (Public)</label>
+        <label for="vol">🔊 Master Volume</label>
         <input id="vol" type="range" min="0" max="1" step="0.01" value="1">
       </div>
 
@@ -411,12 +440,29 @@
     <div class="controls-section">
       <h2>🖥️ Displays</h2>
       <div class="display-status" id="display-status">Connected displays: Loading...</div>
-      <button id="reconfigBtn">⚙️ Reconfigure Displays</button>
+      <div class="button-group">
+        <button id="reconfigBtn">⚙️ Reconfigure Displays</button>
+        <button id="identifyBtn">🔦 Identify Screens</button>
+        <button id="tutorialBtn">🎓 Tutorial</button>
+        <button id="helpBtn">❓ Help</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interactive tutorial spotlight box -->
+  <div id="tour-box">
+    <h4 id="tour-title"></h4>
+    <p id="tour-text"></p>
+    <div class="tour-controls">
+      <span class="tour-step" id="tour-step"></span>
+      <button class="tour-skip" id="tour-skip">Skip</button>
+      <button class="tour-back" id="tour-back">Back</button>
+      <button class="tour-next" id="tour-next">Next</button>
     </div>
   </div>
 
   <script>
-    const { electronAPI } = window;
+    // electronAPI is a preload global (contextBridge) — don't redeclare it.
 
     // ════════════════════════════════════════════════════════════════
     // DOM ELEMENTS
@@ -481,11 +527,10 @@
       previewContainers = {};
 
       const roleLabels = {
-        public: 'Video (Public)',
-        private: 'Video (Private)',
-        clock: 'Clock',
-        web: 'Web Browser',
+        video: 'Video',
         youtube: 'YouTube',
+        web: 'Web Page',
+        clock: 'Clock',
       };
 
       Object.entries(roleLabels).forEach(([role, label]) => {
@@ -665,15 +710,18 @@
     function updateDisplayStatus(windowStatus) {
       if (!windowStatus) return;
 
-      const count = Object.values(windowStatus).filter(v => v).length;
-      displayStatus.textContent = `Connected displays: ${count}/4`;
+      const parts = [];
+      if (windowStatus.video)   parts.push(`${windowStatus.video} Video`);
+      if (windowStatus.youtube) parts.push(`${windowStatus.youtube} YouTube`);
+      if (windowStatus.web)     parts.push(`${windowStatus.web} Web`);
+      if (windowStatus.clock)   parts.push(`${windowStatus.clock} Clock`);
 
-      if (!windowStatus.public) {
-        displayStatus.textContent += ' (⚠️ Public video disconnected)';
+      displayStatus.classList.remove('warning', 'error');
+      if (parts.length === 0) {
+        displayStatus.textContent = 'No screens active — use “Reconfigure Displays” to assign some.';
         displayStatus.classList.add('warning');
-      } else if (!windowStatus.controller) {
-        displayStatus.textContent += ' (✓ All displays connected)';
-        displayStatus.classList.remove('warning', 'error');
+      } else {
+        displayStatus.textContent = 'Active screens: ' + parts.join(', ');
       }
     }
 
@@ -681,6 +729,9 @@
       console.log('Reconfigure displays requested');
       electronAPI.reconfigureDisplays();
     };
+
+    document.getElementById('identifyBtn').onclick = () => electronAPI.identifyScreens();
+    document.getElementById('helpBtn').onclick = () => electronAPI.openHelp();
 
     // ════════════════════════════════════════════════════════════════
     // YOUTUBE / WEB CONTROLS
@@ -714,7 +765,7 @@
       const roles = new Set((cfg.displays || []).map(d => d.role));
 
       const sections = {
-        localvideo: roles.has('public') || roles.has('private'),
+        localvideo: roles.has('video'),
         youtube: roles.has('youtube'),
         web: roles.has('web'),
       };
@@ -730,10 +781,82 @@
     }
 
     // ════════════════════════════════════════════════════════════════
+    // INTERACTIVE TUTORIAL (spotlight tour)
+    // ════════════════════════════════════════════════════════════════
+
+    const TOUR_STEPS = [
+      { sel: '#preview-grid',        title: '👀 Live previews', text: 'Each active screen shows a small live thumbnail here, so you can monitor every display at a glance.' },
+      { sel: '#section-localvideo',  title: '🎬 Local video', text: 'Add video files and control them here — Play/Pause, scrub, and Master Volume. The video plays on every screen set to “Video”.' },
+      { sel: '#section-youtube',     title: '▶️ YouTube', text: 'Paste a YouTube link (or video ID) and press Enter to play it on your YouTube screen(s).' },
+      { sel: '#section-web',         title: '🌐 Web page', text: 'Type any website address and press Enter to show it on your Web screen(s).' },
+      { sel: '#identifyBtn',         title: '🔦 Identify screens', text: 'Not sure which physical screen is which? This flashes a big number on each one.' },
+      { sel: '#reconfigBtn',         title: '⚙️ Reconfigure', text: 'Change which screen shows what at any time. That’s it — you’re ready to go!' },
+    ];
+
+    const tourBox = document.getElementById('tour-box');
+    let tourIndex = 0;
+    let tourTarget = null;
+
+    function positionTourBox(target) {
+      const r = target.getBoundingClientRect();
+      const boxW = tourBox.offsetWidth, boxH = tourBox.offsetHeight;
+      let top = r.bottom + 12;
+      if (top + boxH > window.innerHeight - 8) top = Math.max(8, r.top - boxH - 12);
+      let left = Math.min(Math.max(8, r.left), window.innerWidth - boxW - 8);
+      tourBox.style.top = top + 'px';
+      tourBox.style.left = left + 'px';
+    }
+
+    function showTourStep(i) {
+      if (tourTarget) tourTarget.classList.remove('tour-highlight');
+      tourIndex = i;
+      const step = TOUR_STEPS[i];
+      tourTarget = document.querySelector(step.sel);
+      if (!tourTarget) { endTour(); return; }
+
+      tourTarget.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      tourTarget.classList.add('tour-highlight');
+
+      document.getElementById('tour-title').textContent = step.title;
+      document.getElementById('tour-text').textContent = step.text;
+      document.getElementById('tour-step').textContent = `${i + 1} / ${TOUR_STEPS.length}`;
+      document.getElementById('tour-back').style.visibility = i === 0 ? 'hidden' : 'visible';
+      document.getElementById('tour-next').textContent = i === TOUR_STEPS.length - 1 ? 'Finish' : 'Next';
+      tourBox.classList.add('show');
+      // Position after layout/scroll settles.
+      setTimeout(() => positionTourBox(tourTarget), 250);
+    }
+
+    function startTour() { showTourStep(0); }
+
+    function endTour() {
+      if (tourTarget) tourTarget.classList.remove('tour-highlight');
+      tourTarget = null;
+      tourBox.classList.remove('show');
+      try { localStorage.setItem('tutorialSeen', '1'); } catch (_) {}
+    }
+
+    document.getElementById('tour-next').onclick = () =>
+      tourIndex >= TOUR_STEPS.length - 1 ? endTour() : showTourStep(tourIndex + 1);
+    document.getElementById('tour-back').onclick = () => showTourStep(Math.max(0, tourIndex - 1));
+    document.getElementById('tour-skip').onclick = endTour;
+    document.getElementById('tutorialBtn').onclick = startTour;
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && tourBox.classList.contains('show')) endTour(); });
+    window.addEventListener('resize', () => { if (tourTarget) positionTourBox(tourTarget); });
+
+    // Auto-run once, the first time the controller opens.
+    function maybeAutoTour() {
+      let seen = false;
+      try { seen = localStorage.getItem('tutorialSeen') === '1'; } catch (_) {}
+      if (!seen) setTimeout(startTour, 700);
+    }
+
+    // ════════════════════════════════════════════════════════════════
     // STARTUP
     // ════════════════════════════════════════════════════════════════
 
     initialize();
+    maybeAutoTour();
   </script>
 </body>
 </html>

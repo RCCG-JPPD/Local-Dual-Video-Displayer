@@ -5,11 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Display Configuration</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -25,68 +21,70 @@
       background: white;
       border-radius: 12px;
       box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-      max-width: 850px;
+      max-width: 900px;
       width: 100%;
-      padding: 40px;
+      padding: 36px;
     }
 
-    h1 {
-      margin-bottom: 10px;
-      color: #333;
-      font-size: 28px;
+    h1 { margin-bottom: 8px; color: #333; font-size: 26px; }
+    .subtitle { color: #666; margin-bottom: 20px; font-size: 14px; }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
     }
 
-    .subtitle {
+    .instructions {
+      background: #eff6ff;
+      border-left: 4px solid #3b82f6;
+      padding: 12px 14px;
+      border-radius: 4px;
+      font-size: 13px;
+      color: #1e40af;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+
+    .state {
+      text-align: center;
       color: #666;
-      margin-bottom: 30px;
-      font-size: 14px;
+      padding: 40px 10px;
+      font-size: 15px;
     }
+    .state.hidden { display: none; }
+    .spinner {
+      width: 28px; height: 28px;
+      border: 3px solid #d0d9ff;
+      border-top-color: #667eea;
+      border-radius: 50%;
+      margin: 0 auto 14px;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     .displays-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 20px;
-      margin-bottom: 30px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 18px;
+      margin-bottom: 26px;
     }
 
     .display-card {
       border: 2px solid #e0e0e0;
       border-radius: 8px;
-      padding: 20px;
+      padding: 18px;
       background: #f9f9f9;
-      cursor: grab;
       transition: all 0.2s;
     }
+    .display-card:hover { border-color: #667eea; background: #f0f4ff; }
+    .display-card.assigned { border-color: #667eea; }
 
-    .display-card:hover {
-      border-color: #667eea;
-      background: #f0f4ff;
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
-    }
+    .display-id { font-weight: 600; color: #333; margin-bottom: 6px; font-size: 16px; }
+    .display-info { font-size: 12px; color: #666; margin-bottom: 12px; line-height: 1.4; }
 
-    .display-card.dragging {
-      opacity: 0.5;
-    }
-
-    .display-id {
-      font-weight: 600;
-      color: #333;
-      margin-bottom: 8px;
-      font-size: 16px;
-    }
-
-    .display-info {
-      font-size: 12px;
-      color: #666;
-      margin-bottom: 12px;
-      line-height: 1.4;
-    }
-
-    .role-selector {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
+    .role-selector { display: flex; gap: 6px; flex-wrap: wrap; }
 
     .role-btn {
       padding: 6px 12px;
@@ -95,236 +93,172 @@
       background: white;
       cursor: pointer;
       font-size: 12px;
-      transition: all 0.2s;
+      transition: all 0.15s;
       white-space: nowrap;
     }
-
-    .role-btn:hover {
-      border-color: #667eea;
-      color: #667eea;
-    }
-
-    .role-btn.selected {
-      background: #667eea;
-      color: white;
-      border-color: #667eea;
-    }
-
-    .role-btn.public { --color: #3b82f6; }
-    .role-btn.private { --color: #ef4444; }
-    .role-btn.clock { --color: #10b981; }
-    .role-btn.controller { --color: #f59e0b; }
+    .role-btn:hover { border-color: #667eea; color: #667eea; }
+    .role-btn.selected { background: #667eea; color: white; border-color: #667eea; }
 
     .assignment-summary {
       background: #f0f4ff;
       border: 1px solid #d0d9ff;
       border-radius: 8px;
-      padding: 20px;
-      margin-bottom: 30px;
+      padding: 18px;
+      margin-bottom: 26px;
     }
-
+    .assignment-summary h3 {
+      margin-bottom: 14px; font-size: 13px; color: #333;
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
     .assignment-row {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 10px;
-      font-size: 14px;
+      display: flex; justify-content: space-between;
+      margin-bottom: 8px; font-size: 14px;
     }
+    .assignment-row:last-child { margin-bottom: 0; }
+    .role-label { font-weight: 600; color: #333; }
+    .role-assignment { color: #444; }
+    .role-assignment.unassigned { color: #999; font-style: italic; }
 
-    .assignment-row:last-child {
-      margin-bottom: 0;
-    }
+    .button-group { display: flex; gap: 12px; justify-content: flex-end; }
 
-    .role-label {
-      font-weight: 600;
-      color: #333;
+    button.action {
+      padding: 10px 22px; border-radius: 6px; border: none;
+      font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;
     }
-
-    .role-assignment {
-      color: #666;
-    }
-
-    .role-assignment.unassigned {
-      color: #999;
-      font-style: italic;
-    }
-
-    .button-group {
-      display: flex;
-      gap: 12px;
-      justify-content: flex-end;
-    }
-
-    button {
-      padding: 10px 24px;
-      border-radius: 6px;
-      border: none;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .btn-primary {
-      background: #667eea;
-      color: white;
-    }
-
-    .btn-primary:hover:not(:disabled) {
-      background: #5568d3;
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-    }
-
-    .btn-primary:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .btn-secondary {
-      background: #e0e0e0;
-      color: #333;
-    }
-
-    .btn-secondary:hover {
-      background: #d0d0d0;
-    }
+    .btn-primary { background: #667eea; color: white; }
+    .btn-primary:hover:not(:disabled) { background: #5568d3; box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { background: #e0e0e0; color: #333; }
+    .btn-secondary:hover { background: #d0d0d0; }
 
     .error-message {
-      background: #fee;
-      border: 1px solid #fcc;
-      border-radius: 6px;
-      padding: 12px;
-      color: #c33;
-      margin-bottom: 20px;
-      font-size: 14px;
+      background: #fee; border: 1px solid #fcc; border-radius: 6px;
+      padding: 14px; color: #c33; margin-bottom: 20px; font-size: 14px;
       display: none;
     }
+    .error-message.show { display: block; }
+    .error-message button { margin-top: 10px; }
 
-    .error-message.show {
-      display: block;
-    }
-
-    .instructions {
-      background: #eff6ff;
-      border-left: 4px solid #3b82f6;
-      padding: 12px;
-      border-radius: 4px;
-      font-size: 13px;
-      color: #1e40af;
-      margin-bottom: 20px;
-    }
-
-    @media (max-width: 600px) {
-      .container {
-        padding: 20px;
-      }
-
-      h1 {
-        font-size: 22px;
-      }
-
-      .displays-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .button-group {
-        flex-direction: column;
-      }
-
-      button {
-        width: 100%;
-      }
+    @media (max-width: 620px) {
+      .container { padding: 20px; }
+      .displays-grid { grid-template-columns: 1fr; }
+      .button-group { flex-direction: column; }
+      button.action { width: 100%; }
     }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>📺 Display Configuration</h1>
-    <p class="subtitle">Select which displays to use for video, clock, and controls</p>
+    <p class="subtitle">Choose what each screen should show, then Confirm.</p>
+
+    <div class="toolbar">
+      <button class="action btn-secondary" id="identify-btn">🔦 Identify screens</button>
+      <button class="action btn-secondary" id="help-btn">❓ Help</button>
+    </div>
 
     <div class="instructions">
-      💡 Pick what each screen shows: <strong>Video (Public)</strong> / <strong>Video (Private)</strong> for local videos,
-      <strong>YouTube</strong>, a <strong>Web Page</strong>, or a <strong>Clock</strong>. Leave the screen you're working on
-      as <strong>Unassigned</strong> — the control panel always opens on your main screen. Any screen can be reconfigured later.
+      💡 Give each screen a role: <strong>Video</strong> (a local video — you can pick several screens to mirror it),
+      <strong>YouTube</strong>, a <strong>Web Page</strong>, or a <strong>Clock</strong>. Leave the screen you're working
+      on as <strong>Unassigned</strong> — the control panel always opens on your main screen. Not sure which screen is
+      which? Click <strong>Identify screens</strong>. You can reconfigure anytime later.
     </div>
 
     <div id="error-message" class="error-message"></div>
 
-    <div id="displays-container" class="displays-grid"></div>
+    <div id="loading-state" class="state">
+      <div class="spinner"></div>
+      Detecting displays…
+    </div>
+
+    <div id="displays-container" class="displays-grid hidden state"></div>
 
     <div class="assignment-summary">
-      <h3 style="margin-bottom: 15px; font-size: 14px; color: #333; text-transform: uppercase; letter-spacing: 0.5px;">Configuration Summary</h3>
+      <h3>Configuration Summary</h3>
       <div id="summary"></div>
     </div>
 
     <div class="button-group">
-      <button class="btn-secondary" id="reset-btn">Reset</button>
-      <button class="btn-primary" id="confirm-btn" disabled>Confirm & Continue</button>
+      <button class="action btn-secondary" id="reset-btn">Reset</button>
+      <button class="action btn-primary" id="confirm-btn" disabled>Confirm &amp; Continue</button>
     </div>
   </div>
 
   <script>
-    const { electronAPI } = window;
+    // `electronAPI` is exposed as a global by the preload (contextBridge).
+    // Do NOT redeclare it with const/let — that throws "already declared".
+
+    // role -> display label, in the order shown in the summary
+    const ROLE_LABELS = {
+      video: 'Video',
+      youtube: 'YouTube',
+      web: 'Web Page',
+      clock: 'Clock',
+    };
 
     let displaysList = [];
+    // displayId -> role (multiple displays may share a role)
     let roleAssignments = {};
-    let displaysLoaded = false; // guard against double-load from both IPC and executeJavaScript
 
-    function showError(msg) {
-      console.error('DisplaySelector error:', msg);
+    function log(level, msg) {
+      try { electronAPI.log(level, '[selector] ' + msg); } catch (_) {}
+      (level === 'error' ? console.error : console.log)('[selector]', msg);
+    }
+
+    function showError(msg, withRetry) {
+      log('error', msg);
       const div = document.getElementById('error-message');
-      if (div) { div.textContent = msg; div.classList.add('show'); }
+      div.innerHTML = '';
+      div.append(document.createTextNode(msg));
+      if (withRetry) {
+        const btn = document.createElement('button');
+        btn.className = 'action btn-primary';
+        btn.textContent = 'Retry';
+        btn.onclick = loadDisplays;
+        div.appendChild(document.createElement('br'));
+        div.appendChild(btn);
+      }
+      div.classList.add('show');
     }
 
-    // Called either from executeJavaScript (primary) or IPC fallback.
-    // Guard ensures it only runs once even if both fire.
-    function applyDisplays(displays) {
-      if (displaysLoaded) return;
-      if (!displays || displays.length === 0) {
-        showError('No displays returned. Please restart the app.');
+    function clearError() {
+      document.getElementById('error-message').classList.remove('show');
+    }
+
+    function setLoading(on) {
+      document.getElementById('loading-state').classList.toggle('hidden', !on);
+    }
+
+    // The one and only data path: ask the main process over IPC once we're loaded.
+    async function loadDisplays() {
+      clearError();
+      setLoading(true);
+      document.getElementById('displays-container').classList.add('hidden');
+
+      if (!electronAPI || !electronAPI.getDisplays) {
+        setLoading(false);
+        showError('Internal error: the display API is unavailable. Please restart the app.', true);
         return;
       }
-      displaysLoaded = true;
-      displaysList = displays;
-      const errDiv = document.getElementById('error-message');
-      if (errDiv) errDiv.classList.remove('show');
-      renderDisplays();
-    }
 
-    // Read display data from the URL query string (passed by main process via loadFile query option).
-    // This is synchronous and requires no IPC or executeJavaScript.
-    function loadDisplaysFromURL() {
       try {
-        const params = new URLSearchParams(window.location.search);
-        const raw = params.get('displays');
-        if (raw) {
-          const displays = JSON.parse(raw);
-          applyDisplays(displays);
-          return true;
-        }
-      } catch (e) {
-        showError('Failed to parse display data from URL: ' + e.message);
-      }
-      return false;
-    }
+        log('info', 'requesting displays…');
+        const displays = await electronAPI.getDisplays();
+        log('info', 'received ' + (displays ? displays.length : 0) + ' display(s)');
 
-    // IPC fallback — only runs if URL approach fails (e.g. old main-process code).
-    async function loadDisplaysFallback() {
-      if (typeof electronAPI === 'undefined' || !electronAPI) {
-        showError('electronAPI unavailable. Please restart the app.');
-        return;
-      }
-      try {
-        if (electronAPI.getDisplays) {
-          const d = await electronAPI.getDisplays();
-          applyDisplays(d);
-        } else if (electronAPI.onDisplaysDetected) {
-          electronAPI.onDisplaysDetected(d => applyDisplays(d));
-          if (electronAPI.requestDisplays) electronAPI.requestDisplays();
-        } else {
-          showError('No display data source available. Please restart the app.');
+        if (!displays || displays.length === 0) {
+          setLoading(false);
+          showError('No displays were returned. Make sure your screens are connected, then Retry.', true);
+          return;
         }
+
+        displaysList = displays;
+        setLoading(false);
+        document.getElementById('displays-container').classList.remove('hidden');
+        renderDisplays();
       } catch (err) {
-        showError('IPC fallback failed: ' + (err && err.message ? err.message : String(err)));
+        setLoading(false);
+        showError('Failed to detect displays: ' + (err && err.message ? err.message : String(err)), true);
       }
     }
 
@@ -335,41 +269,33 @@
       displaysList.forEach(display => {
         const card = document.createElement('div');
         card.className = 'display-card';
-        card.draggable = true;
         card.dataset.displayId = display.id;
 
-        const resolution = `${display.bounds.width}x${display.bounds.height}`;
-        const primary = display.isPrimary ? ' (Primary)' : '';
+        const resolution = `${display.bounds.width}×${display.bounds.height}`;
+        const primary = display.isPrimary ? ' · Primary' : '';
 
         card.innerHTML = `
-          <div class="display-id">Display ${display.index + 1}${primary}</div>
+          <div class="display-id">Screen ${display.index + 1}${primary}</div>
           <div class="display-info">
             Resolution: ${resolution}<br>
             Position: (${display.bounds.x}, ${display.bounds.y})
           </div>
           <div class="role-selector">
-            <button class="role-btn" data-role="public">Video (Public)</button>
-            <button class="role-btn" data-role="private">Video (Private)</button>
+            <button class="role-btn" data-role="video">Video</button>
             <button class="role-btn" data-role="youtube">YouTube</button>
             <button class="role-btn" data-role="web">Web Page</button>
             <button class="role-btn" data-role="clock">Clock</button>
-            <button class="role-btn" data-role="controller">Controller</button>
             <button class="role-btn" data-role="unassigned">Unassigned</button>
           </div>
         `;
 
-        // Restore previous selection if exists
-        if (roleAssignments[display.id]) {
-          const btn = card.querySelector(`[data-role="${roleAssignments[display.id]}"]`);
-          if (btn) btn.classList.add('selected');
-        }
+        const current = roleAssignments[display.id] || 'unassigned';
+        const currentBtn = card.querySelector(`[data-role="${current}"]`);
+        if (currentBtn) currentBtn.classList.add('selected');
+        card.classList.toggle('assigned', current !== 'unassigned');
 
-        // Add role button listeners
         card.querySelectorAll('.role-btn').forEach(btn => {
-          btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            assignRole(display.id, btn.dataset.role, card);
-          });
+          btn.addEventListener('click', () => assignRole(display.id, btn.dataset.role, card));
         });
 
         container.appendChild(card);
@@ -379,51 +305,46 @@
     }
 
     function assignRole(displayId, role, card) {
-      // Clear previous selection
       card.querySelectorAll('.role-btn').forEach(btn => btn.classList.remove('selected'));
+      card.querySelector(`[data-role="${role}"]`).classList.add('selected');
 
-      // Set new selection
-      if (role !== 'unassigned') {
-        roleAssignments[displayId] = role;
-        card.querySelector(`[data-role="${role}"]`).classList.add('selected');
-      } else {
+      if (role === 'unassigned') {
         delete roleAssignments[displayId];
+        card.classList.remove('assigned');
+      } else {
+        roleAssignments[displayId] = role;
+        card.classList.add('assigned');
       }
-
       updateSummary();
+    }
+
+    function screenNumbersForRole(role) {
+      return displaysList
+        .filter(d => roleAssignments[d.id] === role)
+        .map(d => d.index + 1);
     }
 
     function updateSummary() {
       const summary = document.getElementById('summary');
-      const roles = ['public', 'private', 'youtube', 'web', 'clock', 'controller'];
       let html = '';
 
-      roles.forEach(role => {
-        const displayId = Object.keys(roleAssignments).find(id => roleAssignments[id] === role);
-        const displayNum = displayId ? displaysList.find(d => d.id === displayId)?.index + 1 : 'Not assigned';
-
-        let roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
-        if (role === 'public') roleLabel = 'Video (Public)';
-        if (role === 'private') roleLabel = 'Video (Private)';
-        if (role === 'youtube') roleLabel = 'YouTube';
-        if (role === 'web') roleLabel = 'Web Page';
-
-        const assigned = displayId ? `Display ${displayNum}` : 'Not assigned';
-        const className = displayId ? '' : 'unassigned';
-
+      Object.entries(ROLE_LABELS).forEach(([role, label]) => {
+        const nums = screenNumbersForRole(role);
+        const assigned = nums.length
+          ? 'Screen ' + nums.join(', ')
+          : 'Not assigned';
+        const cls = nums.length ? '' : 'unassigned';
         html += `
           <div class="assignment-row">
-            <span class="role-label">${roleLabel}</span>
-            <span class="role-assignment ${className}">${assigned}</span>
-          </div>
-        `;
+            <span class="role-label">${label}</span>
+            <span class="role-assignment ${cls}">${assigned}</span>
+          </div>`;
       });
-
       summary.innerHTML = html;
 
-      // Enable confirm button if valid (at least one role assigned)
-      const confirmBtn = document.getElementById('confirm-btn');
-      confirmBtn.disabled = Object.keys(roleAssignments).length === 0;
+      // Valid when at least one screen has a content role.
+      const anyAssigned = Object.keys(roleAssignments).length > 0;
+      document.getElementById('confirm-btn').disabled = !anyAssigned;
     }
 
     document.getElementById('reset-btn').addEventListener('click', () => {
@@ -431,26 +352,26 @@
       renderDisplays();
     });
 
+    document.getElementById('identify-btn').addEventListener('click', () => {
+      try { electronAPI.identifyScreens(); } catch (e) { log('error', 'identify failed: ' + e.message); }
+    });
+
+    document.getElementById('help-btn').addEventListener('click', () => {
+      try { electronAPI.openHelp(); } catch (e) { log('error', 'help failed: ' + e.message); }
+    });
+
     document.getElementById('confirm-btn').addEventListener('click', () => {
-      // Convert roleAssignments back to display format
       const displays = displaysList.map(display => ({
         ...display,
         role: roleAssignments[display.id] || 'unassigned',
       }));
-
-      // Send configuration to main process
       electronAPI.saveDisplayConfig(displays);
-
-      // Close selector window
       electronAPI.closeSelector();
     });
 
-    // Primary path: data was embedded by main process as window.__DISPLAYS__
-    if (typeof window.__DISPLAYS__ !== 'undefined' && window.__DISPLAYS__.length > 0) {
-      applyDisplays(window.__DISPLAYS__);
-    } else if (!loadDisplaysFromURL()) {
-      loadDisplaysFallback();
-    }
+    window.addEventListener('DOMContentLoaded', loadDisplays);
+    // DOMContentLoaded may already have fired by the time this script runs.
+    if (document.readyState !== 'loading') loadDisplays();
   </script>
 </body>
 </html>

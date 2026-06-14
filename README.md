@@ -3,16 +3,16 @@
 A cross-platform (Windows-first) **multi-display controller** built on Electron. You open one app, pick what each
 of your screens should show, and drive them all from a single control panel.
 
-Each connected screen can be assigned a role:
+Each connected screen can be assigned a role — and the **same role can go on several screens** to mirror content:
 
-- **Video (Public)** — a local video, fullscreen, with audio.
-- **Video (Private)** — the same local video, fullscreen, muted (confidence/operator monitor). Public + private are
-  controlled together from the controller (load / play / pause / seek / volume).
+- **Video** — a local video, fullscreen. Put it on as many screens as you like; the first carries audio (master
+  volume from the controller) and the rest are muted to avoid echo.
 - **YouTube** — plays a YouTube link fullscreen.
 - **Web Page** — shows any website fullscreen (rendered in a real embedded Chromium view).
 - **Clock** — a fullscreen clock.
 
-The control panel shows **live preview thumbnails** of every active screen.
+The control panel shows **live preview thumbnails** of every active screen. A **🔦 Identify screens** button flashes a
+big number on each physical screen so you know which is which, and **❓ Help** opens the in-app tutorial.
 
 ---
 
@@ -30,6 +30,25 @@ The control panel opens on your main screen, and the assigned content windows op
 Your choice is remembered; use **Reconfigure Displays** in the controller to change it.
 
 Press **Esc** on any fullscreen content window to close just that window (handy when testing on a single screen).
+
+---
+
+## Tutorial
+
+1. **Launch** with `npm start` (or the installed app).
+2. On the **Display Configuration** screen, click **🔦 Identify screens** if you're unsure which screen is which —
+   each screen briefly shows its number.
+3. **Assign roles.** Click a role under each screen: **Video**, **YouTube**, **Web Page**, or **Clock**. Leave the
+   screen you're operating from as **Unassigned**. You can give **Video** to several screens to mirror it.
+4. Click **Confirm & Continue**. The control panel opens on your main screen.
+5. **Local video:** in *Local Video*, click **+ Add Video…**, then use Play/Pause, Next/Previous, the scrub bar, and
+   **Master Volume**. It plays on every Video screen.
+6. **YouTube:** paste a link in the *YouTube* box and press Enter — it plays on every YouTube screen.
+7. **Web page:** type an address in the *Web Page* box and press Enter — it loads on every Web screen.
+8. **Change setup:** click **Reconfigure Displays** any time. Press **Esc** on a fullscreen screen to close just that
+   one. Closing the control panel quits everything.
+
+The same tutorial is available in-app via the **❓ Help** button (on both the selector and the control panel).
 
 ---
 

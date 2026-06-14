@@ -52,13 +52,13 @@
   <canvas id="preview-canvas"></canvas>
 
   <script>
-    const { electronAPI } = window;
+    // electronAPI is a preload global (contextBridge) — don't redeclare it.
 
     const vid = document.getElementById('vid');
     const previewCanvas = document.getElementById('preview-canvas');
     const videoContainer = document.getElementById('video-container');
 
-    let windowRole = 'public'; // 'public', 'private', 'clock'
+    let windowRole = 'video'; // every local-video screen shares this role
     let isPlaying = false;
 
     // ════════════════════════════════════════════════════════════════
@@ -196,10 +196,9 @@
 
         case 'setVolume':
           console.log(`Setting volume to ${data}`);
-          if (windowRole === 'public') {
-            vid.volume = Math.max(0, Math.min(1, data));
-          }
-          // Private window volume is controlled by muting at window level
+          // Master volume from the controller. Muted video screens (every screen
+          // except the first) ignore this because they're muted at window level.
+          vid.volume = Math.max(0, Math.min(1, data));
           break;
 
         case 'stop':

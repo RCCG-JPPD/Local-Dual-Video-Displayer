@@ -5,9 +5,18 @@
  */
 
 const { contextBridge, ipcRenderer } = require('electron');
+const { extractVideoId } = require('./src/utils/youtube');
+const { normalizeUrl } = require('./src/utils/weburl');
 
 // Expose safe IPC APIs to renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
+  // ════════════════════════════════════════════════════════════════
+  // PURE HELPERS (shared with unit tests via src/utils/*)
+  // ════════════════════════════════════════════════════════════════
+
+  extractYouTubeId: (urlOrId) => extractVideoId(urlOrId),
+  normalizeWebUrl: (url) => normalizeUrl(url),
+
   // ════════════════════════════════════════════════════════════════
   // CONFIG & STATE
   // ════════════════════════════════════════════════════════════════
@@ -139,15 +148,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // DISPLAY SELECTOR SPECIFIC
   // ════════════════════════════════════════════════════════════════
 
-  // Selector fetches displays synchronously (invoke = request/response, no timing race)
+  // Selector fetches displays via request/response (no timing race, no temp file)
   getDisplays: () => ipcRenderer.invoke('get-displays'),
 
-  // Push-based listener (kept so main-process did-finish-load push also works)
-  onDisplaysDetected: (callback) => {
-    ipcRenderer.on('displays-detected', (event, displays) => {
-      callback(displays);
-    });
-  },
+  // Flash a number on each physical screen so the user can identify them
+  identifyScreens: () => ipcRenderer.send('identify-screens'),
+
+  // Open the in-app Help / tutorial window
+  openHelp: () => ipcRenderer.send('open-help'),
 
   // Send log messages to main process terminal (essential for Windows debugging)
   log: (level, msg) => ipcRenderer.send('renderer-log', level, msg),

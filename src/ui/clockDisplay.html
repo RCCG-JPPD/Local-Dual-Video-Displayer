@@ -73,7 +73,7 @@
   <canvas id="preview-canvas"></canvas>
 
   <script>
-    const { electronAPI } = window;
+    // electronAPI is a preload global (contextBridge) — don't redeclare it.
 
     const clockDisplay = document.getElementById('clock-display');
     const dateDisplay = document.getElementById('date-display');
