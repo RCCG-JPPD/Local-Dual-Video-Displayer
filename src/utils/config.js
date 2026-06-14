@@ -36,11 +36,18 @@ module.exports = {
     rememberedPosition: false,
   },
 
-  // Clock display settings
+  // Clock display settings (a corner widget on a solid background)
   clock: {
-    enabled: true,
-    format: '24h', // '12h' or '24h'
-    updateInterval: 1000, // milliseconds
+    mode: 'time',          // 'time' | 'countdown' | 'timer'
+    theme: 'dark',         // 'dark' (black bg/white text) | 'light' (white bg/black text)
+    size: 'large',         // 'small' | 'medium' | 'large'
+    corner: 'center',      // 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'
+    showSeconds: true,
+    hour12: false,         // false = 24h, true = 12h with AM/PM
+    countdown: { hours: 0, minutes: 5, seconds: 0 }, // for mode 'countdown'
+    targetTime: '',        // ISO datetime-local string, for mode 'timer'
+    holiday: 'auto',       // 'auto' | 'off' | a holiday key (e.g. 'christmas')
+    updateInterval: 1000,
   },
 
   // Canvas preview settings

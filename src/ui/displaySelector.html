@@ -84,6 +84,13 @@
     .display-id { font-weight: 600; color: #333; margin-bottom: 6px; font-size: 16px; }
     .display-info { font-size: 12px; color: #666; margin-bottom: 12px; line-height: 1.4; }
 
+    .display-thumb {
+      width: 100%; aspect-ratio: 16 / 10; background: #111; border-radius: 6px;
+      margin-bottom: 12px; overflow: hidden; display: flex; align-items: center;
+      justify-content: center; color: #888; font-size: 12px;
+    }
+    .display-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
     .role-selector { display: flex; gap: 6px; flex-wrap: wrap; }
 
     .role-btn {
@@ -256,10 +263,34 @@
         setLoading(false);
         document.getElementById('displays-container').classList.remove('hidden');
         renderDisplays();
+        startScreenPreviews();
       } catch (err) {
         setLoading(false);
         showError('Failed to detect displays: ' + (err && err.message ? err.message : String(err)), true);
       }
+    }
+
+    // ── live screen previews (desktopCapturer) so screens are identifiable ──
+    let previewTimer = null;
+    async function refreshScreenPreviews() {
+      if (!electronAPI.getScreenPreviews) return;
+      let previews;
+      try { previews = await electronAPI.getScreenPreviews(); } catch (_) { return; }
+      if (!previews || !previews.length) return;
+
+      const byId = new Map(previews.filter(p => p.id != null).map(p => [String(p.id), p.dataURL]));
+      displaysList.forEach((d, i) => {
+        const el = document.querySelector(`[data-thumb="${d.id}"]`);
+        if (!el) return;
+        // Match by display id, else fall back to positional order.
+        const url = byId.get(String(d.id)) || (previews[i] && previews[i].dataURL);
+        if (url) el.innerHTML = `<img src="${url}" alt="Screen ${d.index + 1} preview">`;
+      });
+    }
+    function startScreenPreviews() {
+      refreshScreenPreviews();
+      if (previewTimer) clearInterval(previewTimer);
+      previewTimer = setInterval(refreshScreenPreviews, 2000);
     }
 
     function renderDisplays() {
@@ -276,6 +307,7 @@
 
         card.innerHTML = `
           <div class="display-id">Screen ${display.index + 1}${primary}</div>
+          <div class="display-thumb" data-thumb="${display.id}">Loading preview…</div>
           <div class="display-info">
             Resolution: ${resolution}<br>
             Position: (${display.bounds.x}, ${display.bounds.y})

@@ -9,10 +9,14 @@ Each connected screen can be assigned a role — and the **same role can go on s
   volume from the controller) and the rest are muted to avoid echo.
 - **YouTube** — plays a YouTube link fullscreen.
 - **Web Page** — shows any website fullscreen (rendered in a real embedded Chromium view).
-- **Clock** — a fullscreen clock.
+- **Clock** — a clock on a solid light/dark background, shown in a chosen **corner** at **small/medium/large** size.
+  Supports **current time**, a **countdown** (H:M:S), and a **countdown to a date/time**, with optional seconds and
+  12/24-hour format. Includes **holiday animations** (fireworks for New Year, snow for Christmas/Advent, petals for
+  Easter, etc.) that appear **automatically around each date**, or can be forced/disabled from the controller.
 
-The control panel shows **live preview thumbnails** of every active screen. A **🔦 Identify screens** button flashes a
-big number on each physical screen so you know which is which, and **❓ Help** opens the in-app tutorial.
+The control panel shows **live preview thumbnails** of every active screen. When picking screens, the selector shows a
+**live thumbnail of each physical screen's current contents** so you can tell which is which (plus a **🔦 Identify
+screens** button that flashes a big number on each), and **❓ Help** opens the in-app tutorial.
 
 ---
 

@@ -7,6 +7,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 const { extractVideoId } = require('./src/utils/youtube');
 const { normalizeUrl } = require('./src/utils/weburl');
+const { formatClock, formatDuration, secondsUntil } = require('./src/utils/clockformat');
+const { getActiveHoliday, HOLIDAY_KEYS } = require('./src/utils/holidays');
 
 // Expose safe IPC APIs to renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -16,6 +18,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   extractYouTubeId: (urlOrId) => extractVideoId(urlOrId),
   normalizeWebUrl: (url) => normalizeUrl(url),
+
+  // Clock helpers (formatting + holiday calendar)
+  formatClock: (date, opts) => formatClock(date, opts),
+  formatDuration: (s) => formatDuration(s),
+  secondsUntil: (target, now) => secondsUntil(target, now),
+  getActiveHoliday: (date) => getActiveHoliday(date),
+  holidayList: () => HOLIDAY_KEYS,
 
   // ════════════════════════════════════════════════════════════════
   // CONFIG & STATE
@@ -83,6 +92,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
       callback(url);
     });
   },
+
+  // ════════════════════════════════════════════════════════════════
+  // CLOCK CONTROL
+  // ════════════════════════════════════════════════════════════════
+
+  // Controller pushes clock settings (persisted + broadcast to clock screens)
+  sendClockSettings: (settings) => ipcRenderer.send('clock-settings', settings),
+
+  // Clock screens listen for live settings updates
+  onClockSettings: (callback) => {
+    ipcRenderer.on('clock-settings', (event, settings) => callback(settings));
+  },
+
+  // ════════════════════════════════════════════════════════════════
+  // SCREEN PREVIEWS (identify which physical screen is which)
+  // ════════════════════════════════════════════════════════════════
+
+  // Returns [{ id, dataURL }] thumbnails of each physical display's contents
+  getScreenPreviews: () => ipcRenderer.invoke('get-screen-previews'),
 
   // ════════════════════════════════════════════════════════════════
   // FILE OPERATIONS

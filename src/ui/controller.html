@@ -301,6 +301,24 @@
       margin-top: 8px;
     }
 
+    /* Clock settings grid */
+    .clock-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      align-items: end;
+    }
+    .clock-grid label {
+      display: flex; flex-direction: column; gap: 4px;
+      font-size: 13px; color: #555;
+    }
+    .clock-grid select {
+      padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; background: #fff;
+    }
+    .clock-grid .clk-check {
+      flex-direction: row; align-items: center; gap: 8px;
+    }
+
     /* A section whose display role isn't assigned to any screen */
     .controls-section.unavailable {
       opacity: 0.55;
@@ -436,6 +454,58 @@
       <div class="section-hint" id="webHint"></div>
     </div>
 
+    <!-- CLOCK SECTION -->
+    <div class="controls-section" id="section-clock">
+      <h2>🕐 Clock</h2>
+      <div class="clock-grid">
+        <label>Mode
+          <select id="clkMode">
+            <option value="time">Current time</option>
+            <option value="countdown">Countdown (duration)</option>
+            <option value="timer">Countdown to a time</option>
+          </select>
+        </label>
+        <label>Size
+          <select id="clkSize">
+            <option value="small">Small</option>
+            <option value="medium">Medium</option>
+            <option value="large">Large</option>
+          </select>
+        </label>
+        <label>Corner
+          <select id="clkCorner">
+            <option value="top-left">Top-left</option>
+            <option value="top-right">Top-right</option>
+            <option value="bottom-left">Bottom-left</option>
+            <option value="bottom-right">Bottom-right</option>
+            <option value="center">Center</option>
+          </select>
+        </label>
+        <label>Theme
+          <select id="clkTheme">
+            <option value="dark">Dark (black bg)</option>
+            <option value="light">Light (white bg)</option>
+          </select>
+        </label>
+        <label>Holiday animation
+          <select id="clkHoliday"></select>
+        </label>
+        <label class="clk-check"><input type="checkbox" id="clkSeconds"> Show seconds</label>
+        <label class="clk-check"><input type="checkbox" id="clk12h"> 12-hour time</label>
+      </div>
+
+      <div id="clkCountdownRow" class="url-row" style="margin-top:10px; display:none;">
+        <input id="clkH" type="number" min="0" placeholder="Hours" style="max-width:90px">
+        <input id="clkM" type="number" min="0" placeholder="Minutes" style="max-width:90px">
+        <input id="clkS" type="number" min="0" placeholder="Seconds" style="max-width:90px">
+        <button id="clkStart" class="btn-primary">Start countdown</button>
+      </div>
+      <div id="clkTimerRow" class="url-row" style="margin-top:10px; display:none;">
+        <input id="clkTarget" type="datetime-local">
+      </div>
+      <div class="section-hint" id="clkHint"></div>
+    </div>
+
     <!-- DISPLAYS SECTION -->
     <div class="controls-section">
       <h2>🖥️ Displays</h2>
@@ -509,6 +579,9 @@
 
         // Enable only the sections whose role is assigned to a screen
         applyRoleAvailability(config);
+
+        // Populate the Clock controls from saved settings
+        initClockControls(config);
 
         // Load window status
         const windowStatus = await electronAPI.getWindowStatus();
@@ -759,6 +832,80 @@
     ytUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendYouTube(); });
     webUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendWeb(); });
 
+    // ════════════════════════════════════════════════════════════════
+    // CLOCK CONTROLS
+    // ════════════════════════════════════════════════════════════════
+
+    const clk = {
+      mode: document.getElementById('clkMode'),
+      size: document.getElementById('clkSize'),
+      corner: document.getElementById('clkCorner'),
+      theme: document.getElementById('clkTheme'),
+      holiday: document.getElementById('clkHoliday'),
+      seconds: document.getElementById('clkSeconds'),
+      h12: document.getElementById('clk12h'),
+      h: document.getElementById('clkH'),
+      m: document.getElementById('clkM'),
+      s: document.getElementById('clkS'),
+      target: document.getElementById('clkTarget'),
+      countdownRow: document.getElementById('clkCountdownRow'),
+      timerRow: document.getElementById('clkTimerRow'),
+      hint: document.getElementById('clkHint'),
+    };
+
+    function initClockControls(cfg) {
+      const c = (cfg && cfg.clock) || {};
+
+      // Populate holiday dropdown: Auto, Off, then each holiday.
+      clk.holiday.innerHTML = '<option value="auto">Auto (by date)</option><option value="off">Off</option>'
+        + (electronAPI.holidayList() || []).map(h => `<option value="${h.key}">${h.name}</option>`).join('');
+
+      clk.mode.value = c.mode || 'time';
+      clk.size.value = c.size || 'large';
+      clk.corner.value = c.corner || 'center';
+      clk.theme.value = c.theme || 'dark';
+      clk.holiday.value = c.holiday || 'auto';
+      clk.seconds.checked = c.showSeconds !== false;
+      clk.h12.checked = !!c.hour12;
+      const cd = c.countdown || { hours: 0, minutes: 5, seconds: 0 };
+      clk.h.value = cd.hours ?? 0; clk.m.value = cd.minutes ?? 5; clk.s.value = cd.seconds ?? 0;
+      clk.target.value = c.targetTime || '';
+
+      updateClockRows();
+    }
+
+    function updateClockRows() {
+      clk.countdownRow.style.display = clk.mode.value === 'countdown' ? 'flex' : 'none';
+      clk.timerRow.style.display = clk.mode.value === 'timer' ? 'flex' : 'none';
+    }
+
+    function clockSettings() {
+      return {
+        mode: clk.mode.value,
+        size: clk.size.value,
+        corner: clk.corner.value,
+        theme: clk.theme.value,
+        holiday: clk.holiday.value,
+        showSeconds: clk.seconds.checked,
+        hour12: clk.h12.checked,
+        countdown: { hours: +clk.h.value || 0, minutes: +clk.m.value || 0, seconds: +clk.s.value || 0 },
+        targetTime: clk.target.value,
+      };
+    }
+
+    function pushClock() {
+      electronAPI.sendClockSettings(clockSettings());
+      clk.hint.textContent = '✓ Clock updated';
+      setTimeout(() => { clk.hint.textContent = ''; }, 1500);
+    }
+
+    // Live-apply on any change (except the fixed-duration countdown, which is "Start"-driven).
+    ['size', 'corner', 'theme', 'holiday'].forEach(k => clk[k].addEventListener('change', pushClock));
+    ['seconds', 'h12'].forEach(k => clk[k].addEventListener('change', pushClock));
+    clk.mode.addEventListener('change', () => { updateClockRows(); pushClock(); });
+    clk.target.addEventListener('change', pushClock);
+    document.getElementById('clkStart').onclick = pushClock; // restart countdown with current H:M:S
+
     // Dim + disable sections whose display role isn't assigned to any screen,
     // so the controller only offers what the current setup can actually show.
     function applyRoleAvailability(cfg) {
@@ -768,6 +915,7 @@
         localvideo: roles.has('video'),
         youtube: roles.has('youtube'),
         web: roles.has('web'),
+        clock: roles.has('clock'),
       };
 
       Object.entries(sections).forEach(([key, available]) => {

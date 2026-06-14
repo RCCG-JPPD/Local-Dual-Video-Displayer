@@ -120,6 +120,40 @@ class IPCHandler {
     });
 
     // ════════════════════════════════════════════════════════════════
+    // CLOCK SETTINGS
+    // ════════════════════════════════════════════════════════════════
+
+    // Controller updates clock settings → persist + live-update every clock screen.
+    ipcMain.on('clock-settings', (event, settings) => {
+      this.configManager.updateConfig({ clock: settings });
+      this.broadcastToRole('clock', 'clock-settings', settings);
+    });
+
+    // ════════════════════════════════════════════════════════════════
+    // SCREEN PREVIEWS (desktopCapturer)
+    // ════════════════════════════════════════════════════════════════
+
+    // Live thumbnails of each physical display's current contents so the user
+    // can tell which screen is which when assigning roles.
+    ipcMain.handle('get-screen-previews', async () => {
+      const { desktopCapturer } = require('electron');
+      try {
+        const sources = await desktopCapturer.getSources({
+          types: ['screen'],
+          thumbnailSize: { width: 320, height: 200 },
+        });
+        return sources.map(s => ({
+          id: s.display_id ? Number(s.display_id) : null,
+          name: s.name,
+          dataURL: s.thumbnail.toDataURL(),
+        }));
+      } catch (err) {
+        console.error('get-screen-previews failed:', err);
+        return [];
+      }
+    });
+
+    // ════════════════════════════════════════════════════════════════
     // STATE
     // ════════════════════════════════════════════════════════════════
 
