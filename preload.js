@@ -8,6 +8,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 const { extractVideoId } = require('./src/utils/youtube');
 const { normalizeUrl } = require('./src/utils/weburl');
 const { formatClock, formatDuration, secondsUntil } = require('./src/utils/clockformat');
+const { nextIndex: slideshowNextIndex } = require('./src/utils/slideshow');
 const { getActiveHoliday, HOLIDAY_KEYS, ANIMATIONS } = require('./src/utils/holidays');
 const { THEMES, resolveTheme } = require('./src/utils/clockThemes');
 
@@ -19,6 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   extractYouTubeId: (urlOrId) => extractVideoId(urlOrId),
   normalizeWebUrl: (url) => normalizeUrl(url),
+  slideshowNextIndex: (index, length, dir, loop) => slideshowNextIndex(index, length, dir, loop),
 
   // Clock helpers (formatting + holiday calendar)
   formatClock: (date, opts) => formatClock(date, opts),
@@ -119,8 +121,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // SCREEN PREVIEWS (identify which physical screen is which)
   // ════════════════════════════════════════════════════════════════
 
-  // Returns [{ id, dataURL }] thumbnails of each physical display's contents
-  getScreenPreviews: () => ipcRenderer.invoke('get-screen-previews'),
+  // Returns [{ id, dataURL }] thumbnails of each physical display's contents.
+  // Pass { thumbnailSize: { width, height } } for a larger capture (enlarge view).
+  getScreenPreviews: (opts) => ipcRenderer.invoke('get-screen-previews', opts),
+
+  // ════════════════════════════════════════════════════════════════
+  // PRESENTATION (role 'powerpoint')
+  // ════════════════════════════════════════════════════════════════
+
+  selectPresentationFiles: () => ipcRenderer.invoke('open-presentation-dialog'),
+  sendPresentationLoad: (data) => ipcRenderer.send('presentation-load', data),
+  sendPresentationCommand: (cmd, data) => ipcRenderer.send('presentation-command', cmd, data),
+  onPresentationLoad: (cb) => ipcRenderer.on('presentation-load', (e, data) => cb(data)),
+  onPresentationCommand: (cb) => ipcRenderer.on('presentation-command', (e, cmd, data) => cb(cmd, data)),
+
+  // ════════════════════════════════════════════════════════════════
+  // SLIDESHOW (role 'slideshow')
+  // ════════════════════════════════════════════════════════════════
+
+  selectMediaFiles: () => ipcRenderer.invoke('open-media-dialog'),
+  sendSlideshowLoad: (data) => ipcRenderer.send('slideshow-load', data),
+  sendSlideshowCommand: (cmd, data) => ipcRenderer.send('slideshow-command', cmd, data),
+  onSlideshowLoad: (cb) => ipcRenderer.on('slideshow-load', (e, data) => cb(data)),
+  onSlideshowCommand: (cb) => ipcRenderer.on('slideshow-command', (e, cmd, data) => cb(cmd, data)),
+  // Display → controller: the live current index (for the next-slide preview).
+  sendSlideshowIndex: (index) => ipcRenderer.send('slideshow-index', index),
+  onSlideshowIndex: (cb) => ipcRenderer.on('slideshow-index', (e, index) => cb(index)),
+
+  // ════════════════════════════════════════════════════════════════
+  // SPREADSHEET (role 'excel')
+  // ════════════════════════════════════════════════════════════════
+
+  selectSpreadsheet: () => ipcRenderer.invoke('open-spreadsheet-dialog'),
+  loadSpreadsheet: (filePath) => ipcRenderer.invoke('load-spreadsheet', filePath),
+  sendExcelCommand: (cmd, data) => ipcRenderer.send('excel-command', cmd, data),
+  onExcelLoad: (cb) => ipcRenderer.on('excel-load', (e, data) => cb(data)),
+  onExcelCommand: (cb) => ipcRenderer.on('excel-command', (e, cmd, data) => cb(cmd, data)),
 
   // ════════════════════════════════════════════════════════════════
   // FILE OPERATIONS
@@ -222,6 +258,8 @@ contextBridge.exposeInMainWorld('nodeAPI', {
   },
   fs: {
     existsSync: require('fs').existsSync,
+    // Read a file's bytes (used by pdf.js to load a PDF without a file:// fetch).
+    readBytes: (p) => new Uint8Array(require('fs').readFileSync(p)),
   },
   platform: process.platform,
   isDebug: process.env.DEBUG === 'true',

@@ -338,9 +338,43 @@
     }
 
     .controls-section.unavailable input,
-    .controls-section.unavailable button {
+    .controls-section.unavailable button,
+    .controls-section.unavailable select {
       pointer-events: none;
     }
+
+    /* Preview cards are clickable to enlarge */
+    .preview-card { cursor: zoom-in; transition: border-color 0.15s; }
+    .preview-card:hover { border-color: #667eea; }
+    .preview-image video { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+    /* Slideshow now/next thumbnails */
+    .slide-thumbs { display: flex; gap: 16px; align-items: flex-start; margin-top: 10px; }
+    .slide-thumb-wrap { display: flex; flex-direction: column; gap: 6px; }
+    .slide-thumb {
+      width: 180px; height: 102px; background: #000; border-radius: 6px; overflow: hidden;
+      display: flex; align-items: center; justify-content: center; color: #777; font-size: 12px;
+    }
+    .slide-thumb img, .slide-thumb video { max-width: 100%; max-height: 100%; object-fit: contain; }
+    #slideList { width: 100%; height: 130px; border: 1px solid #ddd; border-radius: 4px; padding: 8px; font-size: 13px; }
+
+    /* Click-to-enlarge lightbox (bigger, but not fullscreen) */
+    #enlarge-overlay {
+      position: fixed; inset: 0; background: rgba(15, 23, 42, 0.78);
+      display: none; align-items: center; justify-content: center; z-index: 11000;
+    }
+    #enlarge-overlay.show { display: flex; }
+    #enlarge-box {
+      width: 72vw; max-width: 1100px; background: #0b0b0b; border-radius: 10px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    #enlarge-img { width: 100%; height: 72vh; object-fit: contain; background: #000; display: block; }
+    #enlarge-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #111; color: #eee; }
+    #enlarge-title { font-size: 13px; margin-right: auto; }
+    #enlarge-nav { display: none; gap: 6px; }
+    #enlarge-bar button { background: #222; color: #eee; border: 1px solid #444; }
+    #enlarge-bar button:hover:not(:disabled) { background: #333; border-color: #666; }
 
     /* ── Interactive tutorial (spotlight tour) ── */
     .tour-highlight {
@@ -532,6 +566,71 @@
       <div class="section-hint" id="clkHint"></div>
     </div>
 
+    <!-- PRESENTATION SECTION -->
+    <div class="controls-section" id="section-presentation">
+      <h2>📽️ Presentation</h2>
+      <div class="button-group">
+        <button id="presLoadBtn" class="btn-primary">📂 Load PDF / images…</button>
+      </div>
+      <div class="playback-controls">
+        <button id="presPrev">◀ Prev</button>
+        <span id="presCounter" class="time-display" style="min-width:120px;text-align:center;">No slides</span>
+        <button id="presNext">Next ▶</button>
+      </div>
+      <div class="section-hint" id="presHint">Export your slides to PDF (or pick a set of images), then navigate them here.</div>
+    </div>
+
+    <!-- MEDIA SLIDESHOW SECTION -->
+    <div class="controls-section" id="section-slideshow">
+      <h2>🖼️ Media Slideshow</h2>
+      <div class="playlist-container">
+        <h3>Slides (images & videos)</h3>
+        <select id="slideList" size="6"></select>
+        <div class="button-group">
+          <button id="slideAddBtn" class="btn-primary">+ Add images/videos…</button>
+          <button id="slideRemoveBtn" class="btn-danger">✕ Remove</button>
+          <button id="slideUpBtn">↑ Up</button>
+          <button id="slideDownBtn">↓ Down</button>
+        </div>
+      </div>
+      <div class="clock-grid" style="margin-bottom:12px;">
+        <label>Seconds per image
+          <input id="slideDuration" type="number" min="1" value="5" style="padding:8px 10px;border:1px solid #ddd;border-radius:4px;">
+        </label>
+        <label class="clk-check"><input type="checkbox" id="slideLoop" checked> Loop</label>
+      </div>
+      <div class="playback-controls">
+        <button id="slidePrevBtn">◀ Prev</button>
+        <button id="slidePlayBtn">▶ Play</button>
+        <button id="slideNextBtn">Next ▶</button>
+      </div>
+      <div class="slide-thumbs">
+        <div class="slide-thumb-wrap">
+          <div class="preview-role">Now showing</div>
+          <div class="slide-thumb" id="slideNowPrev">—</div>
+        </div>
+        <div class="slide-thumb-wrap">
+          <div class="preview-role">Next up</div>
+          <div class="slide-thumb" id="slideNextPrev">—</div>
+        </div>
+      </div>
+      <div class="section-hint" id="slideHint"></div>
+    </div>
+
+    <!-- SPREADSHEET SECTION -->
+    <div class="controls-section" id="section-excel">
+      <h2>📊 Spreadsheet</h2>
+      <div class="button-group">
+        <button id="xlLoadBtn" class="btn-primary">📂 Load spreadsheet…</button>
+      </div>
+      <div class="url-row" id="xlSheetRow" style="display:none;">
+        <label style="font-size:13px;color:#555;display:flex;align-items:center;gap:8px;">Sheet
+          <select id="xlSheet" style="padding:8px 10px;border:1px solid #ddd;border-radius:4px;"></select>
+        </label>
+      </div>
+      <div class="section-hint" id="xlHint">Open an .xlsx, .xls or .csv file to show it on the Spreadsheet screen.</div>
+    </div>
+
     <!-- DISPLAYS SECTION -->
     <div class="controls-section">
       <h2>🖥️ Displays</h2>
@@ -541,6 +640,21 @@
         <button id="identifyBtn">🔦 Identify Screens</button>
         <button id="tutorialBtn">🎓 Tutorial</button>
         <button id="helpBtn">❓ Help</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Click-to-enlarge lightbox for a live preview (bigger, but not fullscreen) -->
+  <div id="enlarge-overlay">
+    <div id="enlarge-box">
+      <img id="enlarge-img" alt="Enlarged screen preview">
+      <div id="enlarge-bar">
+        <span id="enlarge-title"></span>
+        <span id="enlarge-nav">
+          <button id="enlargePrev">◀ Prev</button>
+          <button id="enlargeNext">Next ▶</button>
+        </span>
+        <button id="enlargeClose">✕ Close</button>
       </div>
     </div>
   </div>
@@ -557,8 +671,13 @@
     </div>
   </div>
 
+  <!-- Vendored pdf.js (used to count PDF pages for the slide counter). -->
+  <script src="../vendor/pdfjs/pdf.min.js"></script>
   <script>
     // electronAPI is a preload global (contextBridge) — don't redeclare it.
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '../vendor/pdfjs/pdf.worker.min.js';
+    }
 
     // ════════════════════════════════════════════════════════════════
     // DOM ELEMENTS
@@ -617,13 +736,19 @@
       }
     }
 
-    const ROLE_LABELS = { video: 'Video', youtube: 'YouTube', web: 'Web Page', clock: 'Clock' };
+    const ROLE_LABELS = {
+      video: 'Video', youtube: 'YouTube', web: 'Web Page', clock: 'Clock',
+      powerpoint: 'Presentation', slideshow: 'Slideshow', excel: 'Spreadsheet',
+    };
 
     // Re-apply everything that depends on the current config (used on first load
     // AND after Reconfigure, via onConfigLoaded — so sections/clock re-enable live).
     function refreshControllerForConfig(cfg) {
       applyRoleAvailability(cfg);
       initClockControls(cfg);
+      initPresentation(cfg);
+      initSlideshow(cfg);
+      initExcel(cfg);
     }
 
     // ── Live WHOLE-SCREEN previews (desktopCapturer): one card per assigned screen ──
@@ -649,6 +774,8 @@
       displays.forEach((d, i) => {
         const card = document.createElement('div');
         card.className = 'preview-card';
+        card.title = 'Click to enlarge';
+        card.onclick = () => openEnlarge(d);
 
         const image = document.createElement('div');
         image.className = 'preview-image';
@@ -818,10 +945,13 @@
       if (!windowStatus) return;
 
       const parts = [];
-      if (windowStatus.video)   parts.push(`${windowStatus.video} Video`);
-      if (windowStatus.youtube) parts.push(`${windowStatus.youtube} YouTube`);
-      if (windowStatus.web)     parts.push(`${windowStatus.web} Web`);
-      if (windowStatus.clock)   parts.push(`${windowStatus.clock} Clock`);
+      if (windowStatus.video)      parts.push(`${windowStatus.video} Video`);
+      if (windowStatus.youtube)    parts.push(`${windowStatus.youtube} YouTube`);
+      if (windowStatus.web)        parts.push(`${windowStatus.web} Web`);
+      if (windowStatus.clock)      parts.push(`${windowStatus.clock} Clock`);
+      if (windowStatus.powerpoint) parts.push(`${windowStatus.powerpoint} Presentation`);
+      if (windowStatus.slideshow)  parts.push(`${windowStatus.slideshow} Slideshow`);
+      if (windowStatus.excel)      parts.push(`${windowStatus.excel} Spreadsheet`);
 
       displayStatus.classList.remove('warning', 'error');
       if (parts.length === 0) {
@@ -989,6 +1119,9 @@
         youtube: roles.has('youtube'),
         web: roles.has('web'),
         clock: roles.has('clock'),
+        presentation: roles.has('powerpoint'),
+        slideshow: roles.has('slideshow'),
+        excel: roles.has('excel'),
       };
 
       Object.entries(sections).forEach(([key, available]) => {
@@ -1002,6 +1135,266 @@
         ? 'Browse here — the page is mirrored onto your Web screen(s).'
         : hint;
     }
+
+    // ════════════════════════════════════════════════════════════════
+    // PRESENTATION CONTROL
+    // ════════════════════════════════════════════════════════════════
+
+    let presState = { type: 'pdf', source: '', images: [], index: 0, count: 0 };
+
+    function initPresentation(cfg) {
+      const p = (cfg && cfg.presentation) || {};
+      presState = {
+        type: p.type || 'pdf',
+        source: p.source || '',
+        images: p.images || [],
+        index: p.index || 0,
+        count: p.count || (p.images ? p.images.length : 0),
+      };
+      updatePresCounter();
+    }
+
+    function updatePresCounter() {
+      document.getElementById('presCounter').textContent =
+        presState.count ? `Slide ${presState.index + 1} / ${presState.count}` : 'No slides';
+    }
+
+    document.getElementById('presLoadBtn').onclick = async () => {
+      const paths = await electronAPI.selectPresentationFiles();
+      if (!paths || !paths.length) return;
+      const pdf = paths.find(p => /\.pdf$/i.test(p));
+      let data;
+      if (pdf) {
+        let count = 0;
+        try {
+          const bytes = nodeAPI.fs.readBytes(pdf);
+          const doc = await pdfjsLib.getDocument({ data: bytes }).promise;
+          count = doc.numPages;
+        } catch (err) { console.error('Could not read PDF page count:', err); }
+        data = { type: 'pdf', source: pdf, images: [], index: 0, count };
+      } else {
+        data = { type: 'images', source: '', images: paths, index: 0, count: paths.length };
+      }
+      presState = data;
+      electronAPI.sendPresentationLoad(data);
+      updatePresCounter();
+      document.getElementById('presHint').textContent = `✓ Loaded ${presState.count} slide(s)`;
+    };
+
+    function presNavigate(dir) {
+      if (!presState.count) return;
+      let i = presState.index + (dir === 'next' ? 1 : -1);
+      i = Math.max(0, Math.min(i, presState.count - 1));
+      if (i === presState.index) return;
+      presState.index = i;
+      electronAPI.sendPresentationCommand('goto', i);
+      updatePresCounter();
+    }
+    document.getElementById('presPrev').onclick = () => presNavigate('prev');
+    document.getElementById('presNext').onclick = () => presNavigate('next');
+
+    // ════════════════════════════════════════════════════════════════
+    // MEDIA SLIDESHOW CONTROL
+    // ════════════════════════════════════════════════════════════════
+
+    const VIDEO_RE = /\.(mp4|mov|mkv|avi|webm|m4v)$/i;
+
+    const slideListSel = document.getElementById('slideList');
+    const slideDurationEl = document.getElementById('slideDuration');
+    const slideLoopEl = document.getElementById('slideLoop');
+    const slidePlayBtn = document.getElementById('slidePlayBtn');
+    const slideNowPrev = document.getElementById('slideNowPrev');
+    const slideNextPrev = document.getElementById('slideNextPrev');
+
+    let slideItems = [];
+    let slideIndex = 0;
+    let slidePlaying = false;
+
+    function initSlideshow(cfg) {
+      const s = (cfg && cfg.slideshow) || {};
+      slideItems = s.items || [];
+      slideIndex = s.index || 0;
+      slidePlaying = slideItems.length > 0 && s.autoPlay !== false;
+      slideDurationEl.value = s.duration || 5;
+      slideLoopEl.checked = s.loop !== false;
+      renderSlideList();
+      updateSlidePlayBtn();
+      updateSlideThumbs();
+    }
+
+    function renderSlideList() {
+      slideListSel.innerHTML = slideItems.map((p, i) =>
+        `<option value="${i}">${i + 1}. ${pathBasename(p)}</option>`).join('');
+    }
+
+    function slideshowData() {
+      return {
+        items: slideItems,
+        duration: Math.max(1, parseInt(slideDurationEl.value, 10) || 5),
+        loop: slideLoopEl.checked,
+        index: slideIndex,
+        autoPlay: slidePlaying,
+      };
+    }
+    function pushSlideshow() { electronAPI.sendSlideshowLoad(slideshowData()); }
+
+    function setThumb(host, path) {
+      host.innerHTML = '';
+      if (!path) { host.textContent = '—'; return; }
+      if (VIDEO_RE.test(path)) {
+        const v = document.createElement('video');
+        v.src = electronAPI.toFileURL(path);
+        v.muted = true; v.preload = 'metadata';
+        v.addEventListener('loadeddata', () => { try { v.currentTime = 0.1; } catch (_) {} });
+        host.appendChild(v);
+      } else {
+        const im = document.createElement('img');
+        im.src = electronAPI.toFileURL(path);
+        host.appendChild(im);
+      }
+    }
+
+    function updateSlideThumbs() {
+      const n = slideItems.length;
+      setThumb(slideNowPrev, n ? slideItems[Math.min(slideIndex, n - 1)] : null);
+      let nextI = -1;
+      if (n) { nextI = slideIndex + 1; if (nextI >= n) nextI = slideLoopEl.checked ? 0 : -1; }
+      setThumb(slideNextPrev, nextI >= 0 ? slideItems[nextI] : null);
+    }
+
+    function updateSlidePlayBtn() {
+      slidePlayBtn.textContent = slidePlaying ? '⏸ Pause' : '▶ Play';
+    }
+
+    document.getElementById('slideAddBtn').onclick = async () => {
+      const files = await electronAPI.selectMediaFiles();
+      if (!files) return;
+      files.forEach(f => { if (!slideItems.includes(f)) slideItems.push(f); });
+      renderSlideList(); updateSlideThumbs(); pushSlideshow();
+    };
+
+    document.getElementById('slideRemoveBtn').onclick = () => {
+      const i = slideListSel.selectedIndex;
+      if (i < 0) return;
+      slideItems.splice(i, 1);
+      if (slideIndex >= slideItems.length) slideIndex = Math.max(0, slideItems.length - 1);
+      renderSlideList(); updateSlideThumbs(); pushSlideshow();
+    };
+
+    function moveSlide(dir) {
+      const i = slideListSel.selectedIndex;
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= slideItems.length) return;
+      [slideItems[i], slideItems[j]] = [slideItems[j], slideItems[i]];
+      renderSlideList();
+      slideListSel.selectedIndex = j;
+      updateSlideThumbs(); pushSlideshow();
+    }
+    document.getElementById('slideUpBtn').onclick = () => moveSlide(-1);
+    document.getElementById('slideDownBtn').onclick = () => moveSlide(1);
+
+    slidePlayBtn.onclick = () => {
+      slidePlaying = !slidePlaying;
+      electronAPI.sendSlideshowCommand(slidePlaying ? 'play' : 'pause');
+      updateSlidePlayBtn();
+    };
+    document.getElementById('slidePrevBtn').onclick = () => electronAPI.sendSlideshowCommand('prev');
+    document.getElementById('slideNextBtn').onclick = () => electronAPI.sendSlideshowCommand('next');
+    slideDurationEl.addEventListener('change', pushSlideshow);
+    slideLoopEl.addEventListener('change', () => { updateSlideThumbs(); pushSlideshow(); });
+
+    // The slideshow screen reports its live index → refresh the now/next thumbnails.
+    electronAPI.onSlideshowIndex((index) => {
+      slideIndex = index;
+      updateSlideThumbs();
+      if (index >= 0 && index < slideListSel.options.length) slideListSel.selectedIndex = index;
+    });
+
+    // ════════════════════════════════════════════════════════════════
+    // SPREADSHEET CONTROL
+    // ════════════════════════════════════════════════════════════════
+
+    const xlSheetSel = document.getElementById('xlSheet');
+    const xlSheetRow = document.getElementById('xlSheetRow');
+    const xlHint = document.getElementById('xlHint');
+
+    function populateSheets(names) {
+      xlSheetSel.innerHTML = (names || []).map((n, i) => `<option value="${i}">${n}</option>`).join('');
+      xlSheetRow.style.display = (names || []).length > 1 ? 'flex' : 'none';
+    }
+
+    function initExcel(cfg) {
+      const s = (cfg && cfg.spreadsheet) || {};
+      if (s.source) {
+        electronAPI.loadSpreadsheet(s.source).then(data => {
+          if (data && !data.error) {
+            populateSheets(data.sheetNames);
+            xlSheetSel.value = String(s.activeSheet || 0);
+            xlHint.textContent = `✓ ${pathBasename(s.source)}`;
+          }
+        }).catch(() => {});
+      }
+    }
+
+    document.getElementById('xlLoadBtn').onclick = async () => {
+      const path = await electronAPI.selectSpreadsheet();
+      if (!path) return;
+      xlHint.textContent = 'Loading…';
+      const data = await electronAPI.loadSpreadsheet(path);
+      if (!data || data.error) { xlHint.textContent = '✗ ' + ((data && data.error) || 'Could not open file'); return; }
+      populateSheets(data.sheetNames);
+      xlHint.textContent = `✓ Loaded ${pathBasename(path)} — ${data.sheetNames.length} sheet(s)`;
+    };
+
+    xlSheetSel.onchange = (e) => electronAPI.sendExcelCommand('selectSheet', parseInt(e.target.value, 10));
+
+    // ════════════════════════════════════════════════════════════════
+    // CLICK-TO-ENLARGE LIGHTBOX (bigger, but not fullscreen)
+    // ════════════════════════════════════════════════════════════════
+
+    const enlargeOverlay = document.getElementById('enlarge-overlay');
+    const enlargeImg = document.getElementById('enlarge-img');
+    const enlargeNav = document.getElementById('enlarge-nav');
+    let enlargeDisplay = null;
+    let enlargeTimer = null;
+
+    async function refreshEnlarge() {
+      if (!enlargeDisplay) return;
+      let previews = [];
+      try { previews = await electronAPI.getScreenPreviews({ thumbnailSize: { width: 1280, height: 800 } }); } catch (_) {}
+      const byId = new Map((previews || []).filter(p => p.id != null).map(p => [String(p.id), p.dataURL]));
+      const url = byId.get(String(enlargeDisplay.id));
+      if (url) enlargeImg.src = url;
+    }
+
+    function openEnlarge(d) {
+      enlargeDisplay = d;
+      const num = (d.displayIndex != null ? d.displayIndex : 0) + 1;
+      document.getElementById('enlarge-title').textContent = `Screen ${num} · ${ROLE_LABELS[d.role] || d.role}`;
+      enlargeNav.style.display = (d.role === 'powerpoint' || d.role === 'slideshow') ? 'flex' : 'none';
+      enlargeOverlay.classList.add('show');
+      refreshEnlarge();
+      if (enlargeTimer) clearInterval(enlargeTimer);
+      enlargeTimer = setInterval(refreshEnlarge, 1200);
+    }
+
+    function closeEnlarge() {
+      enlargeOverlay.classList.remove('show');
+      enlargeDisplay = null;
+      if (enlargeTimer) { clearInterval(enlargeTimer); enlargeTimer = null; }
+    }
+
+    function enlargeNavigate(dir) {
+      if (!enlargeDisplay) return;
+      if (enlargeDisplay.role === 'powerpoint') presNavigate(dir);
+      else if (enlargeDisplay.role === 'slideshow') electronAPI.sendSlideshowCommand(dir);
+    }
+
+    document.getElementById('enlargePrev').onclick = () => enlargeNavigate('prev');
+    document.getElementById('enlargeNext').onclick = () => enlargeNavigate('next');
+    document.getElementById('enlargeClose').onclick = closeEnlarge;
+    enlargeOverlay.addEventListener('click', (e) => { if (e.target === enlargeOverlay) closeEnlarge(); });
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && enlargeOverlay.classList.contains('show')) closeEnlarge(); });
 
     // ════════════════════════════════════════════════════════════════
     // INTERACTIVE TUTORIAL (spotlight tour)

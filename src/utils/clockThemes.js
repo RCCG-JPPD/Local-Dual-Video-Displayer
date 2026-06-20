@@ -7,6 +7,9 @@ const THEMES = [
   { key: 'auto',    name: 'Auto (by holiday)', bg: '#0d1117', text: '#ffffff' },
   { key: 'dark',    name: 'Dark',              bg: '#0d1117', text: '#ffffff' },
   { key: 'light',   name: 'Light',             bg: '#ffffff', text: '#111111' },
+  // Transparent (clock floats over whatever is on the screen behind it)
+  { key: 'glass-white', name: 'Transparent · White text', bg: 'transparent', text: '#ffffff' },
+  { key: 'glass-black', name: 'Transparent · Black text', bg: 'transparent', text: '#111111' },
   // Colourful
   { key: 'midnight', name: 'Midnight Blue',    bg: '#0b1026', text: '#cfe3ff' },
   { key: 'ocean',    name: 'Ocean',            bg: '#013a63', text: '#caf0f8' },

@@ -4,9 +4,14 @@ const { THEMES, resolveTheme } = require('../src/utils/clockThemes');
 
 test('THEMES includes the expected packs', () => {
   const keys = THEMES.map(t => t.key);
-  for (const k of ['auto', 'dark', 'light', 'midnight', 'ocean', 'sunset', 'forest', 'contrast', 'terminal', 'amber', 'rccg']) {
+  for (const k of ['auto', 'dark', 'light', 'glass-white', 'glass-black', 'midnight', 'ocean', 'sunset', 'forest', 'contrast', 'terminal', 'amber', 'rccg']) {
     assert.ok(keys.includes(k), `missing theme ${k}`);
   }
+});
+
+test('transparent themes resolve to a transparent background', () => {
+  assert.deepEqual(resolveTheme('glass-white'), { bg: 'transparent', text: '#ffffff' });
+  assert.deepEqual(resolveTheme('glass-black'), { bg: 'transparent', text: '#111111' });
 });
 
 test('resolveTheme returns a named theme', () => {

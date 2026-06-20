@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Presentation</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+    #stage {
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      background: #000;
+    }
+    /* Both the PDF canvas and the image slide fit within the screen. */
+    #slide-canvas, #slide-img {
+      max-width: 100%; max-height: 100%; object-fit: contain; display: none;
+    }
+    #message {
+      color: #888; font-size: 22px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="slide-canvas"></canvas>
+    <img id="slide-img" alt="">
+    <div id="message">No presentation loaded — add one from the controller.</div>
+  </div>
+
+  <!-- Vendored pdf.js (UMD build exposes window.pdfjsLib). -->
+  <script src="../vendor/pdfjs/pdf.min.js"></script>
+  <script>
+    // electronAPI / nodeAPI are preload globals (contextBridge).
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '../vendor/pdfjs/pdf.worker.min.js';
+    }
+
+    const canvasEl = document.getElementById('slide-canvas');
+    const imgEl = document.getElementById('slide-img');
+    const messageEl = document.getElementById('message');
+
+    let state = { type: 'pdf', source: '', images: [], index: 0, count: 0 };
+    let pdfDoc = null;
+    let renderToken = 0; // guards against overlapping async renders
+
+    function showOnly(el) {
+      canvasEl.style.display = 'none';
+      imgEl.style.display = 'none';
+      messageEl.style.display = 'none';
+      if (el) el.style.display = el === messageEl ? 'block' : 'block';
+    }
+
+    async function loadSource(data) {
+      state = { ...state, ...(data || {}) };
+      pdfDoc = null;
+      renderToken++;
+
+      if (state.type === 'pdf' && state.source) {
+        try {
+          const bytes = nodeAPI.fs.readBytes(state.source);
+          pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
+          state.count = pdfDoc.numPages;
+        } catch (err) {
+          console.error('Failed to load PDF:', err);
+          messageEl.textContent = 'Could not open this PDF.';
+          showOnly(messageEl);
+          return;
+        }
+      } else if (state.type === 'images') {
+        state.count = (state.images || []).length;
+      }
+
+      state.index = Math.max(0, Math.min(state.index || 0, state.count - 1));
+      renderSlide();
+    }
+
+    async function renderSlide() {
+      if (!state.count) {
+        messageEl.textContent = 'No presentation loaded — add one from the controller.';
+        showOnly(messageEl);
+        return;
+      }
+      const i = Math.max(0, Math.min(state.index, state.count - 1));
+      state.index = i;
+
+      if (state.type === 'images') {
+        imgEl.src = electronAPI.toFileURL(state.images[i]);
+        showOnly(imgEl);
+        return;
+      }
+
+      if (!pdfDoc) return;
+      const token = ++renderToken;
+      try {
+        const page = await pdfDoc.getPage(i + 1); // pdf.js pages are 1-based
+        if (token !== renderToken) return; // a newer render superseded this one
+        const unscaled = page.getViewport({ scale: 1 });
+        const scale = Math.min(window.innerWidth / unscaled.width, window.innerHeight / unscaled.height);
+        const viewport = page.getViewport({ scale: Math.max(0.1, scale) });
+        canvasEl.width = Math.floor(viewport.width);
+        canvasEl.height = Math.floor(viewport.height);
+        const ctx = canvasEl.getContext('2d');
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        if (token !== renderToken) return;
+        showOnly(canvasEl);
+      } catch (err) {
+        console.error('Failed to render page:', err);
+      }
+    }
+
+    function goto(i) { state.index = i; renderSlide(); }
+    function next() { if (state.index < state.count - 1) goto(state.index + 1); }
+    function prev() { if (state.index > 0) goto(state.index - 1); }
+
+    electronAPI.onPresentationLoad(loadSource);
+    electronAPI.onPresentationCommand((cmd, data) => {
+      if (cmd === 'goto' && typeof data === 'number') goto(data);
+      else if (cmd === 'next') next();
+      else if (cmd === 'prev') prev();
+    });
+
+    // Re-fit the current slide if the window resizes.
+    window.addEventListener('resize', () => { if (state.type === 'pdf') renderSlide(); });
+
+    // Restore the last presentation on startup (after restart / reconfigure).
+    electronAPI.getConfig()
+      .then(cfg => { const p = cfg && cfg.presentation; if (p && (p.source || (p.images || []).length)) loadSource(p); })
+      .catch(() => {});
+
+    // Escape hatch so a single-screen user is never trapped behind the window.
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.close(); });
+    console.log('Presentation display initialized');
+  </script>
+</body>
+</html>

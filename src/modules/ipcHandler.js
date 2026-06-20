@@ -19,6 +19,16 @@ class IPCHandler {
     });
   }
 
+  /** Show an open-file dialog parented to the controller. Returns selected paths. */
+  async _openFiles(title, filters, multi = true) {
+    const { dialog } = require('electron');
+    const controller = this.displayManager.windows.controller;
+    if (!controller || controller.isDestroyed()) return [];
+    const properties = multi ? ['openFile', 'multiSelections'] : ['openFile'];
+    const { canceled, filePaths } = await dialog.showOpenDialog(controller, { title, properties, filters });
+    return canceled ? [] : filePaths;
+  }
+
   setupListeners() {
     // ════════════════════════════════════════════════════════════════
     // DISPLAY CONFIGURATION
@@ -96,6 +106,108 @@ class IPCHandler {
       return canceled ? [] : filePaths;
     });
 
+    // Presentation: pick a PDF or a set of slide images.
+    ipcMain.handle('open-presentation-dialog', async () => {
+      return this._openFiles('Choose a PDF or slide images', [
+        { name: 'Presentations & images', extensions: ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] },
+        { name: 'PDF', extensions: ['pdf'] },
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] },
+      ]);
+    });
+
+    // Slideshow: pick images and/or videos.
+    ipcMain.handle('open-media-dialog', async () => {
+      return this._openFiles('Choose images and videos', [
+        { name: 'Images & videos', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v'] },
+      ]);
+    });
+
+    // Spreadsheet: pick one workbook.
+    ipcMain.handle('open-spreadsheet-dialog', async () => {
+      const paths = await this._openFiles('Choose a spreadsheet', [
+        { name: 'Spreadsheets', extensions: ['xlsx', 'xls', 'xlsm', 'csv'] },
+      ], false);
+      return paths[0] || null;
+    });
+
+    // ════════════════════════════════════════════════════════════════
+    // PRESENTATION (role 'powerpoint')
+    // ════════════════════════════════════════════════════════════════
+
+    // Controller sets the source (PDF / images). Persist + broadcast to the screen(s).
+    ipcMain.on('presentation-load', (event, data) => {
+      this.configManager.updateConfig({ presentation: data });
+      this.broadcastToRole('powerpoint', 'presentation-load', data);
+    });
+
+    // Controller navigates slides (next / prev / goto). Persist the index on goto.
+    ipcMain.on('presentation-command', (event, cmd, data) => {
+      if (cmd === 'goto' && typeof data === 'number') {
+        this.configManager.updateConfig({ presentation: { index: data } });
+      }
+      this.broadcastToRole('powerpoint', 'presentation-command', cmd, data);
+    });
+
+    // ════════════════════════════════════════════════════════════════
+    // SLIDESHOW (role 'slideshow')
+    // ════════════════════════════════════════════════════════════════
+
+    ipcMain.on('slideshow-load', (event, data) => {
+      this.configManager.updateConfig({ slideshow: data });
+      this.broadcastToRole('slideshow', 'slideshow-load', data);
+    });
+
+    ipcMain.on('slideshow-command', (event, cmd, data) => {
+      if (cmd === 'goto' && typeof data === 'number') {
+        this.configManager.updateConfig({ slideshow: { index: data } });
+      }
+      this.broadcastToRole('slideshow', 'slideshow-command', cmd, data);
+    });
+
+    // The slideshow window auto-advances on its own timer; the first/primary screen
+    // reports the live index back so the controller can show the "next" thumbnail.
+    ipcMain.on('slideshow-index', (event, index) => {
+      const [primary] = this.displayManager.getWindowsByRole('slideshow');
+      if (primary && event.sender.id === primary.webContents.id) {
+        const controller = this.displayManager.windows.controller;
+        if (controller && !controller.isDestroyed()) {
+          controller.webContents.send('slideshow-index', index);
+        }
+      }
+    });
+
+    // ════════════════════════════════════════════════════════════════
+    // SPREADSHEET (role 'excel')
+    // ════════════════════════════════════════════════════════════════
+
+    // Parse a workbook with SheetJS (main process) → { sheetNames, htmlBySheet }.
+    // Also persist the source and broadcast to the excel screen(s).
+    ipcMain.handle('load-spreadsheet', async (event, filePath) => {
+      if (!filePath) return null;
+      let data;
+      try {
+        const XLSX = require('xlsx');
+        const wb = XLSX.readFile(filePath);
+        const sheetNames = wb.SheetNames;
+        const htmlBySheet = sheetNames.map(name =>
+          XLSX.utils.sheet_to_html(wb.Sheets[name], { id: 'sheet', editable: false }));
+        data = { source: filePath, sheetNames, htmlBySheet, activeSheet: 0 };
+      } catch (err) {
+        console.error('load-spreadsheet failed:', err);
+        return { error: err && err.message ? err.message : String(err) };
+      }
+      this.configManager.updateConfig({ spreadsheet: { source: filePath, activeSheet: 0 } });
+      this.broadcastToRole('excel', 'excel-load', data);
+      return data;
+    });
+
+    ipcMain.on('excel-command', (event, cmd, data) => {
+      if (cmd === 'selectSheet' && typeof data === 'number') {
+        this.configManager.updateConfig({ spreadsheet: { activeSheet: data } });
+      }
+      this.broadcastToRole('excel', 'excel-command', cmd, data);
+    });
+
     // ════════════════════════════════════════════════════════════════
     // CANVAS PREVIEW / MIRRORING
     // ════════════════════════════════════════════════════════════════
@@ -142,12 +254,14 @@ class IPCHandler {
 
     // Live thumbnails of each physical display's current contents so the user
     // can tell which screen is which when assigning roles.
-    ipcMain.handle('get-screen-previews', async () => {
+    ipcMain.handle('get-screen-previews', async (event, opts) => {
       const { desktopCapturer } = require('electron');
+      // Caller may request a larger capture (used by the click-to-enlarge lightbox).
+      const thumbnailSize = (opts && opts.thumbnailSize) || { width: 320, height: 200 };
       try {
         const sources = await desktopCapturer.getSources({
           types: ['screen'],
-          thumbnailSize: { width: 320, height: 200 },
+          thumbnailSize,
         });
         return sources.map(s => ({
           id: s.display_id ? Number(s.display_id) : null,

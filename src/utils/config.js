@@ -10,7 +10,7 @@ module.exports = {
     // {
     //   id: number (unique identifier from electron screen.getAllDisplays())
     //   displayIndex: number (0, 1, 2, etc)
-    //   role: 'video' | 'youtube' | 'web' | 'clock' | 'unassigned'
+    //   role: 'video' | 'youtube' | 'web' | 'clock' | 'powerpoint' | 'slideshow' | 'excel' | 'unassigned'
     //         (the same role may be assigned to several screens)
     //   label: string (e.g., "Display 1")
     //   bounds: { x, y, width, height }
@@ -48,6 +48,30 @@ module.exports = {
     targetTime: '',        // ISO datetime-local string, for mode 'timer'
     holiday: 'auto',       // 'auto' | 'off' | a holiday key (e.g. 'christmas')
     updateInterval: 1000,
+  },
+
+  // Presentation viewer (role 'powerpoint'): slides from a PDF or a set of images.
+  presentation: {
+    type: 'pdf',     // 'pdf' | 'images'
+    source: '',      // absolute path of the PDF (type 'pdf')
+    images: [],      // absolute paths of slide images (type 'images')
+    index: 0,        // current slide (0-based)
+    count: 0,        // total slides (pages or images)
+  },
+
+  // Media slideshow (role 'slideshow'): images + videos shown in sequence.
+  slideshow: {
+    items: [],       // ordered list of absolute file paths (images and videos)
+    duration: 5,     // seconds each image is shown before advancing
+    loop: true,      // restart from the beginning after the last item
+    index: 0,        // current item (0-based)
+    autoPlay: true,  // start advancing automatically
+  },
+
+  // Spreadsheet viewer (role 'excel'): a sheet rendered as an HTML table.
+  spreadsheet: {
+    source: '',      // absolute path of the loaded workbook
+    activeSheet: 0,  // index of the visible sheet
   },
 
   // Canvas preview settings

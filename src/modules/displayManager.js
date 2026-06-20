@@ -210,6 +210,10 @@ class DisplayManager {
       minimizable: false,
       skipTaskbar: true,
       alwaysOnTop: true,
+      // Transparent so the 'glass-*' clock themes float over the screen behind
+      // them. Solid themes paint an opaque CSS background, so they're unaffected.
+      transparent: true,
+      backgroundColor: '#00000000',
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -265,6 +269,28 @@ class DisplayManager {
     return this._createContentWindow(displayIndex, 'youtube', 'youtubePlayer.html', { sandbox: false, webviewTag: true });
   }
 
+  /** Presentation viewer — renders PDF pages (pdf.js) or slide images fullscreen. */
+  createPresentationWindow(displayIndex) {
+    return this._createContentWindow(displayIndex, 'powerpoint', 'presentationDisplay.html', {}, (window) => {
+      window.webContents.send('window-role', 'powerpoint');
+    });
+  }
+
+  /** Media slideshow — images + videos shown in sequence. First screen carries audio. */
+  createSlideshowWindow(displayIndex, hasAudio = true) {
+    return this._createContentWindow(displayIndex, 'slideshow', 'slideshowDisplay.html', {}, (window) => {
+      window.webContents.setAudioMuted(!hasAudio);
+      window.webContents.send('window-role', 'slideshow');
+    });
+  }
+
+  /** Spreadsheet viewer — renders a sheet (parsed in main with SheetJS) as a table. */
+  createExcelWindow(displayIndex) {
+    return this._createContentWindow(displayIndex, 'excel', 'excelDisplay.html', {}, (window) => {
+      window.webContents.send('window-role', 'excel');
+    });
+  }
+
   /**
    * Create or update all content windows based on config.
    */
@@ -275,6 +301,7 @@ class DisplayManager {
     }
 
     let videoAudioAssigned = false;
+    let slideshowAudioAssigned = false;
 
     config.displays.forEach(displayConfig => {
       const role = displayConfig.role;
@@ -299,6 +326,18 @@ class DisplayManager {
             break;
           case 'youtube':
             this.createYouTubeWindow(displayConfig.displayIndex);
+            break;
+          case 'powerpoint':
+            this.createPresentationWindow(displayConfig.displayIndex);
+            break;
+          case 'slideshow': {
+            const hasAudio = !slideshowAudioAssigned;
+            slideshowAudioAssigned = true;
+            this.createSlideshowWindow(displayConfig.displayIndex, hasAudio);
+            break;
+          }
+          case 'excel':
+            this.createExcelWindow(displayConfig.displayIndex);
             break;
           default:
             console.warn(`Unknown display role: ${role}`);
@@ -456,6 +495,9 @@ class DisplayManager {
       clock: this.getWindowsByRole('clock').length,
       web: this.getWindowsByRole('web').length,
       youtube: this.getWindowsByRole('youtube').length,
+      powerpoint: this.getWindowsByRole('powerpoint').length,
+      slideshow: this.getWindowsByRole('slideshow').length,
+      excel: this.getWindowsByRole('excel').length,
     };
     return status;
   }

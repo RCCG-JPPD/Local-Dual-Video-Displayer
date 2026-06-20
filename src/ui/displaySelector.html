@@ -166,9 +166,10 @@
 
     <div class="instructions">
       💡 Give each screen a role: <strong>Video</strong> (a local video — you can pick several screens to mirror it),
-      <strong>YouTube</strong>, a <strong>Web Page</strong>, or a <strong>Clock</strong>. Leave the screen you're working
-      on as <strong>Unassigned</strong> — the control panel always opens on your main screen. Not sure which screen is
-      which? Click <strong>Identify screens</strong>. You can reconfigure anytime later.
+      <strong>YouTube</strong>, a <strong>Web Page</strong>, a <strong>Clock</strong>, a <strong>Presentation</strong>
+      (PDF/images), a media <strong>Slideshow</strong>, or a <strong>Spreadsheet</strong>. Leave the screen you're
+      working on as <strong>Unassigned</strong> — the control panel always opens on your main screen. Not sure which
+      screen is which? Click <strong>Identify screens</strong>. You can reconfigure anytime later.
     </div>
 
     <div id="error-message" class="error-message"></div>
@@ -201,6 +202,9 @@
       youtube: 'YouTube',
       web: 'Web Page',
       clock: 'Clock',
+      powerpoint: 'Presentation',
+      slideshow: 'Slideshow',
+      excel: 'Spreadsheet',
     };
 
     let displaysList = [];
@@ -317,6 +321,9 @@
             <button class="role-btn" data-role="youtube">YouTube</button>
             <button class="role-btn" data-role="web">Web Page</button>
             <button class="role-btn" data-role="clock">Clock</button>
+            <button class="role-btn" data-role="powerpoint">Presentation</button>
+            <button class="role-btn" data-role="slideshow">Slideshow</button>
+            <button class="role-btn" data-role="excel">Spreadsheet</button>
             <button class="role-btn" data-role="unassigned">Unassigned</button>
           </div>
         `;

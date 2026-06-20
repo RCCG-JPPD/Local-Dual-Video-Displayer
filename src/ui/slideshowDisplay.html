@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Slideshow</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+    #stage {
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center; background: #000;
+    }
+    #slide-img, #slide-video {
+      max-width: 100%; max-height: 100%; object-fit: contain; display: none;
+    }
+    #message {
+      color: #888; font-size: 22px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <img id="slide-img" alt="">
+    <video id="slide-video" playsinline></video>
+    <div id="message">No slideshow yet — add images or videos from the controller.</div>
+  </div>
+
+  <script>
+    // electronAPI is a preload global (contextBridge).
+    const imgEl = document.getElementById('slide-img');
+    const videoEl = document.getElementById('slide-video');
+    const messageEl = document.getElementById('message');
+
+    const IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp)$/i;
+    const VIDEO_RE = /\.(mp4|mov|mkv|avi|webm|m4v)$/i;
+    const isImage = (p) => IMAGE_RE.test(p);
+    const isVideo = (p) => VIDEO_RE.test(p);
+
+    let state = { items: [], duration: 5, loop: true, index: 0, autoPlay: true };
+    let playing = false;
+    let imageTimer = null;
+
+    function clearTimer() { if (imageTimer) { clearTimeout(imageTimer); imageTimer = null; } }
+
+    function showOnly(el) {
+      imgEl.style.display = 'none';
+      videoEl.style.display = 'none';
+      messageEl.style.display = 'none';
+      if (el) el.style.display = 'block';
+    }
+
+    function advance(dir) {
+      const i = electronAPI.slideshowNextIndex(state.index, state.items.length, dir, state.loop);
+      if (i === -1) { playing = false; return; } // reached the end, not looping
+      render(i);
+    }
+
+    function render(i) {
+      clearTimer();
+      videoEl.pause();
+      const n = state.items.length;
+      if (!n) { showOnly(messageEl); return; }
+
+      state.index = Math.max(0, Math.min(i, n - 1));
+      const item = state.items[state.index];
+      electronAPI.sendSlideshowIndex(state.index); // tell the controller (next-slide preview)
+
+      if (isVideo(item)) {
+        videoEl.src = electronAPI.toFileURL(item);
+        showOnly(videoEl);
+        videoEl.currentTime = 0;
+        if (playing) videoEl.play().catch(() => {});
+      } else {
+        // Treat anything non-video as an image.
+        imgEl.src = electronAPI.toFileURL(item);
+        showOnly(imgEl);
+        if (playing) imageTimer = setTimeout(() => advance(1), Math.max(1, state.duration) * 1000);
+      }
+    }
+
+    // A video finishing advances the show (when playing).
+    videoEl.addEventListener('ended', () => { if (playing) advance(1); });
+
+    function loadShow(data) {
+      state = { ...state, ...(data || {}) };
+      state.items = state.items || [];
+      playing = !!state.autoPlay;
+      render(state.index || 0);
+    }
+
+    electronAPI.onSlideshowLoad(loadShow);
+    electronAPI.onSlideshowCommand((cmd, data) => {
+      switch (cmd) {
+        case 'play':
+          playing = true;
+          if (isVideo(state.items[state.index])) videoEl.play().catch(() => {});
+          else { clearTimer(); imageTimer = setTimeout(() => advance(1), Math.max(1, state.duration) * 1000); }
+          break;
+        case 'pause':
+          playing = false; clearTimer(); videoEl.pause();
+          break;
+        case 'next': advance(1); break;
+        case 'prev': advance(-1); break;
+        case 'goto': if (typeof data === 'number') render(data); break;
+      }
+    });
+
+    // Restore the last slideshow on startup (after restart / reconfigure).
+    electronAPI.getConfig()
+      .then(cfg => { const s = cfg && cfg.slideshow; if (s && (s.items || []).length) loadShow(s); })
+      .catch(() => {});
+
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.close(); });
+    console.log('Slideshow display initialized');
+  </script>
+</body>
+</html>

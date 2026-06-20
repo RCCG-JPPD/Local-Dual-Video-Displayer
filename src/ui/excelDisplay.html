@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Spreadsheet</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%; background: #fff; color: #111; overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    #wrap { display: flex; flex-direction: column; height: 100%; }
+
+    /* Sheet tabs (read-only on the display; switched from the controller). */
+    #tabs {
+      flex: 0 0 auto; display: flex; gap: 6px; padding: 8px 10px; overflow-x: auto;
+      background: #f3f4f6; border-bottom: 1px solid #e5e7eb;
+    }
+    .tab {
+      padding: 6px 12px; border-radius: 6px 6px 0 0; font-size: 13px; white-space: nowrap;
+      background: #e5e7eb; color: #555;
+    }
+    .tab.active { background: #2563eb; color: #fff; font-weight: 600; }
+
+    #table-host { flex: 1 1 auto; overflow: auto; padding: 0; }
+    #message { padding: 40px; color: #888; font-size: 22px; }
+
+    /* SheetJS sheet_to_html emits a <table id="sheet"> with td/th cells. */
+    #table-host table { border-collapse: collapse; font-size: 14px; width: max-content; }
+    #table-host td, #table-host th {
+      border: 1px solid #d1d5db; padding: 6px 10px; white-space: nowrap;
+      max-width: 360px; overflow: hidden; text-overflow: ellipsis;
+    }
+    #table-host tr:nth-child(even) td { background: #f9fafb; }
+    #table-host tr:first-child td { background: #eef2ff; font-weight: 600; position: sticky; top: 0; }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <div id="tabs"></div>
+    <div id="table-host"><div id="message">No spreadsheet loaded — open one from the controller.</div></div>
+  </div>
+
+  <script>
+    // electronAPI is a preload global (contextBridge).
+    const tabsEl = document.getElementById('tabs');
+    const hostEl = document.getElementById('table-host');
+
+    let data = { sheetNames: [], htmlBySheet: [], activeSheet: 0 };
+
+    function renderTabs() {
+      tabsEl.innerHTML = '';
+      (data.sheetNames || []).forEach((name, i) => {
+        const t = document.createElement('div');
+        t.className = 'tab' + (i === data.activeSheet ? ' active' : '');
+        t.textContent = name;
+        tabsEl.appendChild(t);
+      });
+      tabsEl.style.display = (data.sheetNames || []).length > 1 ? 'flex' : 'none';
+    }
+
+    function renderSheet() {
+      const html = (data.htmlBySheet || [])[data.activeSheet];
+      hostEl.innerHTML = html || '<div id="message">This sheet is empty.</div>';
+      hostEl.scrollTop = 0; hostEl.scrollLeft = 0;
+      renderTabs();
+    }
+
+    function load(payload) {
+      if (!payload || payload.error) return;
+      data = { sheetNames: [], htmlBySheet: [], activeSheet: 0, ...payload };
+      renderSheet();
+    }
+
+    electronAPI.onExcelLoad(load);
+    electronAPI.onExcelCommand((cmd, value) => {
+      if (cmd === 'selectSheet' && typeof value === 'number') {
+        data.activeSheet = Math.max(0, Math.min(value, (data.sheetNames || []).length - 1));
+        renderSheet();
+      }
+    });
+
+    // Restore the last workbook on startup (re-parses via the main process).
+    electronAPI.getConfig()
+      .then(cfg => { const s = cfg && cfg.spreadsheet; if (s && s.source) return electronAPI.loadSpreadsheet(s.source); })
+      .then(payload => { if (payload) load(payload); })
+      .catch(() => {});
+
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.close(); });
+    console.log('Spreadsheet display initialized');
+  </script>
+</body>
+</html>
