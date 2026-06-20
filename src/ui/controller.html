@@ -13,14 +13,50 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #f5f5f5;
-      padding: 20px;
-      overflow-y: auto;
+      height: 100vh;
+      overflow: hidden;
     }
 
-    .controller-container {
-      max-width: 1200px;
-      margin: 0 auto;
+    /* ── App shell: left sidebar + scrolling content ── */
+    .app-shell { display: flex; height: 100vh; }
+
+    .sidebar {
+      flex: 0 0 210px;
+      background: #1f2330;
+      color: #cdd3e0;
+      display: flex;
+      flex-direction: column;
+      padding: 14px 10px;
+      gap: 4px;
+      overflow-y: auto;
     }
+    .sidebar-title {
+      font-size: 15px; font-weight: 700; color: #fff;
+      padding: 6px 10px 12px; letter-spacing: 0.2px;
+    }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%; text-align: left;
+      padding: 10px 12px; border: none; border-radius: 8px;
+      background: transparent; color: #cdd3e0;
+      font-size: 13.5px; font-weight: 500; cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .nav-item:hover:not(:disabled) { background: #2b3142; color: #fff; }
+    .nav-item.active { background: #667eea; color: #fff; }
+    .nav-item:disabled { opacity: 0.4; cursor: not-allowed; }
+    .nav-spacer { flex: 1; }
+
+    .content {
+      flex: 1; overflow-y: auto; padding: 20px;
+      max-width: 1100px;
+    }
+
+    /* Only the active tab panel is shown */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    /* Sections already style themselves; remove the bottom margin when tabbed. */
+    .tab-panel.controls-section, .tab-panel.preview-section { margin-bottom: 0; }
 
     h1 {
       font-size: 24px;
@@ -332,6 +368,10 @@
       flex-direction: row; align-items: center; gap: 8px;
     }
 
+    /* Per-screen clock overlay toggles */
+    .overlay-list { display: flex; flex-direction: column; gap: 8px; }
+    .overlay-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #444; cursor: pointer; }
+
     /* A section whose display role isn't assigned to any screen */
     .controls-section.unavailable {
       opacity: 0.55;
@@ -433,12 +473,25 @@
   </style>
 </head>
 <body>
-  <div class="controller-container">
-    <h1>📺 Unified Display Controller</h1>
+  <div class="app-shell">
+    <nav class="sidebar">
+      <div class="sidebar-title">📺 Controller</div>
+      <button class="nav-item active" data-tab="previews">🔴 Previews</button>
+      <button class="nav-item" data-tab="localvideo">🎬 Video</button>
+      <button class="nav-item" data-tab="youtube">▶️ YouTube</button>
+      <button class="nav-item" data-tab="web">🌐 Web</button>
+      <button class="nav-item" data-tab="presentation">📽️ Presentation</button>
+      <button class="nav-item" data-tab="slideshow">🖼️ Slideshow</button>
+      <button class="nav-item" data-tab="excel">📊 Spreadsheet</button>
+      <button class="nav-item" data-tab="clock">🕐 Clock</button>
+      <span class="nav-spacer"></span>
+      <button class="nav-item" data-tab="displays">🖥️ Displays</button>
+    </nav>
+    <main class="content">
     <div class="status-bar" id="status-bar">Ready</div>
 
     <!-- PREVIEW SECTION -->
-    <div class="preview-section">
+    <div class="preview-section tab-panel active" data-panel="previews">
       <h2>🔴 Live Previews</h2>
       <div class="preview-grid" id="preview-grid">
         <!-- Preview cards will be generated here -->
@@ -446,7 +499,7 @@
     </div>
 
     <!-- LOCAL VIDEO SECTION -->
-    <div class="controls-section" id="section-localvideo">
+    <div class="controls-section tab-panel" id="section-localvideo" data-panel="localvideo">
       <h2>🎬 Local Video</h2>
 
       <!-- Playlist -->
@@ -482,7 +535,7 @@
     </div>
 
     <!-- YOUTUBE SECTION -->
-    <div class="controls-section" id="section-youtube">
+    <div class="controls-section tab-panel" id="section-youtube" data-panel="youtube">
       <h2>▶️ YouTube</h2>
       <div class="url-row">
         <input id="ytUrl" type="text" placeholder="Paste a YouTube link or video ID…">
@@ -501,7 +554,7 @@
     </div>
 
     <!-- WEB PAGE SECTION — browse here; the page mirrors onto the Web screen(s) -->
-    <div class="controls-section" id="section-web">
+    <div class="controls-section tab-panel" id="section-web" data-panel="web">
       <h2>🌐 Web Page</h2>
       <div class="web-toolbar">
         <button id="webBack" title="Back">◀</button>
@@ -515,7 +568,7 @@
     </div>
 
     <!-- CLOCK SECTION -->
-    <div class="controls-section" id="section-clock">
+    <div class="controls-section tab-panel" id="section-clock" data-panel="clock">
       <h2>🕐 Clock</h2>
       <div class="clock-grid">
         <label>Mode
@@ -564,10 +617,18 @@
         <input id="clkTarget" type="datetime-local">
       </div>
       <div class="section-hint" id="clkHint"></div>
+
+      <!-- Clock overlay: float the clock over any screen's content (e.g. YouTube + Clock) -->
+      <div class="display-management">
+        <h3>Show clock overlay on…</h3>
+        <div id="clockOverlayList" class="overlay-list">
+          <div class="section-hint">No screens assigned yet — use “Reconfigure Displays”.</div>
+        </div>
+      </div>
     </div>
 
     <!-- PRESENTATION SECTION -->
-    <div class="controls-section" id="section-presentation">
+    <div class="controls-section tab-panel" id="section-presentation" data-panel="presentation">
       <h2>📽️ Presentation</h2>
       <div class="button-group">
         <button id="presLoadBtn" class="btn-primary">📂 Load PDF / images…</button>
@@ -581,7 +642,7 @@
     </div>
 
     <!-- MEDIA SLIDESHOW SECTION -->
-    <div class="controls-section" id="section-slideshow">
+    <div class="controls-section tab-panel" id="section-slideshow" data-panel="slideshow">
       <h2>🖼️ Media Slideshow</h2>
       <div class="playlist-container">
         <h3>Slides (images & videos)</h3>
@@ -618,7 +679,7 @@
     </div>
 
     <!-- SPREADSHEET SECTION -->
-    <div class="controls-section" id="section-excel">
+    <div class="controls-section tab-panel" id="section-excel" data-panel="excel">
       <h2>📊 Spreadsheet</h2>
       <div class="button-group">
         <button id="xlLoadBtn" class="btn-primary">📂 Load spreadsheet…</button>
@@ -631,8 +692,8 @@
       <div class="section-hint" id="xlHint">Open an .xlsx, .xls or .csv file to show it on the Spreadsheet screen.</div>
     </div>
 
-    <!-- DISPLAYS SECTION -->
-    <div class="controls-section">
+    <!-- DISPLAYS PANEL -->
+    <div class="controls-section tab-panel" id="section-displays" data-panel="displays">
       <h2>🖥️ Displays</h2>
       <div class="display-status" id="display-status">Connected displays: Loading...</div>
       <div class="button-group">
@@ -642,6 +703,7 @@
         <button id="helpBtn">❓ Help</button>
       </div>
     </div>
+    </main>
   </div>
 
   <!-- Click-to-enlarge lightbox for a live preview (bigger, but not fullscreen) -->
@@ -691,6 +753,23 @@
     const statusBar = document.getElementById('status-bar');
     const previewGrid = document.getElementById('preview-grid');
     const displayStatus = document.getElementById('display-status');
+
+    // ════════════════════════════════════════════════════════════════
+    // SIDEBAR TABS
+    // ════════════════════════════════════════════════════════════════
+
+    const navItems = Array.from(document.querySelectorAll('.nav-item'));
+    const tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
+    // Tabs usable regardless of which screens are assigned.
+    const ALWAYS_ON_TABS = new Set(['previews', 'clock', 'displays']);
+
+    function showTab(name) {
+      navItems.forEach(n => n.classList.toggle('active', n.dataset.tab === name));
+      tabPanels.forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+    }
+    navItems.forEach(n => n.addEventListener('click', () => {
+      if (!n.disabled) showTab(n.dataset.tab);
+    }));
 
     // ════════════════════════════════════════════════════════════════
     // STATE
@@ -746,9 +825,38 @@
     function refreshControllerForConfig(cfg) {
       applyRoleAvailability(cfg);
       initClockControls(cfg);
+      renderClockOverlays(cfg);
       initPresentation(cfg);
       initSlideshow(cfg);
       initExcel(cfg);
+    }
+
+    // Per-screen "show clock overlay" checkboxes (Clock tab). Lets the clock float
+    // over any content screen — e.g. YouTube + Clock on the same display.
+    function renderClockOverlays(cfg) {
+      const host = document.getElementById('clockOverlayList');
+      if (!host) return;
+      const displays = (cfg.displays || []).filter(d => d.role && d.role !== 'unassigned' && d.role !== 'clock');
+      if (!displays.length) {
+        host.innerHTML = '<div class="section-hint">Assign a screen to Video/YouTube/Web/etc. first, then you can overlay a clock on it.</div>';
+        return;
+      }
+      host.innerHTML = '';
+      displays.forEach(d => {
+        const num = (d.displayIndex != null ? d.displayIndex : 0) + 1;
+        const label = document.createElement('label');
+        label.className = 'overlay-item';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = !!d.clockOverlay;
+        cb.onchange = () => {
+          electronAPI.setClockOverlay(d.displayIndex, cb.checked);
+          d.clockOverlay = cb.checked; // keep local config in sync
+        };
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(` Screen ${num} · ${ROLE_LABELS[d.role] || d.role}`));
+        host.appendChild(label);
+      });
     }
 
     // ── Live WHOLE-SCREEN previews (desktopCapturer): one card per assigned screen ──
@@ -1111,27 +1219,31 @@
 
     // Dim + disable sections whose display role isn't assigned to any screen,
     // so the controller only offers what the current setup can actually show.
+    // Tab → the display role it needs (Clock/Previews/Displays are always usable).
+    const TAB_ROLE = {
+      localvideo: 'video', youtube: 'youtube', web: 'web',
+      presentation: 'powerpoint', slideshow: 'slideshow', excel: 'excel',
+    };
+
     function applyRoleAvailability(cfg) {
       const roles = new Set((cfg.displays || []).map(d => d.role));
 
-      const sections = {
-        localvideo: roles.has('video'),
-        youtube: roles.has('youtube'),
-        web: roles.has('web'),
-        clock: roles.has('clock'),
-        presentation: roles.has('powerpoint'),
-        slideshow: roles.has('slideshow'),
-        excel: roles.has('excel'),
-      };
-
-      Object.entries(sections).forEach(([key, available]) => {
-        const el = document.getElementById(`section-${key}`);
-        if (el) el.classList.toggle('unavailable', !available);
+      navItems.forEach(n => {
+        const tab = n.dataset.tab;
+        if (ALWAYS_ON_TABS.has(tab)) { n.disabled = false; return; }
+        const available = roles.has(TAB_ROLE[tab]);
+        n.disabled = !available;
+        const panel = document.querySelector(`.tab-panel[data-panel="${tab}"]`);
+        if (panel) panel.classList.toggle('unavailable', !available);
       });
 
+      // If the active tab just became unavailable, fall back to Previews.
+      const active = document.querySelector('.nav-item.active');
+      if (active && active.disabled) showTab('previews');
+
       const hint = 'No screen is assigned to this. Use “Reconfigure Displays” to add one.';
-      document.getElementById('ytHint').textContent = sections.youtube ? '' : hint;
-      document.getElementById('webHint').textContent = sections.web
+      document.getElementById('ytHint').textContent = roles.has('youtube') ? '' : hint;
+      document.getElementById('webHint').textContent = roles.has('web')
         ? 'Browse here — the page is mirrored onto your Web screen(s).'
         : hint;
     }
@@ -1159,26 +1271,43 @@
         presState.count ? `Slide ${presState.index + 1} / ${presState.count}` : 'No slides';
     }
 
+    const PRES_DOC_RE = /\.(pdf|pptx?|odp)$/i;
+    const PRES_IMG_RE = /\.(png|jpe?g|gif|webp|bmp)$/i;
+
+    async function countPdfPages(pdfPath) {
+      try {
+        const bytes = nodeAPI.fs.readBytes(pdfPath);
+        const doc = await pdfjsLib.getDocument({ data: bytes }).promise;
+        return doc.numPages;
+      } catch (err) { console.error('Could not read PDF page count:', err); return 0; }
+    }
+
     document.getElementById('presLoadBtn').onclick = async () => {
       const paths = await electronAPI.selectPresentationFiles();
       if (!paths || !paths.length) return;
-      const pdf = paths.find(p => /\.pdf$/i.test(p));
-      let data;
-      if (pdf) {
-        let count = 0;
-        try {
-          const bytes = nodeAPI.fs.readBytes(pdf);
-          const doc = await pdfjsLib.getDocument({ data: bytes }).promise;
-          count = doc.numPages;
-        } catch (err) { console.error('Could not read PDF page count:', err); }
-        data = { type: 'pdf', source: pdf, images: [], index: 0, count };
-      } else {
-        data = { type: 'images', source: '', images: paths, index: 0, count: paths.length };
+      const presHint = document.getElementById('presHint');
+
+      // A single PowerPoint/PDF → resolve to a PDF (PowerPoint is converted in main).
+      const doc = paths.find(p => PRES_DOC_RE.test(p));
+      if (doc) {
+        presHint.textContent = /\.pdf$/i.test(doc) ? 'Loading…' : 'Converting… (LibreOffice)';
+        const res = await electronAPI.convertPresentation(doc);
+        if (!res || res.error) { presHint.textContent = '✗ ' + ((res && res.error) || 'Could not open file'); return; }
+        const count = await countPdfPages(res.source);
+        presState = { type: 'pdf', source: res.source, images: [], index: 0, count };
+        electronAPI.sendPresentationLoad(presState);
+        updatePresCounter();
+        presHint.textContent = `✓ ${res.name || 'Loaded'} — ${count} slide(s)`;
+        return;
       }
-      presState = data;
-      electronAPI.sendPresentationLoad(data);
+
+      // Otherwise treat the selection as image slides.
+      const imgs = paths.filter(p => PRES_IMG_RE.test(p));
+      if (!imgs.length) { presHint.textContent = '✗ Pick a PowerPoint/PDF or image files'; return; }
+      presState = { type: 'images', source: '', images: imgs, index: 0, count: imgs.length };
+      electronAPI.sendPresentationLoad(presState);
       updatePresCounter();
-      document.getElementById('presHint').textContent = `✓ Loaded ${presState.count} slide(s)`;
+      presHint.textContent = `✓ Loaded ${imgs.length} image slide(s)`;
     };
 
     function presNavigate(dir) {
@@ -1401,12 +1530,10 @@
     // ════════════════════════════════════════════════════════════════
 
     const TOUR_STEPS = [
-      { sel: '#preview-grid',        title: '👀 Live previews', text: 'Each active screen shows a small live thumbnail here, so you can monitor every display at a glance.' },
-      { sel: '#section-localvideo',  title: '🎬 Local video', text: 'Add video files and control them here — Play/Pause, scrub, and Master Volume. The video plays on every screen set to “Video”.' },
-      { sel: '#section-youtube',     title: '▶️ YouTube', text: 'Paste a YouTube link (or video ID) and press Enter to play it on your YouTube screen(s).' },
-      { sel: '#section-web',         title: '🌐 Web page', text: 'Type any website address and press Enter to show it on your Web screen(s).' },
-      { sel: '#identifyBtn',         title: '🔦 Identify screens', text: 'Not sure which physical screen is which? This flashes a big number on each one.' },
-      { sel: '#reconfigBtn',         title: '⚙️ Reconfigure', text: 'Change which screen shows what at any time. That’s it — you’re ready to go!' },
+      { sel: '[data-tab="previews"]', title: '🔴 Live previews', text: 'Each active screen shows a live thumbnail here — click one to enlarge it.' },
+      { sel: '[data-tab="localvideo"]', title: '🎛️ Pick a tool', text: 'Choose a feature from this sidebar — Video, YouTube, Web, Presentation, Slideshow or Spreadsheet. Only the panel you pick is shown.' },
+      { sel: '[data-tab="clock"]', title: '🕐 Clock + overlay', text: 'Show a clock, and use the per-screen toggles to float it over another screen — e.g. YouTube + Clock together.' },
+      { sel: '[data-tab="displays"]', title: '🖥️ Displays', text: 'Reconfigure which screen shows what, identify screens, or replay this tutorial. You’re ready to go!' },
     ];
 
     const tourBox = document.getElementById('tour-box');

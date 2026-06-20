@@ -12,6 +12,8 @@ module.exports = {
     //   displayIndex: number (0, 1, 2, etc)
     //   role: 'video' | 'youtube' | 'web' | 'clock' | 'powerpoint' | 'slideshow' | 'excel' | 'unassigned'
     //         (the same role may be assigned to several screens)
+    //   clockOverlay: boolean (optional) — also float a clock widget over this
+    //         screen's content (toggled live from the controller's Clock tab)
     //   label: string (e.g., "Display 1")
     //   bounds: { x, y, width, height }
     // }

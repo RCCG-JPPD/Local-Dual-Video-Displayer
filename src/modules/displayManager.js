@@ -68,6 +68,24 @@ class DisplayManager {
   }
 
   /**
+   * The display the mouse cursor is currently on (so windows open on the screen
+   * the user is actually looking at, not always the primary one).
+   */
+  getCursorDisplay() {
+    const point = screen.getCursorScreenPoint();
+    return screen.getDisplayNearestPoint(point) || screen.getPrimaryDisplay();
+  }
+
+  /** Centered { x, y } for a window of w×h within a display's work area. */
+  _centerOn(display, w, h) {
+    const b = display.workArea || display.bounds;
+    return {
+      x: Math.floor(b.x + Math.max(0, (b.width - w) / 2)),
+      y: Math.floor(b.y + Math.max(0, (b.height - h) / 2)),
+    };
+  }
+
+  /**
    * Display metadata sent to renderers (selector / identify).
    */
   getDisplayData() {
@@ -86,14 +104,13 @@ class DisplayManager {
    * a plain request/response, with no temp file, injection, URL parsing, or race.
    */
   createSelectorWindow() {
-    const displays = this.detectDisplays();
-    const primaryDisplay = displays.find(d => d.isPrimary)
-      || displays.find(d => d.bounds.x === 0 && d.bounds.y === 0)
-      || displays[0];
+    // Open on whatever screen the user is currently on, centered.
+    const cursorDisplay = this.getCursorDisplay();
+    const pos = this._centerOn(cursorDisplay, 960, 760);
 
     this.windows.selector = new BrowserWindow({
-      x: Math.floor(primaryDisplay.bounds.x) + 100,
-      y: Math.floor(primaryDisplay.bounds.y) + 100,
+      x: pos.x,
+      y: pos.y,
       width: 960,
       height: 760,
       title: 'Display Configuration',
@@ -192,7 +209,7 @@ class DisplayManager {
    * Create the clock as a SMALL floating widget in a corner of its display
    * (not a fullscreen window). Size + corner come from the clock settings.
    */
-  createClockWindow(displayIndex, clockSettings = {}) {
+  createClockWindow(displayIndex, clockSettings = {}, opts = {}) {
     const displays = this.detectDisplays();
     if (displayIndex == null || displayIndex < 0 || displayIndex >= displays.length) {
       console.warn(`Display index ${displayIndex} not available for clock, skipping`);
@@ -233,7 +250,7 @@ class DisplayManager {
       window.moveTop();
     }, 1000);
 
-    const entry = { window, role: 'clock', displayIndex };
+    const entry = { window, role: 'clock', displayIndex, overlay: !!opts.overlay };
     this.contentWindows.push(entry);
     window.on('closed', () => {
       clearInterval(enforce);
@@ -241,6 +258,25 @@ class DisplayManager {
     });
 
     return window;
+  }
+
+  /**
+   * Turn a clock overlay on/off for a single display, live (no reconfigure).
+   * The overlay is the same small widget as the clock role, but it coexists with
+   * whatever content that screen is already showing.
+   */
+  setClockOverlay(displayIndex, on, clockSettings = {}) {
+    const existing = this.contentWindows.find(
+      e => e.role === 'clock' && e.overlay && e.displayIndex === displayIndex
+         && e.window && !e.window.isDestroyed());
+
+    if (on) {
+      if (existing) return existing.window; // already on
+      return this.createClockWindow(displayIndex, clockSettings, { overlay: true });
+    }
+
+    if (existing) existing.window.close();
+    return null;
   }
 
   /**
@@ -342,6 +378,12 @@ class DisplayManager {
           default:
             console.warn(`Unknown display role: ${role}`);
         }
+
+        // A clock overlay can sit on top of any content screen (except a
+        // dedicated clock screen, which already shows the clock).
+        if (displayConfig.clockOverlay && role !== 'clock') {
+          this.createClockWindow(displayConfig.displayIndex, config.clock || {}, { overlay: true });
+        }
       } catch (error) {
         console.error(`Error creating window for display ${displayConfig.displayIndex} (${role}):`, error);
       }
@@ -352,10 +394,14 @@ class DisplayManager {
   // CONTROLLER / HELP
   // ════════════════════════════════════════════════════════════════
 
-  createControllerWindow(primaryDisplay) {
+  createControllerWindow(targetDisplay) {
+    // Center the controller on the screen the user launched it from.
+    const display = targetDisplay || this.getCursorDisplay();
+    const pos = this._centerOn(display, 1000, 720);
+
     this.windows.controller = new BrowserWindow({
-      x: primaryDisplay.bounds.x + 50,
-      y: primaryDisplay.bounds.y + 50,
+      x: pos.x,
+      y: pos.y,
       width: 1000,
       height: 720,
       alwaysOnTop: false, // Control panel behaves like a normal app window

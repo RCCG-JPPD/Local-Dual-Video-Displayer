@@ -105,8 +105,8 @@ function launchDisplayWindows() {
   console.log('Launching display windows...');
 
   try {
-    const displays = displayManager.detectDisplays();
-    const primaryDisplay = displays[0];
+    // Open the controller on the screen the user is currently on.
+    const controllerDisplay = displayManager.getCursorDisplay();
 
     // Create controller window first — but reuse the existing one if we're
     // re-launching after a reconfigure (otherwise we'd spawn a duplicate
@@ -115,7 +115,7 @@ function launchDisplayWindows() {
     if (existingController && !existingController.isDestroyed()) {
       console.log('Reusing existing controller window');
     } else {
-      const controllerWindow = displayManager.createControllerWindow(primaryDisplay);
+      const controllerWindow = displayManager.createControllerWindow(controllerDisplay);
       lifecycleManager.setParentWindow(controllerWindow);
     }
 

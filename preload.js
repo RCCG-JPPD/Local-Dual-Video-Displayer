@@ -112,6 +112,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Controller pushes clock settings (persisted + broadcast to clock screens)
   sendClockSettings: (settings) => ipcRenderer.send('clock-settings', settings),
 
+  // Toggle a clock overlay on a specific screen (coexists with its content)
+  setClockOverlay: (displayIndex, on) => ipcRenderer.send('set-clock-overlay', displayIndex, on),
+
   // Clock screens listen for live settings updates
   onClockSettings: (callback) => {
     ipcRenderer.on('clock-settings', (event, settings) => callback(settings));
@@ -130,6 +133,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ════════════════════════════════════════════════════════════════
 
   selectPresentationFiles: () => ipcRenderer.invoke('open-presentation-dialog'),
+  // Resolve a chosen file to a renderable PDF (converts PowerPoint via LibreOffice)
+  convertPresentation: (filePath) => ipcRenderer.invoke('convert-presentation', filePath),
   sendPresentationLoad: (data) => ipcRenderer.send('presentation-load', data),
   sendPresentationCommand: (cmd, data) => ipcRenderer.send('presentation-command', cmd, data),
   onPresentationLoad: (cb) => ipcRenderer.on('presentation-load', (e, data) => cb(data)),

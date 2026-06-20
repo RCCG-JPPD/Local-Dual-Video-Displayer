@@ -106,13 +106,40 @@ class IPCHandler {
       return canceled ? [] : filePaths;
     });
 
-    // Presentation: pick a PDF or a set of slide images.
+    // Presentation: pick a PowerPoint/PDF or a set of slide images.
     ipcMain.handle('open-presentation-dialog', async () => {
-      return this._openFiles('Choose a PDF or slide images', [
-        { name: 'Presentations & images', extensions: ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] },
-        { name: 'PDF', extensions: ['pdf'] },
+      return this._openFiles('Choose a presentation, PDF, or slide images', [
+        { name: 'Presentations & images', extensions: ['pptx', 'ppt', 'odp', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] },
+        { name: 'PowerPoint / PDF', extensions: ['pptx', 'ppt', 'odp', 'pdf'] },
         { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] },
       ]);
+    });
+
+    // Resolve a chosen presentation file to a PDF the viewer can render.
+    // PDFs pass through; PowerPoint/ODP are converted via headless LibreOffice.
+    ipcMain.handle('convert-presentation', async (event, filePath) => {
+      if (!filePath) return { error: 'No file selected' };
+      const path = require('path');
+      const ext = path.extname(filePath).toLowerCase();
+      const name = path.basename(filePath);
+      if (ext === '.pdf') return { type: 'pdf', source: filePath, name };
+
+      if (['.pptx', '.ppt', '.odp'].includes(ext)) {
+        const { app } = require('electron');
+        const { findSoffice, convertToPdf } = require('./officeConvert');
+        if (!findSoffice()) {
+          return { error: 'LibreOffice was not found. Install LibreOffice (free, libreoffice.org) to open PowerPoint files directly — or export your deck to PDF and open that.' };
+        }
+        try {
+          const outDir = path.join(app.getPath('userData'), 'cache', 'presentations');
+          const pdf = await convertToPdf(filePath, outDir);
+          return { type: 'pdf', source: pdf, name };
+        } catch (err) {
+          console.error('convert-presentation failed:', err);
+          return { error: 'Could not convert this presentation: ' + (err && err.message ? err.message : String(err)) };
+        }
+      }
+      return { error: 'Unsupported file type: ' + ext };
     });
 
     // Slideshow: pick images and/or videos.
@@ -246,6 +273,15 @@ class IPCHandler {
       this.configManager.updateConfig({ clock: settings });
       this.displayManager.applyClockWindowLayout(settings);
       this.broadcastToRole('clock', 'clock-settings', settings);
+    });
+
+    // Toggle a clock overlay on a single screen (coexists with its content).
+    ipcMain.on('set-clock-overlay', (event, displayIndex, on) => {
+      const config = this.configManager.loadConfig();
+      const displays = (config.displays || []).map(d =>
+        d.displayIndex === displayIndex ? { ...d, clockOverlay: !!on } : d);
+      this.configManager.saveDisplayConfig(displays);
+      this.displayManager.setClockOverlay(displayIndex, !!on, config.clock || {});
     });
 
     // ════════════════════════════════════════════════════════════════
