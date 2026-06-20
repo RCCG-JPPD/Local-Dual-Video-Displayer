@@ -57,9 +57,12 @@
     function applySettings(next) {
       settings = { ...settings, ...(next || {}) };
 
-      // Apply theme (auto tints to the active holiday).
+      // Apply theme (auto tints to the active holiday). Set the background on BOTH
+      // <html> and <body> — otherwise the 'glass-*' transparent themes still show the
+      // <html> element's solid background (looking like a black box).
       const holidayKey = electronAPI.getActiveHoliday(new Date())?.key;
       const theme = electronAPI.resolveClockTheme(settings.theme, holidayKey);
+      document.documentElement.style.background = theme.bg;
       bodyEl.style.background = theme.bg;
       clockEl.style.color = theme.text;
 
