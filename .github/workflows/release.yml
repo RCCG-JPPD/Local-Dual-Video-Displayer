@@ -10,6 +10,7 @@ on:
       - 'package.json'
       - 'build/**'
       - 'test/**'
+  workflow_dispatch:
 
 concurrency:
   group: release-${{ github.ref }}
