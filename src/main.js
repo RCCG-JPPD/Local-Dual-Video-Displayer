@@ -3,8 +3,7 @@
  * Electron main process for cross-platform video + clock + controller
  */
 
-const path = require('path');
-const { app } = require('electron');
+const { app, globalShortcut } = require('electron');
 
 // Modules
 const ConfigManager = require('./modules/configManager');
@@ -23,13 +22,18 @@ let ipcHandler;
 let userConfig;
 
 // ════════════════════════════════════════════════════════════════
-// DATA PATH SETUP
+// SINGLE INSTANCE
 // ════════════════════════════════════════════════════════════════
 
-// Redirect Electron's data & cache into a local folder
-const myDataDir = path.join(__dirname, '../../electron_data');
-app.setPath('userData', myDataDir);
-app.setPath('cache', path.join(myDataDir, 'Cache'));
+// Ensure only one copy of the app runs. The 'second-instance' handler
+// (below) focuses the existing controller when a second launch is attempted.
+// Note: config/cache use Electron's standard per-user location
+// (app.getPath('userData')), which works in both dev and packaged builds —
+// see ConfigManager. We intentionally do NOT redirect userData into the app
+// folder, because that folder is read-only inside a packaged app.asar.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+}
 
 // ════════════════════════════════════════════════════════════════
 // APPLICATION LIFECYCLE
@@ -44,7 +48,9 @@ function initializeManagers() {
   configManager = new ConfigManager(app);
   displayManager = new DisplayManager(app);
   lifecycleManager = new WindowLifecycleManager(app);
-  ipcHandler = new IPCHandler(displayManager, configManager);
+  ipcHandler = new IPCHandler(displayManager, configManager, {
+    onReconfigure: reopenSelector,
+  });
 
   // Set up IPC listeners
   ipcHandler.setupListeners();
@@ -82,29 +88,40 @@ function showDisplaySelector() {
 }
 
 /**
+ * Close all content windows and reopen the screen picker.
+ * Used by the controller's "Reconfigure Displays" button and the global
+ * escape-hatch hotkey (so you can recover even if every screen is covered).
+ */
+function reopenSelector() {
+  console.log('Reopening display selector...');
+  displayManager.closeAllDisplayWindows();
+  showDisplaySelector();
+}
+
+/**
  * Launch all display windows based on configuration
  */
 function launchDisplayWindows() {
   console.log('Launching display windows...');
 
   try {
-    const displays = displayManager.detectDisplays();
-    const primaryDisplay = displays[0];
+    // Open the controller on the screen the user is currently on.
+    const controllerDisplay = displayManager.getCursorDisplay();
 
-    // Create controller window first
-    const controllerWindow = displayManager.createControllerWindow(primaryDisplay);
-    lifecycleManager.setParentWindow(controllerWindow);
+    // Create controller window first — but reuse the existing one if we're
+    // re-launching after a reconfigure (otherwise we'd spawn a duplicate
+    // controller, and closing it quits the app via the lifecycle manager).
+    const existingController = displayManager.windows.controller;
+    if (existingController && !existingController.isDestroyed()) {
+      console.log('Reusing existing controller window');
+    } else {
+      const controllerWindow = displayManager.createControllerWindow(controllerDisplay);
+      lifecycleManager.setParentWindow(controllerWindow);
+    }
 
-    // Create all configured display windows dynamically
-    // Supports: public_video, private_video, clock, web, youtube, unassigned
+    // Create all configured content windows dynamically.
+    // Supports any number of: video, clock, web, youtube (one per assigned screen).
     displayManager.createAllDisplayWindows(userConfig);
-
-    // Register all child windows with lifecycle manager
-    const allWindowIds = new Set(displayManager.childWindowIds);
-    allWindowIds.forEach(windowId => {
-      // Note: We can't directly access windows by ID, so we rely on the windows stored in displayManager
-      // Child windows are automatically tracked when created
-    });
 
     if (displayManager.windows.controller) {
       displayManager.windows.controller.webContents.send('config-loaded', userConfig);
@@ -124,6 +141,13 @@ function startup() {
 
   try {
     initializeManagers();
+
+    // `--reset` (e.g. `npm start -- --reset`) wipes the saved setup so you
+    // always get a fresh screen picker — handy if you mis-assigned every screen.
+    if (process.argv.includes('--reset')) {
+      console.log('Reset flag detected - clearing saved configuration');
+      configManager.resetConfig();
+    }
 
     // Load existing config
     userConfig = configManager.loadConfig();
@@ -150,7 +174,26 @@ function startup() {
 app.on('ready', () => {
   console.log('Electron app ready');
   startup();
+  registerShortcuts();
 });
+
+/**
+ * Global escape-hatch hotkeys (work even when every screen is covered):
+ *  - Ctrl/Cmd+Shift+R → reopen the screen picker (re-assign roles).
+ *  - Ctrl/Cmd+Shift+Q → quit the whole app.
+ */
+function registerShortcuts() {
+  globalShortcut.register('CommandOrControl+Shift+R', () => {
+    console.log('Global shortcut: reopen selector');
+    if (displayManager) reopenSelector();
+  });
+  globalShortcut.register('CommandOrControl+Shift+Q', () => {
+    console.log('Global shortcut: quit');
+    app.quit();
+  });
+}
+
+app.on('will-quit', () => globalShortcut.unregisterAll());
 
 app.on('window-all-closed', () => {
   console.log('All windows closed');

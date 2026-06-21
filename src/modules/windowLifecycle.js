@@ -54,10 +54,13 @@ class WindowLifecycleManager {
    * Close all child windows
    */
   closeAllChildren() {
-    console.log(`Closing ${this.childWindows.size} child window(s)`);
-    this.childWindows.forEach(windowId => {
-      // Note: We can't directly access windows by ID in Electron,
-      // so we rely on the close events to clean up
+    const { BrowserWindow } = require('electron');
+    const allWindows = BrowserWindow.getAllWindows();
+    console.log(`Closing ${allWindows.length - 1} child window(s)`);
+    allWindows.forEach(win => {
+      if (win !== this.parentWindow && !win.isDestroyed()) {
+        win.close();
+      }
     });
   }
 

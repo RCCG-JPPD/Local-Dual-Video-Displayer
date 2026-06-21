@@ -52,13 +52,13 @@
   <canvas id="preview-canvas"></canvas>
 
   <script>
-    const { electronAPI } = window;
+    // electronAPI is a preload global (contextBridge) — don't redeclare it.
 
     const vid = document.getElementById('vid');
     const previewCanvas = document.getElementById('preview-canvas');
     const videoContainer = document.getElementById('video-container');
 
-    let windowRole = 'public'; // 'public', 'private', 'clock'
+    let windowRole = 'video'; // every local-video screen shares this role
     let isPlaying = false;
 
     // ════════════════════════════════════════════════════════════════
@@ -148,34 +148,21 @@
     // PLAYBACK COMMANDS
     // ════════════════════════════════════════════════════════════════
 
-    // Listen for playback commands from controller
-    electronAPI.onVideoTime = function(callback) {
-      // This is an override - we'll send time updates continuously
-    };
-
-    // Send video time to controller every 500ms
-    setInterval(() => {
-      if (!isNaN(vid.duration) && windowRole === 'public') {
-        // Only public window sends time updates to controller
-        // Private window is silent
-      }
-    }, 500);
-
     // ════════════════════════════════════════════════════════════════
     // PLAYBACK CONTROL - IPC COMMANDS
     // ════════════════════════════════════════════════════════════════
 
-    // Handle IPC playback commands
-    electronAPI.onPlaybackCommand = function(callback) {
-      // Will be set up via IPC listener
-    };
-
-    // Create a custom event listener for playback commands
-    // This will be handled by the preload script sending IPC messages
-    window.addEventListener('playback-command', (e) => {
-      const { cmd, data } = e.detail;
+    // Handle IPC playback commands from controller
+    electronAPI.onPlaybackCommand((cmd, data) => {
       handlePlaybackCommand(cmd, data);
     });
+
+    // Send video time to controller every 500ms (main forwards only the primary video window)
+    setInterval(() => {
+      if (!isNaN(vid.duration) && windowRole === 'video') {
+        electronAPI.sendVideoTime(vid.currentTime, vid.duration);
+      }
+    }, 500);
 
     function handlePlaybackCommand(cmd, data) {
       console.log(`[${windowRole}] Playback command: ${cmd}`, data);
@@ -183,7 +170,8 @@
       switch (cmd) {
         case 'load':
           console.log(`Loading video: ${data}`);
-          vid.src = `file://${data}`;
+          // Build a correct file:// URL (handles Windows C:\ paths & spaces)
+          vid.src = electronAPI.toFileURL(data);
           vid.currentTime = 0;
           vid.play();
           isPlaying = true;
@@ -208,10 +196,9 @@
 
         case 'setVolume':
           console.log(`Setting volume to ${data}`);
-          if (windowRole === 'public') {
-            vid.volume = Math.max(0, Math.min(1, data));
-          }
-          // Private window volume is controlled by muting at window level
+          // Master volume from the controller. Muted video screens (every screen
+          // except the first) ignore this because they're muted at window level.
+          vid.volume = Math.max(0, Math.min(1, data));
           break;
 
         case 'stop':
@@ -245,6 +232,12 @@
     // Handle video errors
     vid.addEventListener('error', (e) => {
       console.error('Video error:', e);
+    });
+
+    // Escape hatch: press Esc to close this fullscreen display window
+    // (so a user on a single screen is never trapped behind it).
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') window.close();
     });
 
     // Listen for config loaded to get window role

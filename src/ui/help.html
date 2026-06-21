@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Help &amp; Tutorial</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #222; background: #f5f6fa; line-height: 1.6;
+      padding: 32px; max-width: 820px; margin: 0 auto;
+    }
+    h1 { font-size: 26px; margin-bottom: 6px; }
+    .lead { color: #555; margin-bottom: 24px; }
+    h2 {
+      font-size: 18px; margin: 26px 0 10px;
+      border-bottom: 2px solid #e3e6f0; padding-bottom: 6px;
+    }
+    ol, ul { margin: 0 0 12px 22px; }
+    li { margin-bottom: 8px; }
+    .card {
+      background: white; border: 1px solid #e3e6f0; border-radius: 10px;
+      padding: 18px 22px; margin-bottom: 18px; box-shadow: 0 1px 4px rgba(0,0,0,.05);
+    }
+    code, kbd {
+      background: #eef0f6; border-radius: 4px; padding: 1px 6px;
+      font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.92em;
+    }
+    .tag {
+      display: inline-block; background: #667eea; color: white; font-size: 12px;
+      font-weight: 600; border-radius: 4px; padding: 2px 8px; margin-right: 6px;
+    }
+    .tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 12px 14px; border-radius: 4px; color: #1e40af; }
+  </style>
+</head>
+<body>
+  <h1>📺 RCCG Display Controller — Help</h1>
+  <p class="lead">Drive several screens at once: play a local video, a YouTube link, a web page, or a clock — all from one control panel.</p>
+
+  <div class="card">
+    <h2>Getting started (first launch)</h2>
+    <ol>
+      <li><span class="tag">1</span> When the app opens you'll see the <strong>Display Configuration</strong> screen listing every connected screen.</li>
+      <li><span class="tag">2</span> Not sure which screen is which? Click <strong>🔦 Identify screens</strong> — a big number flashes on each physical screen.</li>
+      <li><span class="tag">3</span> For each screen, pick a role: <strong>Video</strong>, <strong>YouTube</strong>, <strong>Web Page</strong>, or <strong>Clock</strong>. Leave the screen you're working on as <strong>Unassigned</strong>.</li>
+      <li><span class="tag">4</span> Click <strong>Confirm &amp; Continue</strong>. The control panel opens on your main screen and the content windows open on the screens you chose.</li>
+    </ol>
+    <p class="tip">💡 You can assign <strong>Video</strong> (or any role) to <strong>several screens</strong> to mirror the same content. Your choice is remembered next time.</p>
+  </div>
+
+  <div class="card">
+    <h2>Playing a local video</h2>
+    <ul>
+      <li>In the control panel's <strong>Local Video</strong> section, click <strong>+ Add Video…</strong> and choose one or more files.</li>
+      <li>Use <strong>Play/Pause</strong>, <strong>Previous/Next</strong>, <strong>Stop</strong>, the scrub bar, and <strong>Master Volume</strong>.</li>
+      <li>The video plays on every screen set to <strong>Video</strong>. Audio comes from the first Video screen; the rest are muted to avoid echo.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>YouTube &amp; Web pages</h2>
+    <ul>
+      <li><strong>YouTube:</strong> paste a link (or video ID) in the YouTube box and press <kbd>Enter</kbd> or the button — it plays on every YouTube screen.</li>
+      <li><strong>Web Page:</strong> type an address (e.g. <code>example.com</code>) in the Web box and press <kbd>Enter</kbd> — it loads on every Web screen.</li>
+      <li>A section is greyed out if no screen is assigned to it — use <strong>Reconfigure Displays</strong> to add one.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Handy controls</h2>
+    <ul>
+      <li><strong>Reconfigure Displays</strong> — re-open the screen picker any time to change roles.</li>
+      <li><strong>Identify Screens</strong> — flash the screen numbers again.</li>
+      <li><kbd>Esc</kbd> on any fullscreen content window closes just that screen (useful when testing on a single screen).</li>
+      <li>Closing the <strong>control panel</strong> quits the whole app and closes every screen.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Notes</h2>
+    <ul>
+      <li>Some websites refuse to be embedded and may not load on a Web screen.</li>
+      <li>YouTube videos that disable embedding won't play.</li>
+    </ul>
+  </div>
+
+  <script>
+    // Esc closes the help window.
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.close(); });
+  </script>
+</body>
+</html>

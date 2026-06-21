@@ -2,230 +2,277 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Clock Display</title>
+  <title>Clock</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
     html, body {
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-      overflow: hidden;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      width: 100%; height: 100%; overflow: hidden;
+      background: #0d1117; color: #ffffff; /* overridden by theme */
+      -webkit-app-region: drag; /* let the operator drag the widget, like the old clock */
+      cursor: default;
     }
 
-    .clock-container {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-    }
+    /* Holiday animation canvas sits behind the clock text. */
+    #fx { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
 
-    #clock-display {
-      font-size: 120px;
-      font-weight: 300;
-      letter-spacing: 2px;
-      color: #fff;
-      text-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+    #stage {
+      position: fixed; inset: 0; z-index: 1;
+      display: flex; align-items: center; justify-content: center;
+    }
+    /* Match the old church clock: system sans-serif, big, dynamically scaled. */
+    #clock {
+      font-weight: 400;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
       font-variant-numeric: tabular-nums;
-      font-family: 'Monaco', 'Courier New', monospace;
+      line-height: 1;
+      white-space: nowrap;
     }
 
-    #date-display {
-      font-size: 36px;
-      color: #aaa;
-      margin-top: 20px;
-      text-shadow: 0 1px 10px rgba(0, 0, 0, 0.5);
-    }
-
-    #period-indicator {
-      position: absolute;
-      top: 30px;
-      right: 50px;
-      font-size: 28px;
-      color: #888;
-      font-weight: 300;
-    }
-
-    /* Hidden preview canvas */
-    #preview-canvas {
-      display: none;
-      position: absolute;
-      top: -9999px;
-      left: -9999px;
-    }
+    #preview-canvas { display: none; position: absolute; top: -9999px; left: -9999px; }
   </style>
 </head>
 <body>
-  <div class="clock-container">
-    <div id="period-indicator"></div>
-    <div id="clock-display">00:00:00</div>
-    <div id="date-display">Loading...</div>
-  </div>
-
-  <!-- Hidden canvas for preview rendering -->
+  <canvas id="fx"></canvas>
+  <div id="stage"><div id="clock">00:00:00</div></div>
   <canvas id="preview-canvas"></canvas>
 
   <script>
-    const { electronAPI } = window;
-
-    const clockDisplay = document.getElementById('clock-display');
-    const dateDisplay = document.getElementById('date-display');
-    const periodIndicator = document.getElementById('period-indicator');
+    // electronAPI is a preload global (contextBridge) — don't redeclare it.
+    const bodyEl = document.body;
+    const clockEl = document.getElementById('clock');
     const previewCanvas = document.getElementById('preview-canvas');
-    const clockContainer = document.querySelector('.clock-container');
 
-    let clockConfig = {
-      format: '24h', // '12h' or '24h'
-      updateInterval: 1000,
+    let settings = {
+      mode: 'time', theme: 'dark', size: 'medium', corner: 'bottom-right',
+      showSeconds: true, hour12: false,
+      countdown: { hours: 0, minutes: 5, seconds: 0 },
+      targetTime: '', holiday: 'auto',
     };
 
-    // ════════════════════════════════════════════════════════════════
-    // INITIALIZATION
-    // ════════════════════════════════════════════════════════════════
+    let countdownDeadline = null;
+    let lastCountdownKey = '';
+    let lastTextLen = -1;
 
-    function initialize() {
-      // Load config
-      electronAPI.getConfig().then(config => {
-        if (config.clock) {
-          clockConfig = { ...clockConfig, ...config.clock };
-        }
-        console.log('Clock display initialized with config:', clockConfig);
-        setupPreviewCanvas();
-        startClock();
-      }).catch(err => {
-        console.error('Error loading config:', err);
-        // Use defaults
-        setupPreviewCanvas();
-        startClock();
-      });
+    function applySettings(next) {
+      settings = { ...settings, ...(next || {}) };
+
+      // Apply theme (auto tints to the active holiday). Set the background on BOTH
+      // <html> and <body> — otherwise the 'glass-*' transparent themes still show the
+      // <html> element's solid background (looking like a black box).
+      const holidayKey = electronAPI.getActiveHoliday(new Date())?.key;
+      const theme = electronAPI.resolveClockTheme(settings.theme, holidayKey);
+      document.documentElement.style.background = theme.bg;
+      bodyEl.style.background = theme.bg;
+      clockEl.style.color = theme.text;
+
+      const cd = settings.countdown || { hours: 0, minutes: 0, seconds: 0 };
+      const key = `${cd.hours}:${cd.minutes}:${cd.seconds}`;
+      if (settings.mode === 'countdown' && key !== lastCountdownKey) {
+        const total = (+cd.hours || 0) * 3600 + (+cd.minutes || 0) * 60 + (+cd.seconds || 0);
+        countdownDeadline = new Date(Date.now() + total * 1000);
+        lastCountdownKey = key;
+      }
+      if (settings.mode !== 'countdown') lastCountdownKey = '';
+
+      setAnimation(resolveAnimation(settings));
+      lastTextLen = -1; // force a re-fit (size/window may have changed)
+      render();
     }
 
-    // ════════════════════════════════════════════════════════════════
-    // CLOCK RENDERING
-    // ════════════════════════════════════════════════════════════════
+    function resolveAnimation(s) {
+      const effect = s.holiday; // 'auto' | 'off' | <effect key>
+      if (effect === 'off') return null;
+      if (effect === 'auto') {
+        const a = electronAPI.getActiveHoliday(new Date());
+        return a ? a.animation : null;
+      }
+      // A specific effect was forced.
+      if ((electronAPI.animationList() || []).includes(effect)) return effect;
+      // Back-compat: a holiday key → its animation.
+      const found = (electronAPI.holidayList() || []).find(x => x.key === effect);
+      return found ? found.animation : null;
+    }
 
-    function formatTime(date) {
-      const hours = String(date.getHours()).padStart(2, '0');
-      const minutes = String(date.getMinutes()).padStart(2, '0');
-      const seconds = String(date.getSeconds()).padStart(2, '0');
+    function newYearDeadline() {
+      const now = new Date();
+      if (electronAPI.getActiveHoliday(now)?.key !== 'newyear') return null;
+      const target = new Date(now.getFullYear(), 11, 31, 24, 0, 0);
+      return target > now ? target : null;
+    }
 
-      if (clockConfig.format === '12h') {
-        let h = parseInt(hours);
-        const ampm = h >= 12 ? 'PM' : 'AM';
-        h = h % 12 || 12;
-        periodIndicator.textContent = ampm;
-        return `${String(h).padStart(2, '0')}:${minutes}:${seconds}`;
+    // Scale the clock font so the text nearly fills the widget width.
+    function fitText() {
+      const target = window.innerWidth * 0.86;
+      let fs = 12;
+      clockEl.style.fontSize = fs + 'px';
+      while (clockEl.scrollWidth < target && fs < 500) { fs += 6; clockEl.style.fontSize = fs + 'px'; }
+      clockEl.style.fontSize = Math.max(12, fs - 6) + 'px';
+    }
+
+    function render() {
+      const now = new Date();
+      let text;
+      const nyd = settings.holiday !== 'off' ? newYearDeadline() : null;
+
+      if (settings.mode === 'countdown' && countdownDeadline) {
+        text = electronAPI.formatDuration(electronAPI.secondsUntil(countdownDeadline, now));
+      } else if (settings.mode === 'timer' && settings.targetTime) {
+        text = electronAPI.formatDuration(electronAPI.secondsUntil(new Date(settings.targetTime), now));
+      } else if (nyd) {
+        text = electronAPI.formatDuration(electronAPI.secondsUntil(nyd, now));
       } else {
-        periodIndicator.textContent = '';
-        return `${hours}:${minutes}:${seconds}`;
+        text = electronAPI.formatClock(now, { showSeconds: settings.showSeconds, hour12: settings.hour12 });
+      }
+
+      clockEl.textContent = text;
+      if (text.length !== lastTextLen) { fitText(); lastTextLen = text.length; }
+    }
+
+    setInterval(render, 1000);
+    window.addEventListener('resize', () => { lastTextLen = -1; render(); });
+
+    // ── holiday animations (particle canvas) ──
+    const fx = document.getElementById('fx');
+    const ctx = fx.getContext('2d');
+    let particles = [], currentAnim = null, rafId = null, frame = 0;
+    const MAX = 200;
+    function sizeCanvas() { fx.width = window.innerWidth; fx.height = window.innerHeight; }
+    sizeCanvas();
+    window.addEventListener('resize', sizeCanvas);
+
+    function setAnimation(key) {
+      if (key === currentAnim) return;
+      currentAnim = key; particles = [];
+      if (rafId) cancelAnimationFrame(rafId);
+      ctx.clearRect(0, 0, fx.width, fx.height);
+      // The sunrays effect casts a shadow on the clock; clear it for other effects.
+      if (key !== 'sunrays') clockEl.style.textShadow = '';
+      if (currentAnim) loop();
+    }
+    const rand = (a, b) => a + Math.random() * (b - a);
+    const pick = (a) => a[Math.floor(Math.random() * a.length)];
+
+    function spawn() {
+      const w = fx.width, h = fx.height;
+      switch (currentAnim) {
+        case 'snow':
+          if (particles.length < 90 && frame % 3 === 0)
+            particles.push({ t: 'snow', x: rand(0, w), y: -6, r: rand(1.5, 3.5), vy: rand(0.5, 1.4), sw: rand(0, 6.28) });
+          break;
+        case 'petals':
+          if (particles.length < 70 && frame % 4 === 0)
+            particles.push({ t: 'petal', x: rand(0, w), y: -6, r: rand(3, 6), vy: rand(0.7, 1.6), a: rand(0, 6.28), va: rand(-0.05, 0.05), c: pick(['#ff9ec4', '#ffd0e0', '#b6e3a1', '#fff0b3']) });
+          break;
+        case 'stars':
+          while (particles.length < 80) particles.push({ t: 'star', x: rand(0, w), y: rand(0, h), r: rand(0.5, 1.8), ph: rand(0, 6.28), sp: rand(0.02, 0.06) });
+          break;
+        case 'flames':
+          if (particles.length < 140) for (let i = 0; i < 3; i++) particles.push({ t: 'flame', x: rand(0, w), y: h + 6, r: rand(2, 5), vy: rand(1, 2.4), life: 1, c: pick(['#ff5722', '#ff9800', '#ffc107']) });
+          break;
+        case 'fireworks':
+          if (frame % 40 === 0 && particles.filter(p => p.t === 'rocket').length < 3)
+            particles.push({ t: 'rocket', x: rand(w * 0.2, w * 0.8), y: h, vy: rand(-6, -9), target: rand(h * 0.15, h * 0.5), c: pick(['#ff5252', '#ffd740', '#40c4ff', '#69f0ae', '#e040fb']) });
+          break;
+        case 'leaves':
+          if (particles.length < 70 && frame % 4 === 0)
+            particles.push({ t: 'leaf', x: rand(0, w), y: -8, r: rand(4, 8), vy: rand(0.6, 1.5), a: rand(0, 6.28), va: rand(-0.06, 0.06), c: pick(['#d2691e', '#b5651d', '#cd853f', '#8b4513', '#e9962e']) });
+          break;
+        case 'bubbles':
+          if (particles.length < 70 && frame % 3 === 0)
+            particles.push({ t: 'bubble', x: rand(0, w), y: h + 8, r: rand(4, 12), vy: rand(0.5, 1.6), sw: rand(0, 6.28) });
+          break;
+        case 'hearts':
+          if (particles.length < 60 && frame % 5 === 0)
+            particles.push({ t: 'heart', x: rand(0, w), y: h + 8, r: rand(6, 12), vy: rand(0.6, 1.4), sw: rand(0, 6.28), c: pick(['#ff4d6d', '#ff8fa3', '#ffb3c1', '#e5383b']) });
+          break;
       }
     }
-
-    function formatDate(date) {
-      const options = {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      };
-      return date.toLocaleDateString('en-US', options);
+    function explode(x, y, c) {
+      for (let i = 0; i < 24 && particles.length < MAX; i++) {
+        const ang = (6.28 * i) / 24, sp = rand(1.5, 3.5);
+        particles.push({ t: 'spark', x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 1, c });
+      }
     }
+    function step() {
+      const w = fx.width, h = fx.height;
+      ctx.clearRect(0, 0, w, h);
 
-    function updateClock() {
-      const now = new Date();
-      clockDisplay.textContent = formatTime(now);
-      dateDisplay.textContent = formatDate(now);
+      // Sun beaming in: a soft moving glow + a directional shadow cast on the clock.
+      if (currentAnim === 'sunrays') {
+        const t = frame / 180;
+        const sx = w * (0.2 + 0.15 * Math.sin(t));
+        const sy = h * 0.18;
+        const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, Math.max(w, h) * 0.9);
+        g.addColorStop(0, 'rgba(255,236,150,0.45)');
+        g.addColorStop(0.25, 'rgba(255,210,120,0.18)');
+        g.addColorStop(1, 'rgba(255,210,120,0)');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+        // rays
+        ctx.save(); ctx.translate(sx, sy); ctx.globalAlpha = 0.12; ctx.strokeStyle = '#fff6cf'; ctx.lineWidth = 2;
+        for (let r = 0; r < 12; r++) { const ang = t * 0.3 + (r * Math.PI) / 6; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(ang) * w, Math.sin(ang) * w); ctx.stroke(); }
+        ctx.restore();
+        // shadow offset away from the sun
+        const ox = (10 + 4 * Math.sin(t)).toFixed(1);
+        clockEl.style.textShadow = `${ox}px 10px 8px rgba(0,0,0,0.45)`;
+      }
 
-      // Capture preview after update
-      capturePreviewFrame();
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        if (p.t === 'snow') { p.sw += 0.02; p.y += p.vy; p.x += Math.sin(p.sw) * 0.5; ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill(); if (p.y > h + 6) particles.splice(i, 1); }
+        else if (p.t === 'petal') { p.y += p.vy; p.x += Math.sin(p.y / 30) * 0.6; p.a += p.va; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.fillStyle = p.c; ctx.fillRect(-p.r, -p.r / 2, p.r * 2, p.r); ctx.restore(); if (p.y > h + 6) particles.splice(i, 1); }
+        else if (p.t === 'star') { p.ph += p.sp; ctx.fillStyle = `rgba(255,236,150,${0.4 + 0.6 * Math.abs(Math.sin(p.ph))})`; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill(); }
+        else if (p.t === 'flame') { p.y -= p.vy; p.life -= 0.015; p.r *= 0.99; ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill(); ctx.globalAlpha = 1; if (p.life <= 0) particles.splice(i, 1); }
+        else if (p.t === 'rocket') { p.y += p.vy; p.vy += 0.1; ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, 6.28); ctx.fill(); if (p.y <= p.target || p.vy >= 0) { explode(p.x, p.y, p.c); particles.splice(i, 1); } }
+        else if (p.t === 'spark') { p.x += p.vx; p.y += p.vy; p.vy += 0.05; p.life -= 0.025; ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, 6.28); ctx.fill(); ctx.globalAlpha = 1; if (p.life <= 0) particles.splice(i, 1); }
+        else if (p.t === 'leaf') { p.y += p.vy; p.x += Math.sin(p.y / 28) * 0.9; p.a += p.va; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.fillStyle = p.c; ctx.beginPath(); ctx.ellipse(0, 0, p.r, p.r / 2, 0, 0, 6.28); ctx.fill(); ctx.restore(); if (p.y > h + 8) particles.splice(i, 1); }
+        else if (p.t === 'bubble') { p.sw += 0.03; p.y -= p.vy; p.x += Math.sin(p.sw) * 0.6; ctx.strokeStyle = 'rgba(180,220,255,0.7)'; ctx.fillStyle = 'rgba(180,220,255,0.12)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill(); ctx.stroke(); if (p.y < -10) particles.splice(i, 1); }
+        else if (p.t === 'heart') { p.sw += 0.03; p.y -= p.vy; p.x += Math.sin(p.sw) * 0.7; drawHeart(p.x, p.y, p.r, p.c); if (p.y < -12) particles.splice(i, 1); }
+      }
     }
-
-    function startClock() {
-      // Update immediately
-      updateClock();
-
-      // Then update at interval
-      setInterval(updateClock, clockConfig.updateInterval);
+    function drawHeart(x, y, s, c) {
+      ctx.save(); ctx.translate(x, y); ctx.scale(s / 16, s / 16); ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.moveTo(0, 4);
+      ctx.bezierCurveTo(0, 0, -8, -2, -8, -7);
+      ctx.bezierCurveTo(-8, -12, -2, -12, 0, -7);
+      ctx.bezierCurveTo(2, -12, 8, -12, 8, -7);
+      ctx.bezierCurveTo(8, -2, 0, 0, 0, 4);
+      ctx.fill(); ctx.restore();
     }
+    function loop() { frame++; spawn(); step(); rafId = requestAnimationFrame(loop); }
 
-    // ════════════════════════════════════════════════════════════════
-    // CANVAS PREVIEW
-    // ════════════════════════════════════════════════════════════════
-
-    function setupPreviewCanvas() {
-      if (!previewCanvas) return;
-
-      previewCanvas.width = clockContainer.offsetWidth;
-      previewCanvas.height = clockContainer.offsetHeight;
-    }
-
+    // ── controller thumbnail ──
     function capturePreviewFrame() {
       try {
-        if (!previewCanvas || !clockContainer) return;
-
-        const ctx = previewCanvas.getContext('2d');
-        if (!ctx) return;
-
-        // Draw background gradient
-        const gradient = ctx.createLinearGradient(0, 0, 0, previewCanvas.height);
-        gradient.addColorStop(0, '#1a1a2e');
-        gradient.addColorStop(1, '#16213e');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
-
-        // Draw time text
-        ctx.font = 'bold 80px Monaco';
-        ctx.fillStyle = '#fff';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-        ctx.shadowBlur = 20;
-
-        const now = new Date();
-        const timeStr = formatTime(now);
-        ctx.fillText(timeStr, previewCanvas.width / 2, previewCanvas.height / 2 - 40);
-
-        // Draw date text
-        ctx.font = '32px Arial';
-        ctx.fillStyle = '#aaa';
-        const dateStr = formatDate(now);
-        ctx.fillText(dateStr, previewCanvas.width / 2, previewCanvas.height / 2 + 40);
-
-        // Send preview data
-        const imageData = previewCanvas.toDataURL('image/jpeg', 0.8);
-        electronAPI.sendPreviewData({
-          role: 'clock',
-          imageData: imageData,
-          timestamp: Date.now(),
-          time: timeStr,
-          date: dateStr,
-        });
-      } catch (error) {
-        console.error('Error capturing preview frame:', error);
-      }
+        previewCanvas.width = 320; previewCanvas.height = 120;
+        const c = previewCanvas.getContext('2d');
+        const holidayKey = electronAPI.getActiveHoliday(new Date())?.key;
+        const theme = electronAPI.resolveClockTheme(settings.theme, holidayKey);
+        if (theme.bg === 'transparent') {
+          // Checkerboard so the thumbnail reads as "see-through" (the live screen
+          // preview in the controller shows the real transparency).
+          const s = 16;
+          for (let y = 0; y < 120; y += s) for (let x = 0; x < 320; x += s) {
+            c.fillStyle = (((x + y) / s) % 2 === 0) ? '#c0c0c0' : '#909090';
+            c.fillRect(x, y, s, s);
+          }
+        } else {
+          c.fillStyle = theme.bg; c.fillRect(0, 0, 320, 120);
+        }
+        c.fillStyle = theme.text;
+        c.font = 'bold 56px Monaco, monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillText(clockEl.textContent, 160, 60);
+        electronAPI.sendPreviewData({ role: 'clock', imageData: previewCanvas.toDataURL('image/jpeg', 0.7), time: clockEl.textContent });
+      } catch (_) {}
     }
+    setInterval(capturePreviewFrame, 1000);
 
-    // ════════════════════════════════════════════════════════════════
-    // STARTUP
-    // ════════════════════════════════════════════════════════════════
-
-    // Handle window resize
-    window.addEventListener('resize', () => {
-      setupPreviewCanvas();
-      capturePreviewFrame();
-    });
-
-    // Initialize
-    initialize();
-
-    console.log('Clock display initialized');
+    // ── startup ──
+    electronAPI.getConfig().then(cfg => applySettings(cfg && cfg.clock ? cfg.clock : {})).catch(() => applySettings({}));
+    electronAPI.onClockSettings(applySettings);
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.close(); });
+    console.log('Clock widget initialized');
   </script>
 </body>
 </html>

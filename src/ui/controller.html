@@ -13,14 +13,50 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #f5f5f5;
-      padding: 20px;
-      overflow-y: auto;
+      height: 100vh;
+      overflow: hidden;
     }
 
-    .controller-container {
-      max-width: 1200px;
-      margin: 0 auto;
+    /* ── App shell: left sidebar + scrolling content ── */
+    .app-shell { display: flex; height: 100vh; }
+
+    .sidebar {
+      flex: 0 0 210px;
+      background: #1f2330;
+      color: #cdd3e0;
+      display: flex;
+      flex-direction: column;
+      padding: 14px 10px;
+      gap: 4px;
+      overflow-y: auto;
     }
+    .sidebar-title {
+      font-size: 15px; font-weight: 700; color: #fff;
+      padding: 6px 10px 12px; letter-spacing: 0.2px;
+    }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%; text-align: left;
+      padding: 10px 12px; border: none; border-radius: 8px;
+      background: transparent; color: #cdd3e0;
+      font-size: 13.5px; font-weight: 500; cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .nav-item:hover:not(:disabled) { background: #2b3142; color: #fff; }
+    .nav-item.active { background: #667eea; color: #fff; }
+    .nav-item:disabled { opacity: 0.4; cursor: not-allowed; }
+    .nav-spacer { flex: 1; }
+
+    .content {
+      flex: 1; overflow-y: auto; padding: 20px;
+      max-width: 1100px;
+    }
+
+    /* Only the active tab panel is shown */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    /* Sections already style themselves; remove the bottom margin when tabbed. */
+    .tab-panel.controls-section, .tab-panel.preview-section { margin-bottom: 0; }
 
     h1 {
       font-size: 24px;
@@ -273,6 +309,142 @@
       cursor: pointer;
     }
 
+    /* URL INPUT ROWS (YouTube / Web) */
+    .url-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .url-row input[type="text"] {
+      flex: 1;
+      min-width: 220px;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+
+    .url-row input[type="text"]:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .section-hint {
+      font-size: 12px;
+      color: #999;
+      margin-top: 8px;
+    }
+
+    /* Controller web browser */
+    .web-toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+    .web-toolbar input {
+      flex: 1; min-width: 160px; padding: 8px 10px;
+      border: 1px solid #ddd; border-radius: 4px; font-size: 13px;
+    }
+    .web-toolbar input:focus { outline: none; border-color: #667eea; }
+    .ctl-web {
+      width: 100%; height: 380px; border: 1px solid #ddd; border-radius: 6px;
+      background: #fff; display: inline-flex;
+    }
+    .controls-section.unavailable webview { pointer-events: none; }
+
+    /* Clock settings grid */
+    .clock-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      align-items: end;
+    }
+    .clock-grid label {
+      display: flex; flex-direction: column; gap: 4px;
+      font-size: 13px; color: #555;
+    }
+    .clock-grid select {
+      padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; background: #fff;
+    }
+    .clock-grid .clk-check {
+      flex-direction: row; align-items: center; gap: 8px;
+    }
+
+    /* Per-screen clock overlay toggles */
+    .overlay-list { display: flex; flex-direction: column; gap: 8px; }
+    .overlay-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #444; cursor: pointer; }
+
+    /* A section whose display role isn't assigned to any screen */
+    .controls-section.unavailable {
+      opacity: 0.55;
+    }
+
+    .controls-section.unavailable input,
+    .controls-section.unavailable button,
+    .controls-section.unavailable select {
+      pointer-events: none;
+    }
+
+    /* Preview cards are clickable to enlarge */
+    .preview-card { cursor: zoom-in; transition: border-color 0.15s; }
+    .preview-card:hover { border-color: #667eea; }
+    .preview-image video { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+    /* Slideshow now/next thumbnails */
+    .slide-thumbs { display: flex; gap: 16px; align-items: flex-start; margin-top: 10px; }
+    .slide-thumb-wrap { display: flex; flex-direction: column; gap: 6px; }
+    .slide-thumb {
+      width: 180px; height: 102px; background: #000; border-radius: 6px; overflow: hidden;
+      display: flex; align-items: center; justify-content: center; color: #777; font-size: 12px;
+    }
+    .slide-thumb img, .slide-thumb video { max-width: 100%; max-height: 100%; object-fit: contain; }
+    #slideList { width: 100%; height: 130px; border: 1px solid #ddd; border-radius: 4px; padding: 8px; font-size: 13px; }
+
+    /* Click-to-enlarge lightbox (bigger, but not fullscreen) */
+    #enlarge-overlay {
+      position: fixed; inset: 0; background: rgba(15, 23, 42, 0.78);
+      display: none; align-items: center; justify-content: center; z-index: 11000;
+    }
+    #enlarge-overlay.show { display: flex; }
+    #enlarge-box {
+      width: 72vw; max-width: 1100px; background: #0b0b0b; border-radius: 10px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    #enlarge-img { width: 100%; height: 72vh; object-fit: contain; background: #000; display: block; }
+    #enlarge-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #111; color: #eee; }
+    #enlarge-title { font-size: 13px; margin-right: auto; }
+    #enlarge-nav { display: none; gap: 6px; }
+    #enlarge-bar button { background: #222; color: #eee; border: 1px solid #444; }
+    #enlarge-bar button:hover:not(:disabled) { background: #333; border-color: #666; }
+
+    /* ── Interactive tutorial (spotlight tour) ── */
+    .tour-highlight {
+      position: relative;
+      z-index: 10000;
+      border-radius: 8px;
+      box-shadow: 0 0 0 4px #667eea, 0 0 0 9999px rgba(15, 23, 42, 0.72);
+      transition: box-shadow 0.2s;
+    }
+    #tour-box {
+      position: fixed;
+      z-index: 10001;
+      max-width: 320px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+      padding: 18px 20px;
+      display: none;
+    }
+    #tour-box.show { display: block; }
+    #tour-box h4 { font-size: 15px; color: #333; margin-bottom: 6px; }
+    #tour-box p { font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 14px; }
+    .tour-controls { display: flex; align-items: center; gap: 8px; }
+    .tour-step { font-size: 12px; color: #999; margin-right: auto; }
+    .tour-controls button {
+      padding: 6px 14px; border-radius: 5px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid #ddd; background: #fff;
+    }
+    .tour-controls .tour-next { background: #667eea; color: #fff; border-color: #667eea; }
+    .tour-controls .tour-skip { border: none; color: #999; background: transparent; }
+
     @media (max-width: 768px) {
       .preview-grid {
         grid-template-columns: 1fr;
@@ -301,21 +473,34 @@
   </style>
 </head>
 <body>
-  <div class="controller-container">
-    <h1>📺 Unified Display Controller</h1>
+  <div class="app-shell">
+    <nav class="sidebar">
+      <div class="sidebar-title">📺 Controller</div>
+      <button class="nav-item active" data-tab="previews">🔴 Previews</button>
+      <button class="nav-item" data-tab="localvideo">🎬 Video</button>
+      <button class="nav-item" data-tab="youtube">▶️ YouTube</button>
+      <button class="nav-item" data-tab="web">🌐 Web</button>
+      <button class="nav-item" data-tab="presentation">📽️ Presentation</button>
+      <button class="nav-item" data-tab="slideshow">🖼️ Slideshow</button>
+      <button class="nav-item" data-tab="excel">📊 Spreadsheet</button>
+      <button class="nav-item" data-tab="clock">🕐 Clock</button>
+      <span class="nav-spacer"></span>
+      <button class="nav-item" data-tab="displays">🖥️ Displays</button>
+    </nav>
+    <main class="content">
     <div class="status-bar" id="status-bar">Ready</div>
 
     <!-- PREVIEW SECTION -->
-    <div class="preview-section">
+    <div class="preview-section tab-panel active" data-panel="previews">
       <h2>🔴 Live Previews</h2>
       <div class="preview-grid" id="preview-grid">
         <!-- Preview cards will be generated here -->
       </div>
     </div>
 
-    <!-- CONTROLS SECTION -->
-    <div class="controls-section">
-      <h2>🎬 Playback Controls</h2>
+    <!-- LOCAL VIDEO SECTION -->
+    <div class="controls-section tab-panel" id="section-localvideo" data-panel="localvideo">
+      <h2>🎬 Local Video</h2>
 
       <!-- Playlist -->
       <div class="playlist-container">
@@ -343,21 +528,218 @@
 
       <!-- Volume -->
       <div class="volume-container">
-        <label for="vol">🔊 Volume (Public)</label>
+        <label for="vol">🔊 Master Volume</label>
         <input id="vol" type="range" min="0" max="1" step="0.01" value="1">
       </div>
 
-      <!-- Display Management -->
+    </div>
+
+    <!-- YOUTUBE SECTION -->
+    <div class="controls-section tab-panel" id="section-youtube" data-panel="youtube">
+      <h2>▶️ YouTube</h2>
+      <div class="url-row">
+        <input id="ytUrl" type="text" placeholder="Paste a YouTube link or video ID…">
+        <button id="ytPlayBtn" class="btn-primary">Load on YouTube screen</button>
+      </div>
+      <div class="playback-controls" style="margin-top:12px;">
+        <button id="ytPlay">▶ Play</button>
+        <button id="ytPause">⏸ Pause</button>
+        <button id="ytMute">🔇 Mute</button>
+        <span style="display:flex;align-items:center;gap:8px;">
+          <label for="ytVol" style="font-size:13px;color:#666;">🔊 Volume</label>
+          <input id="ytVol" type="range" min="0" max="1" step="0.01" value="1" style="width:140px;">
+        </span>
+      </div>
+      <div class="section-hint" id="ytHint"></div>
+    </div>
+
+    <!-- WEB PAGE SECTION — browse here; the page mirrors onto the Web screen(s) -->
+    <div class="controls-section tab-panel" id="section-web" data-panel="web">
+      <h2>🌐 Web Page</h2>
+      <div class="web-toolbar">
+        <button id="webBack" title="Back">◀</button>
+        <button id="webFwd" title="Forward">▶</button>
+        <button id="webReload" title="Reload">⟳</button>
+        <input id="webUrl" type="text" placeholder="Enter a website address (e.g. example.com)…">
+        <button id="webGo" class="btn-primary">Go</button>
+      </div>
+      <webview id="ctlWeb" class="ctl-web" src="about:blank" allowpopups></webview>
+      <div class="section-hint" id="webHint">Browse here — the page is mirrored onto your Web screen(s).</div>
+    </div>
+
+    <!-- CLOCK SECTION -->
+    <div class="controls-section tab-panel" id="section-clock" data-panel="clock">
+      <h2>🕐 Clock</h2>
+      <div class="clock-grid">
+        <label>Mode
+          <select id="clkMode">
+            <option value="time">Current time</option>
+            <option value="countdown">Countdown (duration)</option>
+            <option value="timer">Countdown to a time</option>
+          </select>
+        </label>
+        <label>Size
+          <select id="clkSize">
+            <option value="small">Small</option>
+            <option value="medium">Medium</option>
+            <option value="large">Large</option>
+          </select>
+        </label>
+        <label>Corner
+          <select id="clkCorner">
+            <option value="top-left">Top-left</option>
+            <option value="top-right">Top-right</option>
+            <option value="bottom-left">Bottom-left</option>
+            <option value="bottom-right">Bottom-right</option>
+            <option value="center">Center</option>
+          </select>
+        </label>
+        <label>Theme
+          <select id="clkTheme">
+            <option value="dark">Dark (black bg)</option>
+            <option value="light">Light (white bg)</option>
+          </select>
+        </label>
+        <label>Effect / animation
+          <select id="clkHoliday"></select>
+        </label>
+        <label class="clk-check"><input type="checkbox" id="clkSeconds"> Show seconds</label>
+        <label class="clk-check"><input type="checkbox" id="clk12h"> 12-hour time</label>
+      </div>
+
+      <div id="clkCountdownRow" class="url-row" style="margin-top:10px; display:none;">
+        <input id="clkH" type="number" min="0" placeholder="Hours" style="max-width:90px">
+        <input id="clkM" type="number" min="0" placeholder="Minutes" style="max-width:90px">
+        <input id="clkS" type="number" min="0" placeholder="Seconds" style="max-width:90px">
+        <button id="clkStart" class="btn-primary">Start countdown</button>
+      </div>
+      <div id="clkTimerRow" class="url-row" style="margin-top:10px; display:none;">
+        <input id="clkTarget" type="datetime-local">
+      </div>
+      <div class="section-hint" id="clkHint"></div>
+
+      <!-- Clock overlay: float the clock over any screen's content (e.g. YouTube + Clock) -->
       <div class="display-management">
-        <h3>Display Configuration</h3>
-        <div class="display-status" id="display-status">Connected displays: Loading...</div>
+        <h3>Show clock overlay on…</h3>
+        <div id="clockOverlayList" class="overlay-list">
+          <div class="section-hint">No screens assigned yet — use “Reconfigure Displays”.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PRESENTATION SECTION -->
+    <div class="controls-section tab-panel" id="section-presentation" data-panel="presentation">
+      <h2>📽️ Presentation</h2>
+      <div class="button-group">
+        <button id="presLoadBtn" class="btn-primary">📂 Load PDF / images…</button>
+      </div>
+      <div class="playback-controls">
+        <button id="presPrev">◀ Prev</button>
+        <span id="presCounter" class="time-display" style="min-width:120px;text-align:center;">No slides</span>
+        <button id="presNext">Next ▶</button>
+      </div>
+      <div class="section-hint" id="presHint">Export your slides to PDF (or pick a set of images), then navigate them here.</div>
+    </div>
+
+    <!-- MEDIA SLIDESHOW SECTION -->
+    <div class="controls-section tab-panel" id="section-slideshow" data-panel="slideshow">
+      <h2>🖼️ Media Slideshow</h2>
+      <div class="playlist-container">
+        <h3>Slides (images & videos)</h3>
+        <select id="slideList" size="6"></select>
+        <div class="button-group">
+          <button id="slideAddBtn" class="btn-primary">+ Add images/videos…</button>
+          <button id="slideRemoveBtn" class="btn-danger">✕ Remove</button>
+          <button id="slideUpBtn">↑ Up</button>
+          <button id="slideDownBtn">↓ Down</button>
+        </div>
+      </div>
+      <div class="clock-grid" style="margin-bottom:12px;">
+        <label>Seconds per image
+          <input id="slideDuration" type="number" min="1" value="5" style="padding:8px 10px;border:1px solid #ddd;border-radius:4px;">
+        </label>
+        <label class="clk-check"><input type="checkbox" id="slideLoop" checked> Loop</label>
+      </div>
+      <div class="playback-controls">
+        <button id="slidePrevBtn">◀ Prev</button>
+        <button id="slidePlayBtn">▶ Play</button>
+        <button id="slideNextBtn">Next ▶</button>
+      </div>
+      <div class="slide-thumbs">
+        <div class="slide-thumb-wrap">
+          <div class="preview-role">Now showing</div>
+          <div class="slide-thumb" id="slideNowPrev">—</div>
+        </div>
+        <div class="slide-thumb-wrap">
+          <div class="preview-role">Next up</div>
+          <div class="slide-thumb" id="slideNextPrev">—</div>
+        </div>
+      </div>
+      <div class="section-hint" id="slideHint"></div>
+    </div>
+
+    <!-- SPREADSHEET SECTION -->
+    <div class="controls-section tab-panel" id="section-excel" data-panel="excel">
+      <h2>📊 Spreadsheet</h2>
+      <div class="button-group">
+        <button id="xlLoadBtn" class="btn-primary">📂 Load spreadsheet…</button>
+      </div>
+      <div class="url-row" id="xlSheetRow" style="display:none;">
+        <label style="font-size:13px;color:#555;display:flex;align-items:center;gap:8px;">Sheet
+          <select id="xlSheet" style="padding:8px 10px;border:1px solid #ddd;border-radius:4px;"></select>
+        </label>
+      </div>
+      <div class="section-hint" id="xlHint">Open an .xlsx, .xls or .csv file to show it on the Spreadsheet screen.</div>
+    </div>
+
+    <!-- DISPLAYS PANEL -->
+    <div class="controls-section tab-panel" id="section-displays" data-panel="displays">
+      <h2>🖥️ Displays</h2>
+      <div class="display-status" id="display-status">Connected displays: Loading...</div>
+      <div class="button-group">
         <button id="reconfigBtn">⚙️ Reconfigure Displays</button>
+        <button id="identifyBtn">🔦 Identify Screens</button>
+        <button id="tutorialBtn">🎓 Tutorial</button>
+        <button id="helpBtn">❓ Help</button>
+      </div>
+    </div>
+    </main>
+  </div>
+
+  <!-- Click-to-enlarge lightbox for a live preview (bigger, but not fullscreen) -->
+  <div id="enlarge-overlay">
+    <div id="enlarge-box">
+      <img id="enlarge-img" alt="Enlarged screen preview">
+      <div id="enlarge-bar">
+        <span id="enlarge-title"></span>
+        <span id="enlarge-nav">
+          <button id="enlargePrev">◀ Prev</button>
+          <button id="enlargeNext">Next ▶</button>
+        </span>
+        <button id="enlargeClose">✕ Close</button>
       </div>
     </div>
   </div>
 
+  <!-- Interactive tutorial spotlight box -->
+  <div id="tour-box">
+    <h4 id="tour-title"></h4>
+    <p id="tour-text"></p>
+    <div class="tour-controls">
+      <span class="tour-step" id="tour-step"></span>
+      <button class="tour-skip" id="tour-skip">Skip</button>
+      <button class="tour-back" id="tour-back">Back</button>
+      <button class="tour-next" id="tour-next">Next</button>
+    </div>
+  </div>
+
+  <!-- Vendored pdf.js (used to count PDF pages for the slide counter). -->
+  <script src="../vendor/pdfjs/pdf.min.js"></script>
   <script>
-    const { electronAPI } = window;
+    // electronAPI is a preload global (contextBridge) — don't redeclare it.
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '../vendor/pdfjs/pdf.worker.min.js';
+    }
 
     // ════════════════════════════════════════════════════════════════
     // DOM ELEMENTS
@@ -373,6 +755,23 @@
     const displayStatus = document.getElementById('display-status');
 
     // ════════════════════════════════════════════════════════════════
+    // SIDEBAR TABS
+    // ════════════════════════════════════════════════════════════════
+
+    const navItems = Array.from(document.querySelectorAll('.nav-item'));
+    const tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
+    // Tabs usable regardless of which screens are assigned.
+    const ALWAYS_ON_TABS = new Set(['previews', 'clock', 'displays']);
+
+    function showTab(name) {
+      navItems.forEach(n => n.classList.toggle('active', n.dataset.tab === name));
+      tabPanels.forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+    }
+    navItems.forEach(n => n.addEventListener('click', () => {
+      if (!n.disabled) showTab(n.dataset.tab);
+    }));
+
+    // ════════════════════════════════════════════════════════════════
     // STATE
     // ════════════════════════════════════════════════════════════════
 
@@ -381,7 +780,6 @@
     let isPlaying = false;
     let duration = 0;
     let config = {};
-    let previewContainers = {};
 
     // ════════════════════════════════════════════════════════════════
     // INITIALIZATION
@@ -399,8 +797,11 @@
           renderPlaylist();
         }
 
-        // Set up preview cards for each display role
-        setupPreviewCards();
+        // Apply role availability + clock controls for the current config
+        refreshControllerForConfig(config);
+
+        // Start live whole-screen previews
+        startScreenPreviews();
 
         // Load window status
         const windowStatus = await electronAPI.getWindowStatus();
@@ -414,38 +815,98 @@
       }
     }
 
-    function setupPreviewCards() {
-      previewGrid.innerHTML = '';
+    const ROLE_LABELS = {
+      video: 'Video', youtube: 'YouTube', web: 'Web Page', clock: 'Clock',
+      powerpoint: 'Presentation', slideshow: 'Slideshow', excel: 'Spreadsheet',
+    };
 
-      const roles = ['public', 'private', 'clock'];
-      roles.forEach(role => {
+    // Re-apply everything that depends on the current config (used on first load
+    // AND after Reconfigure, via onConfigLoaded — so sections/clock re-enable live).
+    function refreshControllerForConfig(cfg) {
+      applyRoleAvailability(cfg);
+      initClockControls(cfg);
+      renderClockOverlays(cfg);
+      initPresentation(cfg);
+      initSlideshow(cfg);
+      initExcel(cfg);
+    }
+
+    // Per-screen "show clock overlay" checkboxes (Clock tab). Lets the clock float
+    // over any content screen — e.g. YouTube + Clock on the same display.
+    function renderClockOverlays(cfg) {
+      const host = document.getElementById('clockOverlayList');
+      if (!host) return;
+      const displays = (cfg.displays || []).filter(d => d.role && d.role !== 'unassigned' && d.role !== 'clock');
+      if (!displays.length) {
+        host.innerHTML = '<div class="section-hint">Assign a screen to Video/YouTube/Web/etc. first, then you can overlay a clock on it.</div>';
+        return;
+      }
+      host.innerHTML = '';
+      displays.forEach(d => {
+        const num = (d.displayIndex != null ? d.displayIndex : 0) + 1;
+        const label = document.createElement('label');
+        label.className = 'overlay-item';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = !!d.clockOverlay;
+        cb.onchange = () => {
+          electronAPI.setClockOverlay(d.displayIndex, cb.checked);
+          d.clockOverlay = cb.checked; // keep local config in sync
+        };
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(` Screen ${num} · ${ROLE_LABELS[d.role] || d.role}`));
+        host.appendChild(label);
+      });
+    }
+
+    // ── Live WHOLE-SCREEN previews (desktopCapturer): one card per assigned screen ──
+    let previewTimer = null;
+    function startScreenPreviews() {
+      refreshScreenPreviews();
+      if (previewTimer) clearInterval(previewTimer);
+      previewTimer = setInterval(refreshScreenPreviews, 1500);
+    }
+
+    async function refreshScreenPreviews() {
+      let previews = [];
+      try { previews = await electronAPI.getScreenPreviews(); } catch (_) {}
+      const byId = new Map((previews || []).filter(p => p.id != null).map(p => [String(p.id), p.dataURL]));
+
+      const displays = (config.displays || []).filter(d => d.role && d.role !== 'unassigned');
+      previewGrid.innerHTML = '';
+      if (!displays.length) {
+        previewGrid.innerHTML = '<div class="preview-status" style="padding:10px">No screens assigned yet — use “Reconfigure Displays”.</div>';
+        return;
+      }
+
+      displays.forEach((d, i) => {
         const card = document.createElement('div');
         card.className = 'preview-card';
-        card.id = `preview-${role}`;
+        card.title = 'Click to enlarge';
+        card.onclick = () => openEnlarge(d);
 
         const image = document.createElement('div');
         image.className = 'preview-image';
-        image.textContent = 'Waiting for preview...';
+        const url = byId.get(String(d.id)) || (previews[i] && previews[i].dataURL);
+        if (url) {
+          const im = document.createElement('img');
+          im.src = url;
+          image.appendChild(im);
+        } else {
+          image.textContent = 'No preview';
+        }
 
         const info = document.createElement('div');
         info.className = 'preview-info';
-
         const roleLabel = document.createElement('div');
         roleLabel.className = 'preview-role';
-        roleLabel.textContent = role === 'public' ? 'Video (Public)' :
-                               role === 'private' ? 'Video (Private)' : 'Clock';
-
-        const status = document.createElement('div');
-        status.className = 'preview-status';
-        status.textContent = 'Connecting...';
-
+        const num = (d.displayIndex != null ? d.displayIndex : i) + 1;
+        roleLabel.textContent = `Screen ${num} · ${ROLE_LABELS[d.role] || d.role}`;
         info.appendChild(roleLabel);
-        info.appendChild(status);
+
         card.appendChild(image);
         card.appendChild(info);
         previewGrid.appendChild(card);
-
-        previewContainers[role] = { image, status };
       });
     }
 
@@ -491,6 +952,14 @@
     function pathBasename(p) {
       return p.split(/[\\/]/).pop();
     }
+
+    // Double-click (or Enter on) a playlist item to play it.
+    playlistSel.addEventListener('dblclick', () => {
+      if (playlistSel.selectedIndex >= 0) load(playlistSel.selectedIndex);
+    });
+    playlistSel.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && playlistSel.selectedIndex >= 0) load(playlistSel.selectedIndex);
+    });
 
     // ════════════════════════════════════════════════════════════════
     // PLAYBACK CONTROL
@@ -560,33 +1029,20 @@
 
     volSlider.oninput = () => send('setVolume', parseFloat(volSlider.value));
 
-    // ════════════════════════════════════════════════════════════════
-    // PREVIEW UPDATES
-    // ════════════════════════════════════════════════════════════════
+    // Previews are now live whole-screen thumbnails (see refreshScreenPreviews).
 
-    electronAPI.onPreviewUpdate((data) => {
-      if (!data || !data.role) return;
-
-      const container = previewContainers[data.role];
-      if (!container) return;
-
-      if (data.imageData) {
-        const img = document.createElement('img');
-        img.src = data.imageData;
-        img.style.maxWidth = '100%';
-        img.style.maxHeight = '100%';
-        container.image.innerHTML = '';
-        container.image.appendChild(img);
+    // Re-sync the controller when the config changes (after Reconfigure) so the
+    // YouTube / Web / Clock sections re-enable without restarting the app.
+    electronAPI.onConfigLoaded((cfg) => {
+      if (!cfg) return;
+      config = cfg;
+      if (cfg.playback && Array.isArray(cfg.playback.playlist)) {
+        playlist = cfg.playback.playlist;
+        renderPlaylist();
       }
-
-      // Update status based on role
-      if (data.role === 'clock') {
-        container.status.textContent = data.time || 'Connected';
-      } else {
-        const timeStr = data.currentTime ? `${fmt(data.currentTime)} / ${fmt(data.duration)}` : 'Ready';
-        const status = data.isPaused ? `⏸ ${timeStr}` : `▶ ${timeStr}`;
-        container.status.textContent = status;
-      }
+      refreshControllerForConfig(cfg);
+      refreshScreenPreviews();
+      electronAPI.getWindowStatus().then(updateDisplayStatus).catch(() => {});
     });
 
     // ════════════════════════════════════════════════════════════════
@@ -596,15 +1052,21 @@
     function updateDisplayStatus(windowStatus) {
       if (!windowStatus) return;
 
-      const count = Object.values(windowStatus).filter(v => v).length;
-      displayStatus.textContent = `Connected displays: ${count}/4`;
+      const parts = [];
+      if (windowStatus.video)      parts.push(`${windowStatus.video} Video`);
+      if (windowStatus.youtube)    parts.push(`${windowStatus.youtube} YouTube`);
+      if (windowStatus.web)        parts.push(`${windowStatus.web} Web`);
+      if (windowStatus.clock)      parts.push(`${windowStatus.clock} Clock`);
+      if (windowStatus.powerpoint) parts.push(`${windowStatus.powerpoint} Presentation`);
+      if (windowStatus.slideshow)  parts.push(`${windowStatus.slideshow} Slideshow`);
+      if (windowStatus.excel)      parts.push(`${windowStatus.excel} Spreadsheet`);
 
-      if (!windowStatus.public) {
-        displayStatus.textContent += ' (⚠️ Public video disconnected)';
+      displayStatus.classList.remove('warning', 'error');
+      if (parts.length === 0) {
+        displayStatus.textContent = 'No screens active — use “Reconfigure Displays” to assign some.';
         displayStatus.classList.add('warning');
-      } else if (!windowStatus.controller) {
-        displayStatus.textContent += ' (✓ All displays connected)';
-        displayStatus.classList.remove('warning', 'error');
+      } else {
+        displayStatus.textContent = 'Active screens: ' + parts.join(', ');
       }
     }
 
@@ -613,11 +1075,531 @@
       electronAPI.reconfigureDisplays();
     };
 
+    document.getElementById('identifyBtn').onclick = () => electronAPI.identifyScreens();
+    document.getElementById('helpBtn').onclick = () => electronAPI.openHelp();
+
+    // ════════════════════════════════════════════════════════════════
+    // YOUTUBE CONTROL
+    // ════════════════════════════════════════════════════════════════
+
+    const ytUrl = document.getElementById('ytUrl');
+
+    function sendYouTube() {
+      const url = ytUrl.value.trim();
+      if (!url) return;
+      electronAPI.sendYouTubeUrl(url);
+      statusBar.textContent = `▶️ Sent to YouTube screen: ${url}`;
+    }
+
+    document.getElementById('ytPlayBtn').onclick = sendYouTube;
+    ytUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendYouTube(); });
+
+    // YouTube playback controls (drive the embedded player on the YouTube screen).
+    let ytMuted = false;
+    document.getElementById('ytPlay').onclick = () => electronAPI.sendYouTubeCommand('play');
+    document.getElementById('ytPause').onclick = () => electronAPI.sendYouTubeCommand('pause');
+    document.getElementById('ytVol').oninput = (e) => electronAPI.sendYouTubeCommand('setVolume', parseFloat(e.target.value));
+    document.getElementById('ytMute').onclick = () => {
+      ytMuted = !ytMuted;
+      electronAPI.sendYouTubeCommand('mute', ytMuted);
+      document.getElementById('ytMute').textContent = ytMuted ? '🔈 Unmute' : '🔇 Mute';
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    // WEB BROWSER — browse in the controller; mirror the page to web screens
+    // ════════════════════════════════════════════════════════════════
+
+    const ctlWeb = document.getElementById('ctlWeb');
+    const webUrl = document.getElementById('webUrl');
+    let webReady = false;
+
+    function goWeb() {
+      const url = electronAPI.normalizeWebUrl(webUrl.value);
+      if (url) ctlWeb.src = url; // setting src navigates (works before/after dom-ready)
+    }
+
+    document.getElementById('webGo').onclick = goWeb;
+    webUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') goWeb(); });
+    document.getElementById('webBack').onclick = () => { if (webReady && ctlWeb.canGoBack()) ctlWeb.goBack(); };
+    document.getElementById('webFwd').onclick = () => { if (webReady && ctlWeb.canGoForward()) ctlWeb.goForward(); };
+    document.getElementById('webReload').onclick = () => { if (webReady) ctlWeb.reload(); };
+
+    ctlWeb.addEventListener('dom-ready', () => { webReady = true; });
+
+    // Mirror whatever the controller browses (typed URL or clicked links) to the web screens.
+    function mirrorWeb(url) {
+      if (!url || url === 'about:blank') return;
+      webUrl.value = url;
+      electronAPI.sendWebUrl(url);
+    }
+    ctlWeb.addEventListener('did-navigate', (e) => mirrorWeb(e.url));
+    ctlWeb.addEventListener('did-navigate-in-page', (e) => { if (e.isMainFrame) mirrorWeb(e.url); });
+    // Keep target=_blank / popups inside the same embedded browser.
+    ctlWeb.addEventListener('new-window', (e) => { if (e.url) ctlWeb.src = e.url; });
+
+    // ════════════════════════════════════════════════════════════════
+    // CLOCK CONTROLS
+    // ════════════════════════════════════════════════════════════════
+
+    const clk = {
+      mode: document.getElementById('clkMode'),
+      size: document.getElementById('clkSize'),
+      corner: document.getElementById('clkCorner'),
+      theme: document.getElementById('clkTheme'),
+      holiday: document.getElementById('clkHoliday'),
+      seconds: document.getElementById('clkSeconds'),
+      h12: document.getElementById('clk12h'),
+      h: document.getElementById('clkH'),
+      m: document.getElementById('clkM'),
+      s: document.getElementById('clkS'),
+      target: document.getElementById('clkTarget'),
+      countdownRow: document.getElementById('clkCountdownRow'),
+      timerRow: document.getElementById('clkTimerRow'),
+      hint: document.getElementById('clkHint'),
+    };
+
+    const titleCase = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+    function initClockControls(cfg) {
+      const c = (cfg && cfg.clock) || {};
+
+      // Populate Theme dropdown from the shared theme list.
+      clk.theme.innerHTML = (electronAPI.clockThemes() || [])
+        .map(t => `<option value="${t.key}">${t.name}</option>`).join('');
+
+      // Populate the Effect dropdown: Auto (by holiday), Off, then each effect.
+      clk.holiday.innerHTML = '<option value="auto">Auto (by holiday)</option><option value="off">Off</option>'
+        + (electronAPI.animationList() || []).map(a => `<option value="${a}">${titleCase(a)}</option>`).join('');
+
+      clk.mode.value = c.mode || 'time';
+      clk.size.value = c.size || 'medium';
+      clk.corner.value = c.corner || 'bottom-right';
+      clk.theme.value = c.theme || 'dark';
+      clk.holiday.value = c.holiday || 'auto';
+      clk.seconds.checked = c.showSeconds !== false;
+      clk.h12.checked = !!c.hour12;
+      const cd = c.countdown || { hours: 0, minutes: 5, seconds: 0 };
+      clk.h.value = cd.hours ?? 0; clk.m.value = cd.minutes ?? 5; clk.s.value = cd.seconds ?? 0;
+      clk.target.value = c.targetTime || '';
+
+      updateClockRows();
+    }
+
+    function updateClockRows() {
+      clk.countdownRow.style.display = clk.mode.value === 'countdown' ? 'flex' : 'none';
+      clk.timerRow.style.display = clk.mode.value === 'timer' ? 'flex' : 'none';
+    }
+
+    function clockSettings() {
+      return {
+        mode: clk.mode.value,
+        size: clk.size.value,
+        corner: clk.corner.value,
+        theme: clk.theme.value,
+        holiday: clk.holiday.value,
+        showSeconds: clk.seconds.checked,
+        hour12: clk.h12.checked,
+        countdown: { hours: +clk.h.value || 0, minutes: +clk.m.value || 0, seconds: +clk.s.value || 0 },
+        targetTime: clk.target.value,
+      };
+    }
+
+    function pushClock() {
+      electronAPI.sendClockSettings(clockSettings());
+      clk.hint.textContent = '✓ Clock updated';
+      setTimeout(() => { clk.hint.textContent = ''; }, 1500);
+    }
+
+    // Live-apply on any change (except the fixed-duration countdown, which is "Start"-driven).
+    ['size', 'corner', 'theme', 'holiday'].forEach(k => clk[k].addEventListener('change', pushClock));
+    ['seconds', 'h12'].forEach(k => clk[k].addEventListener('change', pushClock));
+    clk.mode.addEventListener('change', () => { updateClockRows(); pushClock(); });
+    clk.target.addEventListener('change', pushClock);
+    document.getElementById('clkStart').onclick = pushClock; // restart countdown with current H:M:S
+
+    // Dim + disable sections whose display role isn't assigned to any screen,
+    // so the controller only offers what the current setup can actually show.
+    // Tab → the display role it needs (Clock/Previews/Displays are always usable).
+    const TAB_ROLE = {
+      localvideo: 'video', youtube: 'youtube', web: 'web',
+      presentation: 'powerpoint', slideshow: 'slideshow', excel: 'excel',
+    };
+
+    function applyRoleAvailability(cfg) {
+      const roles = new Set((cfg.displays || []).map(d => d.role));
+
+      navItems.forEach(n => {
+        const tab = n.dataset.tab;
+        if (ALWAYS_ON_TABS.has(tab)) { n.disabled = false; return; }
+        const available = roles.has(TAB_ROLE[tab]);
+        n.disabled = !available;
+        const panel = document.querySelector(`.tab-panel[data-panel="${tab}"]`);
+        if (panel) panel.classList.toggle('unavailable', !available);
+      });
+
+      // If the active tab just became unavailable, fall back to Previews.
+      const active = document.querySelector('.nav-item.active');
+      if (active && active.disabled) showTab('previews');
+
+      const hint = 'No screen is assigned to this. Use “Reconfigure Displays” to add one.';
+      document.getElementById('ytHint').textContent = roles.has('youtube') ? '' : hint;
+      document.getElementById('webHint').textContent = roles.has('web')
+        ? 'Browse here — the page is mirrored onto your Web screen(s).'
+        : hint;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // PRESENTATION CONTROL
+    // ════════════════════════════════════════════════════════════════
+
+    let presState = { type: 'pdf', source: '', images: [], index: 0, count: 0 };
+
+    function initPresentation(cfg) {
+      const p = (cfg && cfg.presentation) || {};
+      presState = {
+        type: p.type || 'pdf',
+        source: p.source || '',
+        images: p.images || [],
+        index: p.index || 0,
+        count: p.count || (p.images ? p.images.length : 0),
+      };
+      updatePresCounter();
+    }
+
+    function updatePresCounter() {
+      document.getElementById('presCounter').textContent =
+        presState.count ? `Slide ${presState.index + 1} / ${presState.count}` : 'No slides';
+    }
+
+    const PRES_DOC_RE = /\.(pdf|pptx?|odp)$/i;
+    const PRES_IMG_RE = /\.(png|jpe?g|gif|webp|bmp)$/i;
+
+    async function countPdfPages(pdfPath) {
+      try {
+        const bytes = nodeAPI.fs.readBytes(pdfPath);
+        const doc = await pdfjsLib.getDocument({ data: bytes }).promise;
+        return doc.numPages;
+      } catch (err) { console.error('Could not read PDF page count:', err); return 0; }
+    }
+
+    document.getElementById('presLoadBtn').onclick = async () => {
+      const paths = await electronAPI.selectPresentationFiles();
+      if (!paths || !paths.length) return;
+      const presHint = document.getElementById('presHint');
+
+      // A single PowerPoint/PDF → resolve to a PDF (PowerPoint is converted in main).
+      const doc = paths.find(p => PRES_DOC_RE.test(p));
+      if (doc) {
+        presHint.textContent = /\.pdf$/i.test(doc) ? 'Loading…' : 'Converting… (LibreOffice)';
+        const res = await electronAPI.convertPresentation(doc);
+        if (!res || res.error) { presHint.textContent = '✗ ' + ((res && res.error) || 'Could not open file'); return; }
+        const count = await countPdfPages(res.source);
+        presState = { type: 'pdf', source: res.source, images: [], index: 0, count };
+        electronAPI.sendPresentationLoad(presState);
+        updatePresCounter();
+        presHint.textContent = `✓ ${res.name || 'Loaded'} — ${count} slide(s)`;
+        return;
+      }
+
+      // Otherwise treat the selection as image slides.
+      const imgs = paths.filter(p => PRES_IMG_RE.test(p));
+      if (!imgs.length) { presHint.textContent = '✗ Pick a PowerPoint/PDF or image files'; return; }
+      presState = { type: 'images', source: '', images: imgs, index: 0, count: imgs.length };
+      electronAPI.sendPresentationLoad(presState);
+      updatePresCounter();
+      presHint.textContent = `✓ Loaded ${imgs.length} image slide(s)`;
+    };
+
+    function presNavigate(dir) {
+      if (!presState.count) return;
+      let i = presState.index + (dir === 'next' ? 1 : -1);
+      i = Math.max(0, Math.min(i, presState.count - 1));
+      if (i === presState.index) return;
+      presState.index = i;
+      electronAPI.sendPresentationCommand('goto', i);
+      updatePresCounter();
+    }
+    document.getElementById('presPrev').onclick = () => presNavigate('prev');
+    document.getElementById('presNext').onclick = () => presNavigate('next');
+
+    // ════════════════════════════════════════════════════════════════
+    // MEDIA SLIDESHOW CONTROL
+    // ════════════════════════════════════════════════════════════════
+
+    const VIDEO_RE = /\.(mp4|mov|mkv|avi|webm|m4v)$/i;
+
+    const slideListSel = document.getElementById('slideList');
+    const slideDurationEl = document.getElementById('slideDuration');
+    const slideLoopEl = document.getElementById('slideLoop');
+    const slidePlayBtn = document.getElementById('slidePlayBtn');
+    const slideNowPrev = document.getElementById('slideNowPrev');
+    const slideNextPrev = document.getElementById('slideNextPrev');
+
+    let slideItems = [];
+    let slideIndex = 0;
+    let slidePlaying = false;
+
+    function initSlideshow(cfg) {
+      const s = (cfg && cfg.slideshow) || {};
+      slideItems = s.items || [];
+      slideIndex = s.index || 0;
+      slidePlaying = slideItems.length > 0 && s.autoPlay !== false;
+      slideDurationEl.value = s.duration || 5;
+      slideLoopEl.checked = s.loop !== false;
+      renderSlideList();
+      updateSlidePlayBtn();
+      updateSlideThumbs();
+    }
+
+    function renderSlideList() {
+      slideListSel.innerHTML = slideItems.map((p, i) =>
+        `<option value="${i}">${i + 1}. ${pathBasename(p)}</option>`).join('');
+    }
+
+    function slideshowData() {
+      return {
+        items: slideItems,
+        duration: Math.max(1, parseInt(slideDurationEl.value, 10) || 5),
+        loop: slideLoopEl.checked,
+        index: slideIndex,
+        autoPlay: slidePlaying,
+      };
+    }
+    function pushSlideshow() { electronAPI.sendSlideshowLoad(slideshowData()); }
+
+    function setThumb(host, path) {
+      host.innerHTML = '';
+      if (!path) { host.textContent = '—'; return; }
+      if (VIDEO_RE.test(path)) {
+        const v = document.createElement('video');
+        v.src = electronAPI.toFileURL(path);
+        v.muted = true; v.preload = 'metadata';
+        v.addEventListener('loadeddata', () => { try { v.currentTime = 0.1; } catch (_) {} });
+        host.appendChild(v);
+      } else {
+        const im = document.createElement('img');
+        im.src = electronAPI.toFileURL(path);
+        host.appendChild(im);
+      }
+    }
+
+    function updateSlideThumbs() {
+      const n = slideItems.length;
+      setThumb(slideNowPrev, n ? slideItems[Math.min(slideIndex, n - 1)] : null);
+      let nextI = -1;
+      if (n) { nextI = slideIndex + 1; if (nextI >= n) nextI = slideLoopEl.checked ? 0 : -1; }
+      setThumb(slideNextPrev, nextI >= 0 ? slideItems[nextI] : null);
+    }
+
+    function updateSlidePlayBtn() {
+      slidePlayBtn.textContent = slidePlaying ? '⏸ Pause' : '▶ Play';
+    }
+
+    document.getElementById('slideAddBtn').onclick = async () => {
+      const files = await electronAPI.selectMediaFiles();
+      if (!files) return;
+      files.forEach(f => { if (!slideItems.includes(f)) slideItems.push(f); });
+      renderSlideList(); updateSlideThumbs(); pushSlideshow();
+    };
+
+    document.getElementById('slideRemoveBtn').onclick = () => {
+      const i = slideListSel.selectedIndex;
+      if (i < 0) return;
+      slideItems.splice(i, 1);
+      if (slideIndex >= slideItems.length) slideIndex = Math.max(0, slideItems.length - 1);
+      renderSlideList(); updateSlideThumbs(); pushSlideshow();
+    };
+
+    function moveSlide(dir) {
+      const i = slideListSel.selectedIndex;
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= slideItems.length) return;
+      [slideItems[i], slideItems[j]] = [slideItems[j], slideItems[i]];
+      renderSlideList();
+      slideListSel.selectedIndex = j;
+      updateSlideThumbs(); pushSlideshow();
+    }
+    document.getElementById('slideUpBtn').onclick = () => moveSlide(-1);
+    document.getElementById('slideDownBtn').onclick = () => moveSlide(1);
+
+    slidePlayBtn.onclick = () => {
+      slidePlaying = !slidePlaying;
+      electronAPI.sendSlideshowCommand(slidePlaying ? 'play' : 'pause');
+      updateSlidePlayBtn();
+    };
+    document.getElementById('slidePrevBtn').onclick = () => electronAPI.sendSlideshowCommand('prev');
+    document.getElementById('slideNextBtn').onclick = () => electronAPI.sendSlideshowCommand('next');
+    slideDurationEl.addEventListener('change', pushSlideshow);
+    slideLoopEl.addEventListener('change', () => { updateSlideThumbs(); pushSlideshow(); });
+
+    // The slideshow screen reports its live index → refresh the now/next thumbnails.
+    electronAPI.onSlideshowIndex((index) => {
+      slideIndex = index;
+      updateSlideThumbs();
+      if (index >= 0 && index < slideListSel.options.length) slideListSel.selectedIndex = index;
+    });
+
+    // ════════════════════════════════════════════════════════════════
+    // SPREADSHEET CONTROL
+    // ════════════════════════════════════════════════════════════════
+
+    const xlSheetSel = document.getElementById('xlSheet');
+    const xlSheetRow = document.getElementById('xlSheetRow');
+    const xlHint = document.getElementById('xlHint');
+
+    function populateSheets(names) {
+      xlSheetSel.innerHTML = (names || []).map((n, i) => `<option value="${i}">${n}</option>`).join('');
+      xlSheetRow.style.display = (names || []).length > 1 ? 'flex' : 'none';
+    }
+
+    function initExcel(cfg) {
+      const s = (cfg && cfg.spreadsheet) || {};
+      if (s.source) {
+        electronAPI.loadSpreadsheet(s.source).then(data => {
+          if (data && !data.error) {
+            populateSheets(data.sheetNames);
+            xlSheetSel.value = String(s.activeSheet || 0);
+            xlHint.textContent = `✓ ${pathBasename(s.source)}`;
+          }
+        }).catch(() => {});
+      }
+    }
+
+    document.getElementById('xlLoadBtn').onclick = async () => {
+      const path = await electronAPI.selectSpreadsheet();
+      if (!path) return;
+      xlHint.textContent = 'Loading…';
+      const data = await electronAPI.loadSpreadsheet(path);
+      if (!data || data.error) { xlHint.textContent = '✗ ' + ((data && data.error) || 'Could not open file'); return; }
+      populateSheets(data.sheetNames);
+      xlHint.textContent = `✓ Loaded ${pathBasename(path)} — ${data.sheetNames.length} sheet(s)`;
+    };
+
+    xlSheetSel.onchange = (e) => electronAPI.sendExcelCommand('selectSheet', parseInt(e.target.value, 10));
+
+    // ════════════════════════════════════════════════════════════════
+    // CLICK-TO-ENLARGE LIGHTBOX (bigger, but not fullscreen)
+    // ════════════════════════════════════════════════════════════════
+
+    const enlargeOverlay = document.getElementById('enlarge-overlay');
+    const enlargeImg = document.getElementById('enlarge-img');
+    const enlargeNav = document.getElementById('enlarge-nav');
+    let enlargeDisplay = null;
+    let enlargeTimer = null;
+
+    async function refreshEnlarge() {
+      if (!enlargeDisplay) return;
+      let previews = [];
+      try { previews = await electronAPI.getScreenPreviews({ thumbnailSize: { width: 1280, height: 800 } }); } catch (_) {}
+      const byId = new Map((previews || []).filter(p => p.id != null).map(p => [String(p.id), p.dataURL]));
+      const url = byId.get(String(enlargeDisplay.id));
+      if (url) enlargeImg.src = url;
+    }
+
+    function openEnlarge(d) {
+      enlargeDisplay = d;
+      const num = (d.displayIndex != null ? d.displayIndex : 0) + 1;
+      document.getElementById('enlarge-title').textContent = `Screen ${num} · ${ROLE_LABELS[d.role] || d.role}`;
+      enlargeNav.style.display = (d.role === 'powerpoint' || d.role === 'slideshow') ? 'flex' : 'none';
+      enlargeOverlay.classList.add('show');
+      refreshEnlarge();
+      if (enlargeTimer) clearInterval(enlargeTimer);
+      enlargeTimer = setInterval(refreshEnlarge, 1200);
+    }
+
+    function closeEnlarge() {
+      enlargeOverlay.classList.remove('show');
+      enlargeDisplay = null;
+      if (enlargeTimer) { clearInterval(enlargeTimer); enlargeTimer = null; }
+    }
+
+    function enlargeNavigate(dir) {
+      if (!enlargeDisplay) return;
+      if (enlargeDisplay.role === 'powerpoint') presNavigate(dir);
+      else if (enlargeDisplay.role === 'slideshow') electronAPI.sendSlideshowCommand(dir);
+    }
+
+    document.getElementById('enlargePrev').onclick = () => enlargeNavigate('prev');
+    document.getElementById('enlargeNext').onclick = () => enlargeNavigate('next');
+    document.getElementById('enlargeClose').onclick = closeEnlarge;
+    enlargeOverlay.addEventListener('click', (e) => { if (e.target === enlargeOverlay) closeEnlarge(); });
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && enlargeOverlay.classList.contains('show')) closeEnlarge(); });
+
+    // ════════════════════════════════════════════════════════════════
+    // INTERACTIVE TUTORIAL (spotlight tour)
+    // ════════════════════════════════════════════════════════════════
+
+    const TOUR_STEPS = [
+      { sel: '[data-tab="previews"]', title: '🔴 Live previews', text: 'Each active screen shows a live thumbnail here — click one to enlarge it.' },
+      { sel: '[data-tab="localvideo"]', title: '🎛️ Pick a tool', text: 'Choose a feature from this sidebar — Video, YouTube, Web, Presentation, Slideshow or Spreadsheet. Only the panel you pick is shown.' },
+      { sel: '[data-tab="clock"]', title: '🕐 Clock + overlay', text: 'Show a clock, and use the per-screen toggles to float it over another screen — e.g. YouTube + Clock together.' },
+      { sel: '[data-tab="displays"]', title: '🖥️ Displays', text: 'Reconfigure which screen shows what, identify screens, or replay this tutorial. You’re ready to go!' },
+    ];
+
+    const tourBox = document.getElementById('tour-box');
+    let tourIndex = 0;
+    let tourTarget = null;
+
+    function positionTourBox(target) {
+      const r = target.getBoundingClientRect();
+      const boxW = tourBox.offsetWidth, boxH = tourBox.offsetHeight;
+      let top = r.bottom + 12;
+      if (top + boxH > window.innerHeight - 8) top = Math.max(8, r.top - boxH - 12);
+      let left = Math.min(Math.max(8, r.left), window.innerWidth - boxW - 8);
+      tourBox.style.top = top + 'px';
+      tourBox.style.left = left + 'px';
+    }
+
+    function showTourStep(i) {
+      if (tourTarget) tourTarget.classList.remove('tour-highlight');
+      tourIndex = i;
+      const step = TOUR_STEPS[i];
+      tourTarget = document.querySelector(step.sel);
+      if (!tourTarget) { endTour(); return; }
+
+      tourTarget.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      tourTarget.classList.add('tour-highlight');
+
+      document.getElementById('tour-title').textContent = step.title;
+      document.getElementById('tour-text').textContent = step.text;
+      document.getElementById('tour-step').textContent = `${i + 1} / ${TOUR_STEPS.length}`;
+      document.getElementById('tour-back').style.visibility = i === 0 ? 'hidden' : 'visible';
+      document.getElementById('tour-next').textContent = i === TOUR_STEPS.length - 1 ? 'Finish' : 'Next';
+      tourBox.classList.add('show');
+      // Position after layout/scroll settles.
+      setTimeout(() => positionTourBox(tourTarget), 250);
+    }
+
+    function startTour() { showTourStep(0); }
+
+    function endTour() {
+      if (tourTarget) tourTarget.classList.remove('tour-highlight');
+      tourTarget = null;
+      tourBox.classList.remove('show');
+      try { localStorage.setItem('tutorialSeen', '1'); } catch (_) {}
+    }
+
+    document.getElementById('tour-next').onclick = () =>
+      tourIndex >= TOUR_STEPS.length - 1 ? endTour() : showTourStep(tourIndex + 1);
+    document.getElementById('tour-back').onclick = () => showTourStep(Math.max(0, tourIndex - 1));
+    document.getElementById('tour-skip').onclick = endTour;
+    document.getElementById('tutorialBtn').onclick = startTour;
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && tourBox.classList.contains('show')) endTour(); });
+    window.addEventListener('resize', () => { if (tourTarget) positionTourBox(tourTarget); });
+
+    // Auto-run once, the first time the controller opens.
+    function maybeAutoTour() {
+      let seen = false;
+      try { seen = localStorage.getItem('tutorialSeen') === '1'; } catch (_) {}
+      if (!seen) setTimeout(startTour, 700);
+    }
+
     // ════════════════════════════════════════════════════════════════
     // STARTUP
     // ════════════════════════════════════════════════════════════════
 
     initialize();
+    maybeAutoTour();
   </script>
 </body>
 </html>

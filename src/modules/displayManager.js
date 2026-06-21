@@ -1,27 +1,55 @@
 /**
  * Display Manager
- * Handles multi-display detection, window creation, and display coordination
+ * Handles multi-display detection, window creation, and display coordination.
+ *
+ * Content windows (video / clock / web / youtube) are tracked as a list so the
+ * same role can be assigned to several screens at once. The controller and the
+ * selector are singletons.
  */
 
 const { BrowserWindow, screen } = require('electron');
 const path = require('path');
+
+const PRELOAD = path.join(__dirname, '../../preload.js');
+const UI_DIR = path.join(__dirname, '../ui');
+
+// Clock widget window sizes (small floating window, not fullscreen).
+const CLOCK_SIZES = {
+  small: { w: 300, h: 110 },
+  medium: { w: 460, h: 150 },
+  large: { w: 680, h: 210 },
+};
+const CLOCK_MARGIN = 0; // clock widget sits flush in the corner (no gap)
+
+/** Compute the clock widget's rectangle within a display, for a size + corner. */
+function clockRect(bounds, sizeKey, corner) {
+  const { w, h } = CLOCK_SIZES[sizeKey] || CLOCK_SIZES.medium;
+  const bx = Math.floor(bounds.x), by = Math.floor(bounds.y);
+  const bw = Math.floor(bounds.width), bh = Math.floor(bounds.height);
+  const c = corner || 'bottom-right';
+  let x = bx + Math.floor((bw - w) / 2);
+  let y = by + Math.floor((bh - h) / 2);
+  if (c.includes('left')) x = bx + CLOCK_MARGIN;
+  if (c.includes('right')) x = bx + bw - w - CLOCK_MARGIN;
+  if (c.includes('top')) y = by + CLOCK_MARGIN;
+  if (c.includes('bottom')) y = by + bh - h - CLOCK_MARGIN;
+  return { x, y, w, h };
+}
 
 class DisplayManager {
   constructor(mainProcess) {
     this.main = mainProcess;
     this.windows = {
       controller: null,
-      public: null,
-      private: null,
-      clock: null,
       selector: null,
+      help: null,
     };
-    this.childWindowIds = new Set(); // Track child window IDs for lifecycle management
+    // List of { window, role } for every fullscreen content window.
+    this.contentWindows = [];
   }
 
   /**
-   * Detect all connected displays
-   * Supports 1-7+ displays dynamically
+   * Detect all connected displays. Supports 1-N displays dynamically.
    */
   detectDisplays() {
     const displays = screen.getAllDisplays();
@@ -31,7 +59,6 @@ class DisplayManager {
     }
 
     console.log(`Detected ${displays.length} display(s):`);
-
     displays.forEach((display, index) => {
       const primary = display.isPrimary ? ' (Primary)' : '';
       console.log(`  Display ${index}${primary}: ${display.bounds.width}x${display.bounds.height} @ (${display.bounds.x}, ${display.bounds.y})`);
@@ -41,147 +68,89 @@ class DisplayManager {
   }
 
   /**
-   * Create the display selection window
-   * User selects which displays to use for video, private video, clock, etc.
+   * The display the mouse cursor is currently on (so windows open on the screen
+   * the user is actually looking at, not always the primary one).
+   */
+  getCursorDisplay() {
+    const point = screen.getCursorScreenPoint();
+    return screen.getDisplayNearestPoint(point) || screen.getPrimaryDisplay();
+  }
+
+  /** Centered { x, y } for a window of w×h within a display's work area. */
+  _centerOn(display, w, h) {
+    const b = display.workArea || display.bounds;
+    return {
+      x: Math.floor(b.x + Math.max(0, (b.width - w) / 2)),
+      y: Math.floor(b.y + Math.max(0, (b.height - h) / 2)),
+    };
+  }
+
+  /**
+   * Display metadata sent to renderers (selector / identify).
+   */
+  getDisplayData() {
+    return this.detectDisplays().map((d, i) => ({
+      index: i,
+      id: d.id,
+      label: d.label || `Display ${i + 1}`,
+      bounds: d.bounds,
+      isPrimary: d.isPrimary,
+    }));
+  }
+
+  /**
+   * Create the display selection window.
+   * The page asks for displays over IPC (electronAPI.getDisplays) once it loads —
+   * a plain request/response, with no temp file, injection, URL parsing, or race.
    */
   createSelectorWindow() {
-    const displays = this.detectDisplays();
-
-    if (displays.length === 0) {
-      throw new Error('No displays detected');
-    }
-
-    // Create selector on primary display
-    const primaryDisplay = displays[0];
+    // Open on whatever screen the user is currently on, centered.
+    const cursorDisplay = this.getCursorDisplay();
+    const pos = this._centerOn(cursorDisplay, 960, 760);
 
     this.windows.selector = new BrowserWindow({
-      x: primaryDisplay.bounds.x + 100,
-      y: primaryDisplay.bounds.y + 100,
-      width: 900,
-      height: 700,
+      x: pos.x,
+      y: pos.y,
+      width: 960,
+      height: 760,
+      title: 'Display Configuration',
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
-        preload: path.join(__dirname, '../../preload.js'), // Will create this later
+        sandbox: false, // preload requires local modules (src/utils/*) — needs an unsandboxed preload
+        preload: PRELOAD,
       },
       show: true,
     });
 
-    const selectorPath = path.join(__dirname, '../ui/displaySelector.html');
-    this.windows.selector.loadFile(selectorPath);
-
-    // Send detected displays to selector UI
-    this.windows.selector.webContents.on('did-finish-load', () => {
-      this.windows.selector.webContents.send('displays-detected', displays.map((d, i) => ({
-        index: i,
-        id: d.id,
-        label: d.label || `Display ${i + 1}`,
-        bounds: d.bounds,
-        isPrimary: d.isPrimary,
-      })));
-    });
-
+    this.windows.selector.loadFile(path.join(UI_DIR, 'displaySelector.html'));
     return this.windows.selector;
   }
 
-  /**
-   * Create video display window (fullscreen)
-   */
-  createVideoWindow(displayIndex, windowRole = 'public') {
-    const displays = this.detectDisplays();
-
-    if (displayIndex >= displays.length) {
-      console.warn(`Display index ${displayIndex} not available, using primary`);
-      displayIndex = 0;
-    }
-
-    const display = displays[displayIndex];
-    const videoPath = path.join(__dirname, '../ui/videoDisplay.html');
-
-    console.log(`Creating video window on display ${displayIndex}:`, {
-      displayId: display.id,
-      bounds: display.bounds,
-      isPrimary: display.isPrimary,
-    });
-
-    const videoOpts = {
-      x: Math.floor(display.bounds.x),
-      y: Math.floor(display.bounds.y),
-      width: Math.floor(display.bounds.width),
-      height: Math.floor(display.bounds.height),
-      fullscreen: false,
-      frame: false,
-      alwaysOnTop: true,
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        preload: path.join(__dirname, '../../preload.js'),
-      },
-      show: false, // Don't show immediately - show after positioning
-    };
-
-    const window = new BrowserWindow(videoOpts);
-    window.loadFile(videoPath);
-
-    // Pass window role via IPC after load
-    window.webContents.on('did-finish-load', () => {
-      console.log(`Video window loaded on display ${displayIndex}, repositioning and showing`);
-
-      // Force position again after load to ensure correct placement on Windows
-      window.setBounds({
-        x: Math.floor(display.bounds.x),
-        y: Math.floor(display.bounds.y),
-        width: Math.floor(display.bounds.width),
-        height: Math.floor(display.bounds.height),
-      });
-
-      // Show window and enforce always-on-top
-      window.show();
-      window.setAlwaysOnTop(true, 'screen-saver');
-      window.moveTop();
-      window.focus();
-
-      window.webContents.send('window-role', windowRole);
-    });
-
-    // If private window, mute audio
-    if (windowRole === 'private') {
-      window.webContents.setAudioMuted(true);
-    }
-
-    // Track as child window
-    this.childWindowIds.add(window.webContents.id);
-
-    // Store reference
-    if (windowRole === 'public') {
-      this.windows.public = window;
-    } else if (windowRole === 'private') {
-      this.windows.private = window;
-    }
-
-    return window;
-  }
+  // ════════════════════════════════════════════════════════════════
+  // CONTENT WINDOWS (video / clock / web / youtube)
+  // ════════════════════════════════════════════════════════════════
 
   /**
-   * Create clock display window (fullscreen)
+   * Shared fullscreen content-window factory: positions a frameless,
+   * always-on-top window on the given display, shows it after load, and
+   * tracks it under `role`.
    */
-  createClockWindow(displayIndex) {
+  _createContentWindow(displayIndex, role, htmlFile, extraWebPreferences = {}, onLoad = null) {
     const displays = this.detectDisplays();
 
-    if (displayIndex >= displays.length) {
-      console.warn(`Display index ${displayIndex} not available, skipping clock`);
+    if (displayIndex == null || displayIndex < 0 || displayIndex >= displays.length) {
+      console.warn(`Display index ${displayIndex} not available for role '${role}', skipping`);
       return null;
     }
 
     const display = displays[displayIndex];
-    const clockPath = path.join(__dirname, '../ui/clockDisplay.html');
-
-    console.log(`Creating clock window on display ${displayIndex}:`, {
+    console.log(`Creating ${role} window on display ${displayIndex}:`, {
       displayId: display.id,
       bounds: display.bounds,
     });
 
-    const clockOpts = {
+    const window = new BrowserWindow({
       x: Math.floor(display.bounds.x),
       y: Math.floor(display.bounds.y),
       width: Math.floor(display.bounds.width),
@@ -192,218 +161,174 @@ class DisplayManager {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
-        preload: path.join(__dirname, '../../preload.js'),
+        sandbox: false, // unsandboxed preload so it can require src/utils/* and Node builtins
+        preload: PRELOAD,
+        ...extraWebPreferences,
       },
-      show: false, // Don't show immediately
-    };
+      show: false,
+    });
 
-    const window = new BrowserWindow(clockOpts);
-    window.loadFile(clockPath);
+    window.loadFile(path.join(UI_DIR, htmlFile));
 
-    // Reposition and show after load
     window.webContents.on('did-finish-load', () => {
-      console.log(`Clock window loaded on display ${displayIndex}, repositioning and showing`);
-
+      // Re-assert bounds after load (Windows multi-monitor can shift them).
       window.setBounds({
         x: Math.floor(display.bounds.x),
         y: Math.floor(display.bounds.y),
         width: Math.floor(display.bounds.width),
         height: Math.floor(display.bounds.height),
       });
-
       window.show();
       window.setAlwaysOnTop(true, 'screen-saver');
       window.moveTop();
       window.focus();
+      if (onLoad) onLoad(window);
     });
 
-    // Track as child window
-    this.childWindowIds.add(window.webContents.id);
-    this.windows.clock = window;
+    const entry = { window, role, displayIndex };
+    this.contentWindows.push(entry);
+    window.on('closed', () => {
+      this.contentWindows = this.contentWindows.filter(e => e.window !== window);
+    });
 
     return window;
   }
 
   /**
-   * Create controller window (windowed, resizable)
+   * Create a local-video window. The first video screen carries audio; any
+   * additional video screens are muted to avoid echo on the single audio device.
    */
-  createControllerWindow(primaryDisplay) {
-    const controllerPath = path.join(__dirname, '../ui/controller.html');
+  createVideoWindow(displayIndex, hasAudio = true) {
+    return this._createContentWindow(displayIndex, 'video', 'videoDisplay.html', {}, (window) => {
+      window.webContents.setAudioMuted(!hasAudio);
+      window.webContents.send('window-role', 'video');
+    });
+  }
 
-    const controllerOpts = {
-      x: primaryDisplay.bounds.x + 50,
-      y: primaryDisplay.bounds.y + 50,
-      width: 1000,
-      height: 700,
+  /**
+   * Create the clock as a SMALL floating widget in a corner of its display
+   * (not a fullscreen window). Size + corner come from the clock settings.
+   */
+  createClockWindow(displayIndex, clockSettings = {}, opts = {}) {
+    const displays = this.detectDisplays();
+    if (displayIndex == null || displayIndex < 0 || displayIndex >= displays.length) {
+      console.warn(`Display index ${displayIndex} not available for clock, skipping`);
+      return null;
+    }
+
+    const display = displays[displayIndex];
+    const r = clockRect(display.bounds, clockSettings.size, clockSettings.corner);
+    console.log(`Creating clock widget on display ${displayIndex}:`, r);
+
+    const window = new BrowserWindow({
+      x: r.x, y: r.y, width: r.w, height: r.h,
+      frame: false,
+      resizable: false,
+      minimizable: false,
+      skipTaskbar: true,
       alwaysOnTop: true,
-      minimizable: true, // Allow minimize (but won't close children)
+      // Transparent so the 'glass-*' clock themes float over the screen behind
+      // them. Solid themes paint an opaque CSS background, so they're unaffected.
+      transparent: true,
+      backgroundColor: '#00000000',
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
-        preload: path.join(__dirname, '../../preload.js'),
+        sandbox: false,
+        preload: PRELOAD,
       },
       show: true,
-    };
-
-    this.windows.controller = new BrowserWindow(controllerOpts);
-    this.windows.controller.loadFile(controllerPath);
-
-    return this.windows.controller;
-  }
-
-  /**
-   * Close all display windows (called when controller closes)
-   */
-  closeAllDisplayWindows() {
-    ['public', 'private', 'clock', 'selector', 'web', 'youtube'].forEach(role => {
-      if (this.windows[role] && !this.windows[role].isDestroyed()) {
-        this.windows[role].close();
-      }
     });
+
+    window.setAlwaysOnTop(true, 'screen-saver');
+    window.loadFile(path.join(UI_DIR, 'clockDisplay.html'));
+
+    // Keep it pinned above other always-on-top windows (mirrors the old clock).
+    const enforce = setInterval(() => {
+      if (window.isDestroyed()) { clearInterval(enforce); return; }
+      window.setAlwaysOnTop(true, 'screen-saver');
+      window.moveTop();
+    }, 1000);
+
+    const entry = { window, role: 'clock', displayIndex, overlay: !!opts.overlay };
+    this.contentWindows.push(entry);
+    window.on('closed', () => {
+      clearInterval(enforce);
+      this.contentWindows = this.contentWindows.filter(e => e.window !== window);
+    });
+
+    return window;
   }
 
   /**
-   * Check if all required windows and displays are valid
+   * Turn a clock overlay on/off for a single display, live (no reconfigure).
+   * The overlay is the same small widget as the clock role, but it coexists with
+   * whatever content that screen is already showing.
    */
-  getWindowStatus() {
-    return {
-      controller: this.windows.controller && !this.windows.controller.isDestroyed(),
-      public: this.windows.public && !this.windows.public.isDestroyed(),
-      private: this.windows.private && !this.windows.private.isDestroyed(),
-      clock: this.windows.clock && !this.windows.clock.isDestroyed(),
-      web: this.windows.web && !this.windows.web.isDestroyed(),
-      youtube: this.windows.youtube && !this.windows.youtube.isDestroyed(),
-    };
+  setClockOverlay(displayIndex, on, clockSettings = {}) {
+    const existing = this.contentWindows.find(
+      e => e.role === 'clock' && e.overlay && e.displayIndex === displayIndex
+         && e.window && !e.window.isDestroyed());
+
+    if (on) {
+      if (existing) return existing.window; // already on
+      return this.createClockWindow(displayIndex, clockSettings, { overlay: true });
+    }
+
+    if (existing) existing.window.close();
+    return null;
   }
 
   /**
-   * Create web browser window (fullscreen)
+   * Resize/reposition every clock widget when its size or corner changes.
    */
+  applyClockWindowLayout(clockSettings = {}) {
+    const displays = this.detectDisplays();
+    this.contentWindows
+      .filter(e => e.role === 'clock' && e.window && !e.window.isDestroyed())
+      .forEach(e => {
+        const d = displays[e.displayIndex];
+        if (!d) return;
+        const r = clockRect(d.bounds, clockSettings.size, clockSettings.corner);
+        e.window.setBounds({ x: r.x, y: r.y, width: r.w, height: r.h });
+      });
+  }
+
   createWebWindow(displayIndex) {
-    const displays = this.detectDisplays();
-
-    if (displayIndex >= displays.length) {
-      console.warn(`Display index ${displayIndex} not available, skipping web`);
-      return null;
-    }
-
-    const display = displays[displayIndex];
-    const webPath = path.join(__dirname, '../ui/webBrowser.html');
-
-    console.log(`Creating web window on display ${displayIndex}:`, {
-      displayId: display.id,
-      bounds: display.bounds,
-    });
-
-    const webOpts = {
-      x: Math.floor(display.bounds.x),
-      y: Math.floor(display.bounds.y),
-      width: Math.floor(display.bounds.width),
-      height: Math.floor(display.bounds.height),
-      fullscreen: false,
-      frame: false,
-      alwaysOnTop: true,
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        sandbox: true,
-        preload: path.join(__dirname, '../../preload.js'),
-      },
-      show: false, // Don't show immediately
-    };
-
-    const window = new BrowserWindow(webOpts);
-    window.loadFile(webPath);
-
-    // Reposition and show after load
-    window.webContents.on('did-finish-load', () => {
-      console.log(`Web window loaded on display ${displayIndex}, repositioning and showing`);
-
-      window.setBounds({
-        x: Math.floor(display.bounds.x),
-        y: Math.floor(display.bounds.y),
-        width: Math.floor(display.bounds.width),
-        height: Math.floor(display.bounds.height),
-      });
-
-      window.show();
-      window.setAlwaysOnTop(true, 'screen-saver');
-      window.moveTop();
-      window.focus();
-    });
-
-    // Track as child window
-    this.childWindowIds.add(window.webContents.id);
-    this.windows.web = window;
-
-    return window;
+    // webviewTag lets <webview> embed sites that refuse <iframe> (X-Frame-Options).
+    return this._createContentWindow(displayIndex, 'web', 'webBrowser.html', { webviewTag: true });
   }
 
-  /**
-   * Create YouTube player window (fullscreen)
-   */
   createYouTubeWindow(displayIndex) {
-    const displays = this.detectDisplays();
+    // webviewTag lets the player navigate a real youtube.com context (avoids the
+    // file:// embed "Error 153") and lets us script play/pause/volume.
+    return this._createContentWindow(displayIndex, 'youtube', 'youtubePlayer.html', { sandbox: false, webviewTag: true });
+  }
 
-    if (displayIndex >= displays.length) {
-      console.warn(`Display index ${displayIndex} not available, skipping youtube`);
-      return null;
-    }
-
-    const display = displays[displayIndex];
-    const youtubePath = path.join(__dirname, '../ui/youtubePlayer.html');
-
-    console.log(`Creating youtube window on display ${displayIndex}:`, {
-      displayId: display.id,
-      bounds: display.bounds,
+  /** Presentation viewer — renders PDF pages (pdf.js) or slide images fullscreen. */
+  createPresentationWindow(displayIndex) {
+    return this._createContentWindow(displayIndex, 'powerpoint', 'presentationDisplay.html', {}, (window) => {
+      window.webContents.send('window-role', 'powerpoint');
     });
+  }
 
-    const youtubeOpts = {
-      x: Math.floor(display.bounds.x),
-      y: Math.floor(display.bounds.y),
-      width: Math.floor(display.bounds.width),
-      height: Math.floor(display.bounds.height),
-      fullscreen: false,
-      frame: false,
-      alwaysOnTop: true,
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        sandbox: false, // Allow YouTube iframe
-        preload: path.join(__dirname, '../../preload.js'),
-      },
-      show: false, // Don't show immediately
-    };
-
-    const window = new BrowserWindow(youtubeOpts);
-    window.loadFile(youtubePath);
-
-    // Reposition and show after load
-    window.webContents.on('did-finish-load', () => {
-      console.log(`YouTube window loaded on display ${displayIndex}, repositioning and showing`);
-
-      window.setBounds({
-        x: Math.floor(display.bounds.x),
-        y: Math.floor(display.bounds.y),
-        width: Math.floor(display.bounds.width),
-        height: Math.floor(display.bounds.height),
-      });
-
-      window.show();
-      window.setAlwaysOnTop(true, 'screen-saver');
-      window.moveTop();
-      window.focus();
+  /** Media slideshow — images + videos shown in sequence. First screen carries audio. */
+  createSlideshowWindow(displayIndex, hasAudio = true) {
+    return this._createContentWindow(displayIndex, 'slideshow', 'slideshowDisplay.html', {}, (window) => {
+      window.webContents.setAudioMuted(!hasAudio);
+      window.webContents.send('window-role', 'slideshow');
     });
+  }
 
-    // Track as child window
-    this.childWindowIds.add(window.webContents.id);
-    this.windows.youtube = window;
-
-    return window;
+  /** Spreadsheet viewer — renders a sheet (parsed in main with SheetJS) as a table. */
+  createExcelWindow(displayIndex) {
+    return this._createContentWindow(displayIndex, 'excel', 'excelDisplay.html', {}, (window) => {
+      window.webContents.send('window-role', 'excel');
+    });
   }
 
   /**
-   * Create or update all display windows based on config
+   * Create or update all content windows based on config.
    */
   createAllDisplayWindows(config) {
     if (!config || !config.displays) {
@@ -411,42 +336,216 @@ class DisplayManager {
       return;
     }
 
+    let videoAudioAssigned = false;
+    let slideshowAudioAssigned = false;
+
     config.displays.forEach(displayConfig => {
-      if (!displayConfig.role || displayConfig.role === 'unassigned') {
-        return; // Skip unassigned displays
-      }
+      const role = displayConfig.role;
+      if (!role || role === 'unassigned' || role === 'controller') return;
 
       try {
-        switch (displayConfig.role) {
-          case 'public_video':
+        switch (role) {
+          case 'video':
+          // Back-compat with old configs:
           case 'public':
-            this.createVideoWindow(displayConfig.displayIndex, 'public_video');
+          case 'private': {
+            const hasAudio = !videoAudioAssigned;
+            videoAudioAssigned = true;
+            this.createVideoWindow(displayConfig.displayIndex, hasAudio);
             break;
-
-          case 'private_video':
-          case 'private':
-            this.createVideoWindow(displayConfig.displayIndex, 'private_video');
-            break;
-
+          }
           case 'clock':
-            this.createClockWindow(displayConfig.displayIndex);
+            this.createClockWindow(displayConfig.displayIndex, config.clock || {});
             break;
-
           case 'web':
             this.createWebWindow(displayConfig.displayIndex);
             break;
-
           case 'youtube':
             this.createYouTubeWindow(displayConfig.displayIndex);
             break;
-
+          case 'powerpoint':
+            this.createPresentationWindow(displayConfig.displayIndex);
+            break;
+          case 'slideshow': {
+            const hasAudio = !slideshowAudioAssigned;
+            slideshowAudioAssigned = true;
+            this.createSlideshowWindow(displayConfig.displayIndex, hasAudio);
+            break;
+          }
+          case 'excel':
+            this.createExcelWindow(displayConfig.displayIndex);
+            break;
           default:
-            console.warn(`Unknown display role: ${displayConfig.role}`);
+            console.warn(`Unknown display role: ${role}`);
+        }
+
+        // A clock overlay can sit on top of any content screen (except a
+        // dedicated clock screen, which already shows the clock).
+        if (displayConfig.clockOverlay && role !== 'clock') {
+          this.createClockWindow(displayConfig.displayIndex, config.clock || {}, { overlay: true });
         }
       } catch (error) {
-        console.error(`Error creating window for display ${displayConfig.displayIndex} (${displayConfig.role}):`, error);
+        console.error(`Error creating window for display ${displayConfig.displayIndex} (${role}):`, error);
       }
     });
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // CONTROLLER / HELP
+  // ════════════════════════════════════════════════════════════════
+
+  createControllerWindow(targetDisplay) {
+    // Center the controller on the screen the user launched it from.
+    const display = targetDisplay || this.getCursorDisplay();
+    const pos = this._centerOn(display, 1000, 720);
+
+    this.windows.controller = new BrowserWindow({
+      x: pos.x,
+      y: pos.y,
+      width: 1000,
+      height: 720,
+      alwaysOnTop: false, // Control panel behaves like a normal app window
+      minimizable: true,
+      title: 'RCCG Display Controller',
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: false,
+        webviewTag: true, // the controller embeds a <webview> browser for the Web Page feature
+        preload: PRELOAD,
+      },
+      show: true,
+    });
+
+    this.windows.controller.loadFile(path.join(UI_DIR, 'controller.html'));
+    return this.windows.controller;
+  }
+
+  /**
+   * Open (or focus) the Help / tutorial window.
+   */
+  createHelpWindow() {
+    if (this.windows.help && !this.windows.help.isDestroyed()) {
+      this.windows.help.focus();
+      return this.windows.help;
+    }
+
+    this.windows.help = new BrowserWindow({
+      width: 820,
+      height: 760,
+      title: 'Help & Tutorial',
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: false,
+        preload: PRELOAD,
+      },
+    });
+
+    this.windows.help.loadFile(path.join(UI_DIR, 'help.html'));
+    this.windows.help.on('closed', () => { this.windows.help = null; });
+    return this.windows.help;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // IDENTIFY SCREENS
+  // ════════════════════════════════════════════════════════════════
+
+  /**
+   * Briefly flash a big "Screen N" badge full-screen on every display so the
+   * user can tell which physical screen is which. Auto-closes after `durationMs`.
+   */
+  identifyScreens(durationMs = 4000) {
+    const displays = this.detectDisplays();
+
+    displays.forEach((display, index) => {
+      const primary = display.isPrimary ? ' · Primary' : '';
+      const badge = new BrowserWindow({
+        x: Math.floor(display.bounds.x),
+        y: Math.floor(display.bounds.y),
+        width: Math.floor(display.bounds.width),
+        height: Math.floor(display.bounds.height),
+        frame: false,
+        transparent: false,
+        backgroundColor: '#101830',
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        focusable: false,
+        show: false,
+      });
+
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+        html,body{margin:0;height:100%;background:#101830;color:#fff;
+          font-family:'Segoe UI',system-ui,sans-serif;display:flex;align-items:center;
+          justify-content:center;flex-direction:column;overflow:hidden}
+        .n{font-size:min(40vh,40vw);font-weight:800;line-height:1}
+        .sub{font-size:5vh;color:#9fb4ff;margin-top:2vh}
+      </style></head><body>
+        <div class="n">${index + 1}</div>
+        <div class="sub">Screen ${index + 1}${primary} — ${display.bounds.width}×${display.bounds.height}</div>
+      </body></html>`;
+
+      badge.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+      badge.once('ready-to-show', () => {
+        badge.setBounds({
+          x: Math.floor(display.bounds.x),
+          y: Math.floor(display.bounds.y),
+          width: Math.floor(display.bounds.width),
+          height: Math.floor(display.bounds.height),
+        });
+        badge.showInactive();
+        badge.setAlwaysOnTop(true, 'screen-saver');
+      });
+
+      setTimeout(() => {
+        if (!badge.isDestroyed()) badge.close();
+      }, durationMs);
+    });
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // QUERIES / LIFECYCLE
+  // ════════════════════════════════════════════════════════════════
+
+  /**
+   * Return the live BrowserWindows currently serving a given role.
+   */
+  getWindowsByRole(role) {
+    return this.contentWindows
+      .filter(e => e.role === role && e.window && !e.window.isDestroyed())
+      .map(e => e.window);
+  }
+
+  /**
+   * Close all content windows (and the selector). Leaves the controller alone —
+   * closing the controller quits the app (see WindowLifecycleManager).
+   */
+  closeAllDisplayWindows() {
+    this.contentWindows.forEach(({ window }) => {
+      if (window && !window.isDestroyed()) window.close();
+    });
+    this.contentWindows = [];
+
+    if (this.windows.selector && !this.windows.selector.isDestroyed()) {
+      this.windows.selector.close();
+    }
+  }
+
+  /**
+   * Count of live windows per role, for the controller status line.
+   */
+  getWindowStatus() {
+    const status = {
+      controller: !!(this.windows.controller && !this.windows.controller.isDestroyed()),
+      video: this.getWindowsByRole('video').length,
+      clock: this.getWindowsByRole('clock').length,
+      web: this.getWindowsByRole('web').length,
+      youtube: this.getWindowsByRole('youtube').length,
+      powerpoint: this.getWindowsByRole('powerpoint').length,
+      slideshow: this.getWindowsByRole('slideshow').length,
+      excel: this.getWindowsByRole('excel').length,
+    };
+    return status;
   }
 }
 

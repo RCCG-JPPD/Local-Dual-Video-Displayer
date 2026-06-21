@@ -5,9 +5,33 @@
  */
 
 const { contextBridge, ipcRenderer } = require('electron');
+const { extractVideoId } = require('./src/utils/youtube');
+const { normalizeUrl } = require('./src/utils/weburl');
+const { formatClock, formatDuration, secondsUntil } = require('./src/utils/clockformat');
+const { nextIndex: slideshowNextIndex } = require('./src/utils/slideshow');
+const { getActiveHoliday, HOLIDAY_KEYS, ANIMATIONS } = require('./src/utils/holidays');
+const { THEMES, resolveTheme } = require('./src/utils/clockThemes');
 
 // Expose safe IPC APIs to renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
+  // ════════════════════════════════════════════════════════════════
+  // PURE HELPERS (shared with unit tests via src/utils/*)
+  // ════════════════════════════════════════════════════════════════
+
+  extractYouTubeId: (urlOrId) => extractVideoId(urlOrId),
+  normalizeWebUrl: (url) => normalizeUrl(url),
+  slideshowNextIndex: (index, length, dir, loop) => slideshowNextIndex(index, length, dir, loop),
+
+  // Clock helpers (formatting + holiday calendar)
+  formatClock: (date, opts) => formatClock(date, opts),
+  formatDuration: (s) => formatDuration(s),
+  secondsUntil: (target, now) => secondsUntil(target, now),
+  getActiveHoliday: (date) => getActiveHoliday(date),
+  holidayList: () => HOLIDAY_KEYS,
+  animationList: () => ANIMATIONS,
+  clockThemes: () => THEMES,
+  resolveClockTheme: (themeKey, holidayKey) => resolveTheme(themeKey, holidayKey),
+
   // ════════════════════════════════════════════════════════════════
   // CONFIG & STATE
   // ════════════════════════════════════════════════════════════════
@@ -75,12 +99,81 @@ contextBridge.exposeInMainWorld('electronAPI', {
     });
   },
 
+  // Controller → YouTube playback commands (play/pause/setVolume/mute)
+  sendYouTubeCommand: (cmd, data) => ipcRenderer.send('youtube-command', cmd, data),
+  onYouTubeCommand: (callback) => {
+    ipcRenderer.on('youtube-command', (event, cmd, data) => callback(cmd, data));
+  },
+
+  // ════════════════════════════════════════════════════════════════
+  // CLOCK CONTROL
+  // ════════════════════════════════════════════════════════════════
+
+  // Controller pushes clock settings (persisted + broadcast to clock screens)
+  sendClockSettings: (settings) => ipcRenderer.send('clock-settings', settings),
+
+  // Toggle a clock overlay on a specific screen (coexists with its content)
+  setClockOverlay: (displayIndex, on) => ipcRenderer.send('set-clock-overlay', displayIndex, on),
+
+  // Clock screens listen for live settings updates
+  onClockSettings: (callback) => {
+    ipcRenderer.on('clock-settings', (event, settings) => callback(settings));
+  },
+
+  // ════════════════════════════════════════════════════════════════
+  // SCREEN PREVIEWS (identify which physical screen is which)
+  // ════════════════════════════════════════════════════════════════
+
+  // Returns [{ id, dataURL }] thumbnails of each physical display's contents.
+  // Pass { thumbnailSize: { width, height } } for a larger capture (enlarge view).
+  getScreenPreviews: (opts) => ipcRenderer.invoke('get-screen-previews', opts),
+
+  // ════════════════════════════════════════════════════════════════
+  // PRESENTATION (role 'powerpoint')
+  // ════════════════════════════════════════════════════════════════
+
+  selectPresentationFiles: () => ipcRenderer.invoke('open-presentation-dialog'),
+  // Resolve a chosen file to a renderable PDF (converts PowerPoint via LibreOffice)
+  convertPresentation: (filePath) => ipcRenderer.invoke('convert-presentation', filePath),
+  sendPresentationLoad: (data) => ipcRenderer.send('presentation-load', data),
+  sendPresentationCommand: (cmd, data) => ipcRenderer.send('presentation-command', cmd, data),
+  onPresentationLoad: (cb) => ipcRenderer.on('presentation-load', (e, data) => cb(data)),
+  onPresentationCommand: (cb) => ipcRenderer.on('presentation-command', (e, cmd, data) => cb(cmd, data)),
+
+  // ════════════════════════════════════════════════════════════════
+  // SLIDESHOW (role 'slideshow')
+  // ════════════════════════════════════════════════════════════════
+
+  selectMediaFiles: () => ipcRenderer.invoke('open-media-dialog'),
+  sendSlideshowLoad: (data) => ipcRenderer.send('slideshow-load', data),
+  sendSlideshowCommand: (cmd, data) => ipcRenderer.send('slideshow-command', cmd, data),
+  onSlideshowLoad: (cb) => ipcRenderer.on('slideshow-load', (e, data) => cb(data)),
+  onSlideshowCommand: (cb) => ipcRenderer.on('slideshow-command', (e, cmd, data) => cb(cmd, data)),
+  // Display → controller: the live current index (for the next-slide preview).
+  sendSlideshowIndex: (index) => ipcRenderer.send('slideshow-index', index),
+  onSlideshowIndex: (cb) => ipcRenderer.on('slideshow-index', (e, index) => cb(index)),
+
+  // ════════════════════════════════════════════════════════════════
+  // SPREADSHEET (role 'excel')
+  // ════════════════════════════════════════════════════════════════
+
+  selectSpreadsheet: () => ipcRenderer.invoke('open-spreadsheet-dialog'),
+  loadSpreadsheet: (filePath) => ipcRenderer.invoke('load-spreadsheet', filePath),
+  sendExcelCommand: (cmd, data) => ipcRenderer.send('excel-command', cmd, data),
+  onExcelLoad: (cb) => ipcRenderer.on('excel-load', (e, data) => cb(data)),
+  onExcelCommand: (cb) => ipcRenderer.on('excel-command', (e, cmd, data) => cb(cmd, data)),
+
   // ════════════════════════════════════════════════════════════════
   // FILE OPERATIONS
   // ════════════════════════════════════════════════════════════════
 
   // Open file dialog for video selection
   selectVideoFiles: () => ipcRenderer.invoke('open-file-dialog'),
+
+  // Convert an absolute filesystem path into a correct file:// URL.
+  // Uses Node's pathToFileURL so Windows drive letters (C:\), spaces and
+  // unicode are encoded properly — `file://${path}` breaks on Windows.
+  toFileURL: (p) => require('url').pathToFileURL(p).href,
 
   // ════════════════════════════════════════════════════════════════
   // DISPLAY CONFIGURATION
@@ -134,17 +227,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // DISPLAY SELECTOR SPECIFIC
   // ════════════════════════════════════════════════════════════════
 
-  // Selector requests displays list
-  requestDisplays: () => {
-    ipcRenderer.send('request-displays');
-  },
+  // Selector fetches displays via request/response (no timing race, no temp file)
+  getDisplays: () => ipcRenderer.invoke('get-displays'),
 
-  // Selector receives displays
-  onDisplaysDetected: (callback) => {
-    ipcRenderer.on('displays-detected', (event, displays) => {
-      callback(displays);
-    });
-  },
+  // Flash a number on each physical screen so the user can identify them
+  identifyScreens: () => ipcRenderer.send('identify-screens'),
+
+  // Open the in-app Help / tutorial window
+  openHelp: () => ipcRenderer.send('open-help'),
+
+  // Send log messages to main process terminal (essential for Windows debugging)
+  log: (level, msg) => ipcRenderer.send('renderer-log', level, msg),
 
   // Selector saves configuration
   saveDisplayConfig: (displays) => {
@@ -170,6 +263,8 @@ contextBridge.exposeInMainWorld('nodeAPI', {
   },
   fs: {
     existsSync: require('fs').existsSync,
+    // Read a file's bytes (used by pdf.js to load a PDF without a file:// fetch).
+    readBytes: (p) => new Uint8Array(require('fs').readFileSync(p)),
   },
   platform: process.platform,
   isDebug: process.env.DEBUG === 'true',

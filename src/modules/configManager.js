@@ -73,6 +73,22 @@ class ConfigManager {
   }
 
   /**
+   * Delete the saved configuration (full reset → next launch shows the selector).
+   */
+  resetConfig() {
+    try {
+      if (fs.existsSync(this.configFile)) {
+        fs.unlinkSync(this.configFile);
+        console.log('Config reset (deleted):', this.configFile);
+      }
+      return true;
+    } catch (error) {
+      console.error('Error resetting config:', error);
+      return false;
+    }
+  }
+
+  /**
    * Save configuration to disk
    */
   saveConfig(config) {
@@ -142,7 +158,8 @@ class ConfigManager {
    * Check if configuration is valid (has displays assigned)
    */
   isConfigValid(config) {
-    return config.displays && config.displays.length > 0;
+    if (!config.displays || config.displays.length === 0) return false;
+    return config.displays.some(d => d.role && d.role !== 'unassigned' && d.role !== 'controller');
   }
 }
 

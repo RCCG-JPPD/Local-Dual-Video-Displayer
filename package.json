@@ -9,6 +9,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --debug",
+    "test": "node --test",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
@@ -20,12 +21,18 @@
     "files": [
       "src/**/*",
       "preload.js",
-      "package.json",
-      "node_modules/**/*"
+      "package.json"
     ],
     "directories": {
       "buildResources": "build"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "RCCG-JPPD",
+        "repo": "Local-Dual-Video-Displayer"
+      }
+    ],
     "win": {
       "target": [
         {
@@ -60,10 +67,11 @@
     }
   },
   "devDependencies": {
-    "electron-builder": "^24.0.0"
+    "electron": "^31.0.1",
+    "electron-builder": "^24.0.0",
+    "pdfjs-dist": "^3.11.174"
   },
   "dependencies": {
-    "electron": "^31.0.1",
-    "robotjs": "^0.6.0"
+    "xlsx": "^0.18.5"
   }
 }
