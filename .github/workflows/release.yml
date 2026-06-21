@@ -28,6 +28,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
@@ -53,6 +54,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
@@ -62,8 +64,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+      - name: Sync with latest main
+        run: |
+          git pull --rebase origin main
+
       - name: Bump patch version (+ tag)
-        run: npm version patch -m "chore(release): %s [skip ci]"
+        run: |
+          npm version patch -m "chore(release): %s [skip ci]"
 
       - name: Push version bump and tag
         run: git push --follow-tags origin HEAD:main
