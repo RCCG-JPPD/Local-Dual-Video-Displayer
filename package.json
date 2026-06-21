@@ -1,6 +1,6 @@
 {
   "name": "unified-display-controller",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Unified cross-platform multi-display video player with clock display and real-time previews",
   "main": "src/main.js",
   "homepage": "./",
