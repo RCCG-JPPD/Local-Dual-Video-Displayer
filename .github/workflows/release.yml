@@ -1,64 +1,52 @@
 name: Release
+on: push: branches: - main paths: - ‘src/’ - ‘preload.js’ - ‘package.json’ - ’build/’ - ‘test/**’
+concurrency: group: release-${{ github.ref }} cancel-in-progress: false
+jobs: test: if: ${{ !contains(github.event.head_commit.message, ‘[skip ci]’) }} runs-on: ubuntu-latest
+steps:
+  - name: Checkout
+    uses: actions/checkout@v4
 
-# On every push to main that touches app code: run tests, then auto-bump the
-# patch version and publish a new Windows build to GitHub Releases.
-on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'preload.js'
-      - 'package.json'
-      - 'build/**'
-      - 'test/**'
+  - name: Setup Node.js
+    uses: actions/setup-node@v4
+    with:
+      node-version: 20
 
-# Don't let two releases run at once.
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+  - name: Install dependencies
+    run: npm ci
 
-jobs:
-  test:
-    # The version-bump commit ends with "[skip ci]" — don't react to it.
-    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: npm ci
-      - run: npm test
+  - name: Run tests
+    run: npm test
+release: needs: test runs-on: windows-latest
+permissions:
+  contents: write
 
-  release:
-    needs: test
-    runs-on: windows-latest
-    permissions:
-      contents: write   # push the bump commit/tag and create the Release
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+steps:
+  - name: Checkout
+    uses: actions/checkout@v4
+    with:
+      fetch-depth: 0
+      token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
+  - name: Setup Node.js
+    uses: actions/setup-node@v4
+    with:
+      node-version: 20
 
-      - run: npm ci
+  - name: Install dependencies
+    run: npm ci
 
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+  - name: Configure git
+    run: |
+      git config user.name "github-actions[bot]"
+      git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Bump patch version (+ tag)
-        run: npm version patch -m "chore(release): %s [skip ci]"
+  - name: Bump patch version (+ tag)
+    run: npm version patch -m "chore(release): %s [skip ci]"
 
-      - name: Push version bump and tag
-        run: git push --follow-tags origin HEAD:main
+  - name: Push version bump and tag
+    run: git push --follow-tags origin HEAD:main
 
-      - name: Build and publish Windows installer
-        run: npx electron-builder --win --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  - name: Build and publish Windows installer
+    run: npx electron-builder --win --publish always
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
