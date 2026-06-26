@@ -56,16 +56,31 @@ The same tutorial is available in-app via the **❓ Help** button (on both the s
 
 ---
 
-## Building a Windows installer
+## Downloads
+
+Pre-built installers for **Windows** and **macOS** are published on the
+[Releases page](https://github.com/RCCG-JPPD/Local-Dual-Video-Displayer/releases) — just download and run:
+
+- **Windows:** the NSIS `Setup .exe` installer (or the standalone portable `.exe`).
+- **macOS:** the `.dmg` — `arm64` for Apple Silicon (M-series) Macs, `x64` for Intel Macs.
+
+The macOS app is currently **unsigned/un-notarized**, so on first launch Gatekeeper will block it. Open it via
+**right-click → Open** (or *System Settings → Privacy & Security → Open Anyway*) to run it.
+
+These artifacts are built automatically by the [Release workflow](.github/workflows/release.yml): every push to `main`
+bumps the version and runs `electron-builder` on a Windows runner *and* a macOS runner, publishing both to the same
+GitHub Release (created as a draft — publish it to make the downloads public).
+
+## Building installers locally
 
 ```bash
-npm run build:win    # run this ON Windows
+npm run build:win    # run this ON Windows  → NSIS installer + portable .exe in dist/
+npm run build:mac    # run this ON macOS    → .dmg (arm64 + x64) + .zip in dist/
 ```
 
-This produces an NSIS installer and a portable `.exe` in `dist/`. (Cross-building from macOS/Linux needs Wine and
-isn't recommended.) An optional custom app icon can be added — see [build/README.md](build/README.md).
-
-Other build scripts: `npm run build:mac`, `npm run build` (current platform), `npm run build:all`.
+Build each on its own OS (cross-building a macOS `.dmg` from Windows/Linux isn't supported; cross-building Windows
+from macOS/Linux needs Wine and isn't recommended). Other scripts: `npm run build` (current platform),
+`npm run build:all`. An optional custom app icon can be added — see [build/README.md](build/README.md).
 
 ---
 
