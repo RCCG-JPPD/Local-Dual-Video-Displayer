@@ -37,12 +37,18 @@ jobs:
       - name: Run tests
         run: npm test
 
-  release:
+  # Bump the version once (on a single runner) and create the draft GitHub
+  # release up front, so the parallel macOS/Windows builds upload to the same
+  # release instead of racing to create it.
+  version:
     needs: test
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     permissions:
       contents: write
+
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
 
     steps:
       - name: Checkout
@@ -55,10 +61,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
 
       - name: Configure git
         run: |
@@ -66,17 +68,67 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Sync with latest main
-        run: |
-          git pull --rebase origin main
+        run: git pull --rebase origin main
 
       - name: Bump patch version (+ tag)
+        id: bump
         run: |
           npm version patch -m "chore(release): %s [skip ci]"
+          echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: Push version bump and tag
         run: git push --follow-tags origin HEAD:main
 
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.bump.outputs.tag }}" \
+            --draft \
+            --title "${{ steps.bump.outputs.tag }}" \
+            --generate-notes
+
+  # Build native installers on their respective OS (macOS .dmg can only be
+  # built on macOS) and publish them to the draft release created above.
+  release:
+    needs: version
+
+    permissions:
+      contents: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Build and publish Windows installer
+        if: matrix.os == 'windows-latest'
         run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish macOS installer
+        if: matrix.os == 'macos-latest'
+        run: npx electron-builder --mac --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No Apple Developer cert in CI — build an unsigned (ad-hoc) app
+          # instead of failing on a missing signing identity.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
