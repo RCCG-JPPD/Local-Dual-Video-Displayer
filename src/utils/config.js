@@ -42,7 +42,7 @@ module.exports = {
   clock: {
     mode: 'time',          // 'time' | 'countdown' | 'timer'
     theme: 'dark',         // 'dark' (black bg/white text) | 'light' (white bg/black text)
-    size: 'medium',        // 'small' | 'medium' | 'large'
+    size: 'medium',        // 'tiny' | 'verysmall' | 'small' | 'medium' | 'large'
     corner: 'bottom-right', // 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'
     showSeconds: true,
     hour12: false,         // false = 24h, true = 12h with AM/PM

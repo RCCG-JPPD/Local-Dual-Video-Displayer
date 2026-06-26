@@ -15,6 +15,8 @@ const UI_DIR = path.join(__dirname, '../ui');
 
 // Clock widget window sizes (small floating window, not fullscreen).
 const CLOCK_SIZES = {
+  tiny: { w: 150, h: 56 },
+  verysmall: { w: 220, h: 82 },
   small: { w: 300, h: 110 },
   medium: { w: 460, h: 150 },
   large: { w: 680, h: 210 },
