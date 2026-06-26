@@ -132,3 +132,20 @@ jobs:
           # No Apple Developer cert in CI — build an unsigned (ad-hoc) app
           # instead of failing on a missing signing identity.
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+  # Promote the draft to a public, downloadable release — but only after BOTH
+  # the macOS and Windows builds above have succeeded, so the published release
+  # always has every installer attached.
+  publish:
+    needs: [version, release]
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release edit "${{ needs.version.outputs.tag }}" --draft=false --latest
