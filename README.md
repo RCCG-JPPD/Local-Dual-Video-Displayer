@@ -68,8 +68,8 @@ The macOS app is currently **unsigned/un-notarized**, so on first launch Gatekee
 **right-click → Open** (or *System Settings → Privacy & Security → Open Anyway*) to run it.
 
 These artifacts are built automatically by the [Release workflow](.github/workflows/release.yml): every push to `main`
-bumps the version and runs `electron-builder` on a Windows runner *and* a macOS runner, publishing both to the same
-GitHub Release (created as a draft — publish it to make the downloads public).
+bumps the version and runs `electron-builder` on a Windows runner *and* a macOS runner. Once **both** builds succeed,
+the workflow publishes the GitHub Release automatically, so the installers become public downloads with no manual step.
 
 ## Building installers locally
 
