@@ -126,3 +126,6 @@ development and in an installed build.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+
+Hosting URL: https://multi-displayer.web.app

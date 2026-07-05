@@ -470,6 +470,21 @@
         text-align: left;
       }
     }
+    /* ── Remote Mode (phone/web control via Firebase) ── */
+    .remote-pair {
+      display: flex; gap: 24px; align-items: center; flex-wrap: wrap;
+      background: #f0f0f0; border: 1px solid #e0e0e0; border-radius: 8px;
+      padding: 20px; margin-bottom: 12px;
+    }
+    .remote-qr-wrap { background: #fff; padding: 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.12); }
+    #remoteQr { width: 180px; height: 180px; display: flex; align-items: center; justify-content: center; }
+    #remoteQr img, #remoteQr canvas { width: 180px !important; height: 180px !important; }
+    .remote-pair-info { flex: 1; min-width: 220px; }
+    .remote-code-label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+    .remote-code { font-family: 'Monaco', monospace; font-size: 38px; font-weight: 700; letter-spacing: 6px; color: #333; margin: 2px 0 10px; }
+    .remote-url { font-size: 12px; color: #667eea; word-break: break-all; margin-bottom: 12px; }
+    .remote-conn { font-size: 13px; color: #555; }
+    .remote-conn.live { color: #16a34a; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -485,6 +500,7 @@
       <button class="nav-item" data-tab="excel">📊 Spreadsheet</button>
       <button class="nav-item" data-tab="clock">🕐 Clock</button>
       <span class="nav-spacer"></span>
+      <button class="nav-item" data-tab="remote">📱 Remote</button>
       <button class="nav-item" data-tab="displays">🖥️ Displays</button>
     </nav>
     <main class="content">
@@ -705,6 +721,32 @@
         <button id="helpBtn">❓ Help</button>
       </div>
     </div>
+
+    <!-- REMOTE CONTROL PANEL -->
+    <div class="controls-section tab-panel" id="section-remote" data-panel="remote">
+      <h2>📱 Remote Control</h2>
+      <p class="section-hint" id="remoteIntro">
+        Control this presentation from a phone or any browser. Turn Remote Mode on, then
+        scan the QR code (or enter the session code at multi-displayer.web.app) — no app to install.
+      </p>
+      <div class="button-group">
+        <button id="remoteToggleBtn" class="btn-primary">📡 Enable Remote Mode</button>
+      </div>
+      <div id="remoteStatus" class="display-status">Remote Mode is off.</div>
+
+      <div id="remotePairing" style="display:none;">
+        <div class="remote-pair">
+          <div class="remote-qr-wrap"><div id="remoteQr"></div></div>
+          <div class="remote-pair-info">
+            <div class="remote-code-label">Session code</div>
+            <div id="remoteCode" class="remote-code">------</div>
+            <div class="remote-url" id="remoteUrl"></div>
+            <div class="remote-conn" id="remoteConn">Waiting for a device to connect…</div>
+          </div>
+        </div>
+        <p class="section-hint">⚠️ Anyone with this code can control the presentation. Turn Remote Mode off when you're done — the session is deleted automatically if the app closes.</p>
+      </div>
+    </div>
     </main>
   </div>
 
@@ -763,7 +805,7 @@
     const navItems = Array.from(document.querySelectorAll('.nav-item'));
     const tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
     // Tabs usable regardless of which screens are assigned.
-    const ALWAYS_ON_TABS = new Set(['previews', 'clock', 'displays']);
+    const ALWAYS_ON_TABS = new Set(['previews', 'clock', 'displays', 'remote']);
 
     function showTab(name) {
       navItems.forEach(n => n.classList.toggle('active', n.dataset.tab === name));
@@ -1602,6 +1644,207 @@
 
     initialize();
     maybeAutoTour();
+  </script>
+
+  <!-- ── Remote Mode: vendored Firebase (compat) + QR code generator ── -->
+  <script src="../vendor/firebase/config.js"></script>
+  <script src="../vendor/firebase/firebase-app-compat.js"></script>
+  <script src="../vendor/firebase/firebase-auth-compat.js"></script>
+  <script src="../vendor/firebase/firebase-database-compat.js"></script>
+  <script src="../vendor/qrcode/qrcode.min.js"></script>
+  <script>
+    // Remote Mode glue. Wrapped in an IIFE so its locals don't collide with the
+    // main controller script above; it reads that script's functions/state
+    // (presNavigate, presState, playlist, …) via the shared global scope, and
+    // dispatches incoming remote commands by driving the SAME controls the
+    // on-screen buttons use — so there's one command path, not two.
+    (function () {
+      const toggleBtn = document.getElementById('remoteToggleBtn');
+      const statusEl = document.getElementById('remoteStatus');
+      const pairingEl = document.getElementById('remotePairing');
+      const codeEl = document.getElementById('remoteCode');
+      const urlEl = document.getElementById('remoteUrl');
+      const connEl = document.getElementById('remoteConn');
+      const qrEl = document.getElementById('remoteQr');
+      const scrubEl = document.getElementById('scrub');
+
+      let db = null, sessionCode = null;
+      let sessionRef = null, stateRef = null, commandsRef = null, devicesRef = null;
+      let cmdHandler = null, devHandler = null, pollTimer = null;
+      let active = false, busy = false;
+
+      function setStatus(msg, isError) {
+        statusEl.textContent = msg;
+        statusEl.classList.toggle('error', !!isError);
+      }
+
+      // Lazily initialize the Firebase app + anonymous auth (once).
+      async function ensureFirebase() {
+        if (db) return true;
+        if (!window.firebase || !window.FIREBASE_CONFIG) {
+          setStatus('Remote Mode needs internet — Firebase failed to load.', true);
+          return false;
+        }
+        try {
+          firebase.initializeApp(window.FIREBASE_CONFIG);
+          await firebase.auth().signInAnonymously();
+          db = firebase.database();
+          return true;
+        } catch (err) {
+          console.error('Firebase init failed:', err);
+          setStatus('Could not connect to Firebase: ' + (err && err.message || err), true);
+          return false;
+        }
+      }
+
+      // Drive the existing on-screen controls (reuses all their logic + UI updates).
+      const clickIf = (id) => { const el = document.getElementById(id); if (el) el.click(); };
+
+      function dispatchRemote(action, value) {
+        switch (action) {
+          case 'pres.next': clickIf('presNext'); break;
+          case 'pres.prev': clickIf('presPrev'); break;
+          case 'pres.goto':
+            if (typeof presState !== 'undefined' && presState.count) {
+              const i = Math.max(0, Math.min(value, presState.count - 1));
+              presState.index = i;
+              electronAPI.sendPresentationCommand('goto', i);
+              if (typeof updatePresCounter === 'function') updatePresCounter();
+            }
+            break;
+          case 'pres.blank': electronAPI.sendPresentationCommand('blank'); break;
+          case 'slide.next': clickIf('slideNextBtn'); break;
+          case 'slide.prev': clickIf('slidePrevBtn'); break;
+          case 'slide.playpause': clickIf('slidePlayBtn'); break;
+          case 'slide.blank': electronAPI.sendSlideshowCommand('blank'); break;
+          case 'video.playpause': clickIf('playBtn'); break;
+          case 'video.next': clickIf('nextBtn'); break;
+          case 'video.prev': clickIf('prevBtn'); break;
+          case 'video.stop': clickIf('stopBtn'); break;
+        }
+        publishState();
+      }
+
+      // Publish a snapshot of the current state for the phone to render.
+      function publishState() {
+        if (!stateRef) return;
+        const activeNav = document.querySelector('.nav-item.active');
+        const activePanel = activeNav ? activeNav.dataset.tab : 'previews';
+        const dur = (typeof duration !== 'undefined' && duration) || 0;
+        const curTime = scrubEl ? (Number(scrubEl.value) / 100) * dur : 0;
+        const idx = (typeof currentIndex !== 'undefined') ? currentIndex : -1;
+        const list = (typeof playlist !== 'undefined' && playlist) || [];
+        const title = (idx >= 0 && list[idx] && typeof pathBasename === 'function')
+          ? pathBasename(list[idx]) : '';
+
+        const snapshot = electronAPI.remote.buildStateSnapshot({
+          activePanel,
+          presentation: (typeof presState !== 'undefined')
+            ? { index: presState.index, total: presState.count } : {},
+          slideshow: {
+            index: (typeof slideIndex !== 'undefined') ? slideIndex : 0,
+            total: (typeof slideItems !== 'undefined' && slideItems) ? slideItems.length : 0,
+            playing: (typeof slidePlaying !== 'undefined') ? slidePlaying : false,
+          },
+          video: {
+            playing: (typeof isPlaying !== 'undefined') ? isPlaying : false,
+            index: idx, playlistLength: list.length, title,
+            currentTime: curTime, duration: dur,
+          },
+        });
+        stateRef.set(snapshot).catch(() => {});
+      }
+
+      function showPairing(code) {
+        const url = electronAPI.remote.buildRemoteUrl(code);
+        codeEl.textContent = code;
+        urlEl.textContent = url;
+        connEl.textContent = 'Waiting for a device to connect…';
+        connEl.classList.remove('live');
+        qrEl.innerHTML = '';
+        try { new QRCode(qrEl, { text: url, width: 180, height: 180, correctLevel: QRCode.CorrectLevel.M }); }
+        catch (err) { console.error('QR render failed:', err); qrEl.textContent = url; }
+        pairingEl.style.display = 'block';
+        toggleBtn.textContent = '🛑 Disable Remote Mode';
+        toggleBtn.classList.remove('btn-primary');
+        toggleBtn.classList.add('btn-danger');
+        setStatus('Remote Mode is ON — code ' + code);
+      }
+
+      function hidePairing() {
+        pairingEl.style.display = 'none';
+        qrEl.innerHTML = '';
+        toggleBtn.textContent = '📡 Enable Remote Mode';
+        toggleBtn.classList.add('btn-primary');
+        toggleBtn.classList.remove('btn-danger');
+        setStatus('Remote Mode is off.');
+      }
+
+      function updateConn(n) {
+        if (n > 0) {
+          connEl.textContent = n === 1 ? '✓ 1 device connected' : `✓ ${n} devices connected`;
+          connEl.classList.add('live');
+        } else {
+          connEl.textContent = 'Waiting for a device to connect…';
+          connEl.classList.remove('live');
+        }
+      }
+
+      async function enableRemote() {
+        setStatus('Starting Remote Mode…');
+        if (!(await ensureFirebase())) return;
+
+        sessionCode = electronAPI.remote.generateSessionCode();
+        sessionRef = db.ref('sessions/' + sessionCode);
+        stateRef = sessionRef.child('state');
+        commandsRef = sessionRef.child('commands');
+        devicesRef = sessionRef.child('devices');
+
+        await sessionRef.child('meta').set({
+          createdAt: firebase.database.ServerValue.TIMESTAMP,
+          active: true,
+        });
+        // If the desktop drops/quits, Firebase deletes the whole session for us.
+        sessionRef.onDisconnect().remove();
+
+        cmdHandler = commandsRef.on('child_added', (snap) => {
+          const cmd = electronAPI.remote.sanitizeCommand(snap.val());
+          if (cmd) dispatchRemote(cmd.action, cmd.value);
+          snap.ref.remove();
+        });
+        devHandler = devicesRef.on('value', (snap) => updateConn(snap.numChildren()));
+
+        active = true;
+        showPairing(sessionCode);
+        publishState();
+        pollTimer = setInterval(publishState, 1000);
+      }
+
+      async function disableRemote() {
+        active = false;
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        if (commandsRef && cmdHandler) commandsRef.off('child_added', cmdHandler);
+        if (devicesRef && devHandler) devicesRef.off('value', devHandler);
+        if (sessionRef) {
+          try { sessionRef.onDisconnect().cancel(); await sessionRef.remove(); } catch (_) {}
+        }
+        sessionRef = stateRef = commandsRef = devicesRef = null;
+        cmdHandler = devHandler = null; sessionCode = null;
+        hidePairing();
+      }
+
+      toggleBtn.addEventListener('click', async () => {
+        if (busy) return;
+        busy = true; toggleBtn.disabled = true;
+        try { active ? await disableRemote() : await enableRemote(); }
+        finally { busy = false; toggleBtn.disabled = false; }
+      });
+
+      // Best-effort session cleanup if the controller window closes.
+      window.addEventListener('beforeunload', () => {
+        if (sessionRef) { try { sessionRef.remove(); } catch (_) {} }
+      });
+    })();
   </script>
 </body>
 </html>

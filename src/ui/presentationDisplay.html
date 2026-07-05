@@ -19,6 +19,9 @@
       color: #888; font-size: 22px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
+    /* Full-screen blackout toggled by the remote's "blank" command. */
+    #blank-overlay { position: fixed; inset: 0; background: #000; display: none; z-index: 100; }
+    #blank-overlay.on { display: block; }
   </style>
 </head>
 <body>
@@ -27,6 +30,7 @@
     <img id="slide-img" alt="">
     <div id="message">No presentation loaded — add one from the controller.</div>
   </div>
+  <div id="blank-overlay"></div>
 
   <!-- Vendored pdf.js (UMD build exposes window.pdfjsLib). -->
   <script src="../vendor/pdfjs/pdf.min.js"></script>
@@ -113,11 +117,19 @@
     function next() { if (state.index < state.count - 1) goto(state.index + 1); }
     function prev() { if (state.index > 0) goto(state.index - 1); }
 
+    // Blackout toggle (remote "blank" command). `on` may be boolean, else toggle.
+    function setBlank(on) {
+      const el = document.getElementById('blank-overlay');
+      const show = on === undefined ? !el.classList.contains('on') : !!on;
+      el.classList.toggle('on', show);
+    }
+
     electronAPI.onPresentationLoad(loadSource);
     electronAPI.onPresentationCommand((cmd, data) => {
       if (cmd === 'goto' && typeof data === 'number') goto(data);
       else if (cmd === 'next') next();
       else if (cmd === 'prev') prev();
+      else if (cmd === 'blank') setBlank(data);
     });
 
     // Re-fit the current slide if the window resizes.

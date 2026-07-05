@@ -11,6 +11,7 @@ const { formatClock, formatDuration, secondsUntil } = require('./src/utils/clock
 const { nextIndex: slideshowNextIndex } = require('./src/utils/slideshow');
 const { getActiveHoliday, HOLIDAY_KEYS, ANIMATIONS } = require('./src/utils/holidays');
 const { THEMES, resolveTheme } = require('./src/utils/clockThemes');
+const remote = require('./src/utils/remote');
 
 // Expose safe IPC APIs to renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -31,6 +32,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   animationList: () => ANIMATIONS,
   clockThemes: () => THEMES,
   resolveClockTheme: (themeKey, holidayKey) => resolveTheme(themeKey, holidayKey),
+
+  // Remote Mode pure helpers (Firebase phone/web presentation control).
+  // The Firebase SDK itself is loaded in the renderer via vendored <script> tags;
+  // these are the DOM-free helpers shared with unit tests (src/utils/remote.js).
+  remote: {
+    generateSessionCode: (len) => remote.generateSessionCode(len),
+    normalizeSessionCode: (s) => remote.normalizeSessionCode(s),
+    isValidSessionCode: (c, len) => remote.isValidSessionCode(c, len),
+    buildRemoteUrl: (code, base) => remote.buildRemoteUrl(code, base),
+    sanitizeCommand: (raw) => remote.sanitizeCommand(raw),
+    buildStateSnapshot: (input, now) => remote.buildStateSnapshot(input, now),
+  },
 
   // ════════════════════════════════════════════════════════════════
   // CONFIG & STATE
