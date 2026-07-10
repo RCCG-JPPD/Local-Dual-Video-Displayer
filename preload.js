@@ -43,6 +43,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     buildRemoteUrl: (code, base) => remote.buildRemoteUrl(code, base),
     sanitizeCommand: (raw) => remote.sanitizeCommand(raw),
     buildStateSnapshot: (input, now) => remote.buildStateSnapshot(input, now),
+    // Per-run pairing state held by the main process: the code is generated
+    // once per app run, so it survives display reconfigures and controller
+    // reloads — a new code only appears after quitting and reopening the app.
+    getState: () => ipcRenderer.invoke('remote-get-state'),
+    setEnabled: (on) => ipcRenderer.send('remote-set-enabled', !!on),
   },
 
   // ════════════════════════════════════════════════════════════════

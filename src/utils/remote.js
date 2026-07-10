@@ -135,6 +135,24 @@ function buildStateSnapshot(input = {}, now = Date.now()) {
   };
 }
 
+/**
+ * Per-run session store. Lives in the MAIN process so the pairing code is
+ * generated once per app run and survives controller reloads / display
+ * reconfigures — a new code only appears after the app is quit and reopened.
+ * `enabled` lets a reloaded controller re-arm Remote Mode automatically.
+ * @param {() => string} generate  code generator; injectable for testing
+ */
+function createSessionStore(generate = generateSessionCode) {
+  const state = { code: null, enabled: false };
+  return {
+    getState() {
+      if (!state.code) state.code = generate();
+      return { ...state };
+    },
+    setEnabled(on) { state.enabled = !!on; },
+  };
+}
+
 module.exports = {
   SESSION_CODE_ALPHABET,
   DEFAULT_REMOTE_BASE,
@@ -146,4 +164,5 @@ module.exports = {
   parseSessionParam,
   sanitizeCommand,
   buildStateSnapshot,
+  createSessionStore,
 };

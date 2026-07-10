@@ -10,6 +10,7 @@ const {
   parseSessionParam,
   sanitizeCommand,
   buildStateSnapshot,
+  createSessionStore,
 } = require('../src/utils/remote');
 
 test('generateSessionCode has the requested length and only alphabet chars', () => {
@@ -115,4 +116,42 @@ test('buildStateSnapshot is RTDB-safe (no undefined) for empty input', () => {
   assert.doesNotMatch(json, /undefined/);
   assert.equal(snap.video.index, -1);
   assert.equal(snap.activePanel, 'previews');
+});
+
+test('createSessionStore generates the code lazily and keeps it for the run', () => {
+  let calls = 0;
+  const store = createSessionStore(() => { calls++; return 'ABC12' + calls; });
+  assert.equal(calls, 0); // nothing generated until first use
+  assert.equal(store.getState().code, 'ABC121');
+  assert.equal(store.getState().code, 'ABC121'); // same code on every call
+  assert.equal(calls, 1);
+});
+
+test('createSessionStore keeps the same code across enable/disable toggles', () => {
+  const store = createSessionStore(() => 'ZZZ999');
+  assert.deepEqual(store.getState(), { code: 'ZZZ999', enabled: false });
+  store.setEnabled(true);
+  assert.deepEqual(store.getState(), { code: 'ZZZ999', enabled: true });
+  store.setEnabled(false);
+  assert.deepEqual(store.getState(), { code: 'ZZZ999', enabled: false });
+});
+
+test('createSessionStore coerces enabled to a boolean', () => {
+  const store = createSessionStore(() => 'ABC123');
+  store.setEnabled(1);
+  assert.equal(store.getState().enabled, true);
+  store.setEnabled(null);
+  assert.equal(store.getState().enabled, false);
+});
+
+test('createSessionStore uses the real generator by default', () => {
+  const { code } = createSessionStore().getState();
+  assert.equal(isValidSessionCode(code), true);
+});
+
+test('a fresh store (new app run) gets a fresh code', () => {
+  let n = 0;
+  const gen = () => 'RUN00' + (++n);
+  assert.equal(createSessionStore(gen).getState().code, 'RUN001');
+  assert.equal(createSessionStore(gen).getState().code, 'RUN002');
 });

@@ -60,18 +60,20 @@ export default function App() {
           setState(null);
           setPhase('invalid');
           setError(joined
-            ? 'The presentation ended this remote session.'
+            ? 'Remote Mode is off on the presentation — you\'ll reconnect automatically when it\'s turned back on.'
             : "That code isn't active — check the presentation screen.");
           return;
         }
-        if (!joined) {
-          joined = true;
-          setCode(c);
-          setPhase('connected');
-          try { localStorage.setItem(LS_KEY, c); } catch (_) {}
-          set(deviceRef, { joinedAt: serverTimestamp() }).catch(() => {});
-          onDisconnect(deviceRef).remove(); // auto-clear presence if phone drops
-        }
+        // (Re)join. Also fires when the desktop re-enables Remote Mode with
+        // the same per-run code (e.g. after changing displays): the phone
+        // reconnects automatically instead of staying on the ended screen.
+        joined = true;
+        setCode(c);
+        setError('');
+        setPhase('connected');
+        try { localStorage.setItem(LS_KEY, c); } catch (_) {}
+        set(deviceRef, { joinedAt: serverTimestamp() }).catch(() => {});
+        onDisconnect(deviceRef).remove(); // auto-clear presence if phone drops
       },
       (err) => { setError('Connection error: ' + err.message); setPhase('enter'); },
     );

@@ -745,6 +745,7 @@
           </div>
         </div>
         <p class="section-hint">⚠️ Anyone with this code can control the presentation. Turn Remote Mode off when you're done — the session is deleted automatically if the app closes.</p>
+        <p class="section-hint">💡 The code stays the same for this run of the app — changing displays or toggling Remote Mode off and on keeps paired phones working. A new code is only issued after the app is closed and reopened.</p>
       </div>
     </div>
     </main>
@@ -1794,7 +1795,10 @@
         setStatus('Starting Remote Mode…');
         if (!(await ensureFirebase())) return;
 
-        sessionCode = electronAPI.remote.generateSessionCode();
+        // One code per app run, held by the main process: re-enabling (or a
+        // display reconfigure) reuses it so paired phones rejoin without
+        // re-scanning. A new code only appears after restarting the app.
+        sessionCode = (await electronAPI.remote.getState()).code;
         sessionRef = db.ref('sessions/' + sessionCode);
         stateRef = sessionRef.child('state');
         commandsRef = sessionRef.child('commands');
@@ -1815,6 +1819,7 @@
         devHandler = devicesRef.on('value', (snap) => updateConn(snap.numChildren()));
 
         active = true;
+        electronAPI.remote.setEnabled(true);
         showPairing(sessionCode);
         publishState();
         pollTimer = setInterval(publishState, 1000);
@@ -1822,6 +1827,7 @@
 
       async function disableRemote() {
         active = false;
+        electronAPI.remote.setEnabled(false);
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
         if (commandsRef && cmdHandler) commandsRef.off('child_added', cmdHandler);
         if (devicesRef && devHandler) devicesRef.off('value', devHandler);
@@ -1844,6 +1850,13 @@
       window.addEventListener('beforeunload', () => {
         if (sessionRef) { try { sessionRef.remove(); } catch (_) {} }
       });
+
+      // If the controller was reloaded while Remote Mode was on (e.g. around a
+      // display change), re-arm it automatically with the same per-run code so
+      // already-paired phones reconnect without re-scanning.
+      electronAPI.remote.getState().then((st) => {
+        if (st && st.enabled && !active && !busy) enableRemote();
+      }).catch(() => {});
     })();
   </script>
 </body>
