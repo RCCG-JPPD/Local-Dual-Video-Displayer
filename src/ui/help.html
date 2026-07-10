@@ -32,6 +32,12 @@
       font-weight: 600; border-radius: 4px; padding: 2px 8px; margin-right: 6px;
     }
     .tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 12px 14px; border-radius: 4px; color: #1e40af; }
+    .card-qr { overflow: hidden; } /* contain the floated QR box */
+    .qr-float {
+      float: right; margin: 0 0 12px 18px; text-align: center;
+      background: #fff; border: 1px solid #e3e6f0; border-radius: 8px; padding: 10px;
+    }
+    .qr-float small { display: block; margin-top: 6px; color: #666; }
   </style>
 </head>
 <body>
@@ -77,17 +83,50 @@
     </ul>
   </div>
 
+  <div class="card card-qr">
+    <h2>📱 Remote Control (phone or any browser)</h2>
+    <div class="qr-float">
+      <div id="helpQr"></div>
+      <small>multi-displayer.web.app</small>
+    </div>
+    <p>Drive slides, the slideshow, and video playback from your phone — nothing to install. Both the computer and the phone need internet access.</p>
+    <ol>
+      <li><span class="tag">1</span> In the control panel, open the <strong>📱 Remote</strong> tab and click <strong>📡 Enable Remote Mode</strong>.</li>
+      <li><span class="tag">2</span> A <strong>QR code</strong> and a 6-character <strong>session code</strong> appear. Scan that QR code with the phone's camera — it joins <strong>instantly</strong>, code included. Or scan the QR on the right (or open <code>multi-displayer.web.app</code>) and type the code.</li>
+      <li><span class="tag">3</span> When the phone joins, the panel shows <strong>“✓ 1 device connected”</strong>. Several devices can join with the same code.</li>
+      <li><span class="tag">4</span> From the phone you can control <strong>Slides</strong> (previous / next / blank), the <strong>Slideshow</strong> (previous / next / play-pause), and <strong>Video</strong> (play-pause / previous / next / stop). The phone also shows live status — the current slide number, video title, and playback time.</li>
+    </ol>
+    <p class="tip">💡 <strong>Your code lasts the whole run of the app.</strong> Changing displays or toggling Remote Mode off and on keeps the same code, and already-paired phones reconnect automatically. A new code is only issued after the app is closed and reopened.</p>
+    <ul>
+      <li>⚠️ Anyone with the code can control the presentation while Remote Mode is on — keep it private and turn Remote Mode off when you're done.</li>
+      <li>The session is cleaned up automatically if the app quits or loses its connection.</li>
+      <li>The phone remembers the last code it used, so reconnecting later is one tap.</li>
+      <li>Codes never contain the letters <code>I</code>, <code>L</code>, <code>O</code>, or <code>U</code> — if you think you see one, it's a <code>1</code> or a <code>0</code> (typing those works too).</li>
+    </ul>
+  </div>
+
   <div class="card">
     <h2>Notes</h2>
     <ul>
       <li>Some websites refuse to be embedded and may not load on a Web screen.</li>
       <li>YouTube videos that disable embedding won't play.</li>
+      <li>Remote Control needs an internet connection; everything else works fully offline.</li>
     </ul>
   </div>
 
+  <script src="../vendor/qrcode/qrcode.min.js"></script>
   <script>
     // Esc closes the help window.
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.close(); });
+
+    // Scannable shortcut to the remote controller page. (The QR in the app's
+    // Remote tab additionally embeds the live session code, joining instantly.)
+    try {
+      new QRCode(document.getElementById('helpQr'), {
+        text: 'https://multi-displayer.web.app',
+        width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M,
+      });
+    } catch (_) { /* lib missing? the printed URL still works */ }
   </script>
 </body>
 </html>

@@ -49,10 +49,38 @@ Press **Esc** on any fullscreen content window to close just that window (handy 
    **Master Volume**. It plays on every Video screen.
 6. **YouTube:** paste a link in the *YouTube* box and press Enter — it plays on every YouTube screen.
 7. **Web page:** type an address in the *Web Page* box and press Enter — it loads on every Web screen.
-8. **Change setup:** click **Reconfigure Displays** any time. Press **Esc** on a fullscreen screen to close just that
+8. **Remote control (phone):** open the **📱 Remote** tab, click **📡 Enable Remote Mode**, then scan the QR code
+   with your phone (or enter the 6-character code at [multi-displayer.web.app](https://multi-displayer.web.app)) —
+   see [Remote Control](#remote-control-phone--web) below.
+9. **Change setup:** click **Reconfigure Displays** any time. Press **Esc** on a fullscreen screen to close just that
    one. Closing the control panel quits everything.
 
 The same tutorial is available in-app via the **❓ Help** button (on both the selector and the control panel).
+
+---
+
+## Remote Control (phone / web)
+
+<img src="docs/remote-qr.png" width="150" align="right" alt="QR code linking to multi-displayer.web.app">
+
+Remote Mode lets a phone (or any browser) drive **slides**, the **slideshow**, and **video playback** over the
+internet — nothing to install on the phone:
+
+1. In the control panel, open the **📱 Remote** tab and click **📡 Enable Remote Mode**.
+2. Scan the **QR code shown in the Remote tab** with the phone's camera — it opens the remote controller with the
+   session code already filled in, so the phone joins instantly. (Or scan the QR on the right / open
+   **<https://multi-displayer.web.app>** and type the 6-character **session code** shown on screen.)
+3. When the phone joins, the panel shows **✓ 1 device connected**. Multiple devices can share one code.
+
+The phone shows live status (current slide, video title/time) and buttons for slides (prev/next/blank), slideshow
+(prev/next/play-pause), and video (play-pause/prev/next/stop).
+
+**The code is per app run:** it's generated once when first needed and stays the same until you quit the app —
+changing displays or toggling Remote Mode off/on keeps paired phones working, and they reconnect automatically.
+Restarting the app issues a fresh code. Anyone with the code can control the presentation while Remote Mode is on,
+so keep it private and turn Remote Mode off when you're done (the session is deleted automatically when the app
+closes). The web controller lives in [remote_mode/remote-controller](remote_mode/remote-controller) and syncs through
+Firebase (anonymous auth + Realtime Database, locked down by [database rules](remote_mode/remote-controller/database.rules.json)).
 
 ---
 

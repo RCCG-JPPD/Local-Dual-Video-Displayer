@@ -4,12 +4,16 @@
  */
 
 const { ipcMain } = require('electron');
+const { createSessionStore } = require('../utils/remote');
 
 class IPCHandler {
   constructor(displayManager, configManager, callbacks = {}) {
     this.displayManager = displayManager;
     this.configManager = configManager;
     this.callbacks = callbacks;
+    // Remote Mode pairing state — kept here (main process) so the code is
+    // per-app-run: it survives controller reloads and display reconfigures.
+    this.remoteSession = createSessionStore();
   }
 
   /** Send to every live window currently serving `role`. */
@@ -316,6 +320,16 @@ class IPCHandler {
 
     ipcMain.handle('get-config', () => this.configManager.loadConfig());
     ipcMain.handle('get-window-status', () => this.displayManager.getWindowStatus());
+
+    // ════════════════════════════════════════════════════════════════
+    // REMOTE MODE (phone/web control)
+    // ════════════════════════════════════════════════════════════════
+
+    // The controller fetches the per-run pairing code (generated lazily on
+    // first use) and reports the on/off toggle so a reloaded controller can
+    // re-arm Remote Mode with the same code.
+    ipcMain.handle('remote-get-state', () => this.remoteSession.getState());
+    ipcMain.on('remote-set-enabled', (event, on) => this.remoteSession.setEnabled(on));
 
     // ════════════════════════════════════════════════════════════════
     // DISPLAY RECONFIGURATION / TOOLS
