@@ -18,8 +18,9 @@
 </head>
 <body>
   <div id="placeholder">Waiting for a YouTube video…</div>
-  <!-- A real webview navigates to youtube.com itself, so the file:// embed
-       restriction ("Error 153") does not apply, and we can script the <video>. -->
+  <!-- A webview so we can script the <video> directly. Embed requests from a
+       file:// app carry no Referer, which YouTube rejects ("Error 153") — the
+       main process injects one (see setupYouTubeEmbedReferer in main.js). -->
   <webview id="yt" allowpopups></webview>
   <canvas id="preview-canvas"></canvas>
 
