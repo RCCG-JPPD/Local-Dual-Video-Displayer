@@ -18,12 +18,39 @@ function fmt(t) {
   return `${m}:${sec}`;
 }
 
+/**
+ * Range slider that tracks the finger locally and only sends when released,
+ * so dragging doesn't flood the command channel.
+ */
+function Slider({ label, value, step = 0.01, format, onCommit }) {
+  const [local, setLocal] = useState(value);
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => { if (!dragging) setLocal(value); }, [value, dragging]);
+  const commit = () => { setDragging(false); onCommit(Number(local)); };
+  return (
+    <div className="slider-row">
+      <span className="lbl">{label}</span>
+      <input
+        type="range" min="0" max="1" step={step} value={local}
+        onChange={(e) => { setDragging(true); setLocal(e.target.value); }}
+        onPointerUp={commit}
+        onTouchEnd={commit}
+        onKeyUp={commit}
+      />
+      {format && <span className="val">{format(Number(local))}</span>}
+    </div>
+  );
+}
+
 export default function App() {
   const [code, setCode] = useState(null);      // active session once connected
   const [input, setInput] = useState('');       // code-entry field
   const [phase, setPhase] = useState('enter');  // enter | connecting | connected | invalid
   const [state, setState] = useState(null);     // live snapshot from the desktop
   const [error, setError] = useState('');
+  const [slideNum, setSlideNum] = useState(''); // jump-to-slide field
+  const [ytInput, setYtInput] = useState('');   // YouTube link field
+  const [webInput, setWebInput] = useState(''); // web address field
   const cleanupRef = useRef(null);
 
   const teardown = useCallback(() => {
@@ -147,14 +174,40 @@ export default function App() {
     );
   }
 
-  // ── Connected: live state + controls ──
+  // ── Connected: live state + full controls ──
   const s = state || {};
   const activePanel = s.activePanel || 'previews';
   const pres = s.presentation || { index: 0, total: 0 };
   const slide = s.slideshow || { index: 0, total: 0, playing: false };
-  const video = s.video || { playing: false, index: -1, playlistLength: 0, title: '', currentTime: 0, duration: 0 };
+  const video = s.video || {
+    playing: false, index: -1, playlistLength: 0, title: '',
+    currentTime: 0, duration: 0, volume: 1, playlist: [],
+  };
+  const yt = s.youtube || { url: '', muted: false, volume: 1 };
+  const web = s.web || { url: '' };
+  const excel = s.excel || { sheets: [], active: 0 };
+  const playlist = Array.isArray(video.playlist) ? video.playlist : [];
+  const sheets = Array.isArray(excel.sheets) ? excel.sheets : [];
 
+  // Older desktops don't publish roles — then show every section.
+  const show = (k) => !s.roles || !!s.roles[k];
   const isActive = (panel) => activePanel === panel;
+
+  const goSlide = () => {
+    const n = parseInt(slideNum, 10);
+    if (Number.isFinite(n) && n >= 1 && n <= pres.total) {
+      send(ACTIONS.presGoto, n - 1);
+      setSlideNum('');
+    }
+  };
+  const loadYt = () => {
+    const v = ytInput.trim();
+    if (v) { send(ACTIONS.ytLoad, v); setYtInput(''); }
+  };
+  const goWeb = () => {
+    const v = webInput.trim();
+    if (v) { send(ACTIONS.webLoad, v); setWebInput(''); }
+  };
 
   return (
     <div className="screen connected">
@@ -173,40 +226,154 @@ export default function App() {
         {activePanel === 'localvideo' && (
           <>🎬 {video.title || 'No video'} · {fmt(video.currentTime)} / {fmt(video.duration)} · {video.playing ? 'Playing' : 'Paused'}</>
         )}
-        {!['presentation', 'slideshow', 'localvideo'].includes(activePanel) && (
+        {activePanel === 'youtube' && <>▶️ {yt.url || 'YouTube'}</>}
+        {activePanel === 'web' && <>🌐 {web.url || 'Web page'}</>}
+        {activePanel === 'excel' && <>📊 {sheets[excel.active] || 'Spreadsheet'}</>}
+        {!['presentation', 'slideshow', 'localvideo', 'youtube', 'web', 'excel'].includes(activePanel) && (
           <>On screen: {activePanel}</>
         )}
       </div>
 
-      <section className={`group ${isActive('presentation') ? 'active-group' : ''}`}>
-        <h3>📽️ Slides</h3>
-        <div className="row">
-          <button className="btn big" onClick={() => send(ACTIONS.presPrev)}>◀ Prev</button>
-          <button className="btn big" onClick={() => send(ACTIONS.presBlank)}>⬛ Blank</button>
-          <button className="btn big" onClick={() => send(ACTIONS.presNext)}>Next ▶</button>
-        </div>
-      </section>
+      {show('presentation') && (
+        <section className={`group ${isActive('presentation') ? 'active-group' : ''}`}>
+          <h3>📽️ Slides</h3>
+          <div className="row">
+            <button className="btn big" onClick={() => send(ACTIONS.presPrev)}>◀ Prev</button>
+            <button className="btn big" onClick={() => send(ACTIONS.presBlank)}>⬛ Blank</button>
+            <button className="btn big" onClick={() => send(ACTIONS.presNext)}>Next ▶</button>
+          </div>
+          {pres.total > 1 && (
+            <div className="field">
+              <input
+                className="text-input num-input"
+                type="number" inputMode="numeric" min="1" max={pres.total}
+                placeholder="#" value={slideNum}
+                onChange={(e) => setSlideNum(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') goSlide(); }}
+              />
+              <button className="btn" onClick={goSlide}>Go to slide (1–{pres.total})</button>
+            </div>
+          )}
+        </section>
+      )}
 
-      <section className={`group ${isActive('slideshow') ? 'active-group' : ''}`}>
-        <h3>🖼️ Slideshow</h3>
-        <div className="row">
-          <button className="btn big" onClick={() => send(ACTIONS.slidePrev)}>◀ Prev</button>
-          <button className="btn big" onClick={() => send(ACTIONS.slidePlayPause)}>⏯ Play/Pause</button>
-          <button className="btn big" onClick={() => send(ACTIONS.slideNext)}>Next ▶</button>
-        </div>
-      </section>
+      {show('slideshow') && (
+        <section className={`group ${isActive('slideshow') ? 'active-group' : ''}`}>
+          <h3>🖼️ Slideshow</h3>
+          <div className="row">
+            <button className="btn big" onClick={() => send(ACTIONS.slidePrev)}>◀ Prev</button>
+            <button className="btn big" onClick={() => send(ACTIONS.slidePlayPause)}>⏯ Play/Pause</button>
+            <button className="btn big" onClick={() => send(ACTIONS.slideNext)}>Next ▶</button>
+          </div>
+        </section>
+      )}
 
-      <section className={`group ${isActive('localvideo') ? 'active-group' : ''}`}>
-        <h3>🎬 Video</h3>
-        <div className="row">
-          <button className="btn big" onClick={() => send(ACTIONS.videoPrev)}>⏮ Prev</button>
-          <button className="btn big" onClick={() => send(ACTIONS.videoPlayPause)}>⏯ Play/Pause</button>
-          <button className="btn big" onClick={() => send(ACTIONS.videoNext)}>Next ⏭</button>
-        </div>
-        <div className="row">
-          <button className="btn" onClick={() => send(ACTIONS.videoStop)}>⏹ Stop</button>
-        </div>
-      </section>
+      {show('video') && (
+        <section className={`group ${isActive('localvideo') ? 'active-group' : ''}`}>
+          <h3>🎬 Video</h3>
+          {playlist.length > 0 && (
+            <div className="field">
+              <select
+                className="select"
+                value={video.index >= 0 ? video.index : ''}
+                onChange={(e) => send(ACTIONS.videoGoto, Number(e.target.value))}
+              >
+                <option value="" disabled>Choose a video…</option>
+                {playlist.map((t, i) => <option key={i} value={i}>{t}</option>)}
+              </select>
+            </div>
+          )}
+          <div className="row">
+            <button className="btn big" onClick={() => send(ACTIONS.videoPrev)}>⏮ Prev</button>
+            <button className="btn big" onClick={() => send(ACTIONS.videoPlayPause)}>⏯ Play/Pause</button>
+            <button className="btn big" onClick={() => send(ACTIONS.videoNext)}>Next ⏭</button>
+          </div>
+          <div className="row">
+            <button className="btn" onClick={() => send(ACTIONS.videoStop)}>⏹ Stop</button>
+          </div>
+          {video.duration > 0 && (
+            <Slider
+              label="⏱" step={0.001}
+              value={video.duration ? video.currentTime / video.duration : 0}
+              format={(f) => `${fmt(f * video.duration)} / ${fmt(video.duration)}`}
+              onCommit={(f) => send(ACTIONS.videoSeek, f)}
+            />
+          )}
+          <Slider
+            label="🔊"
+            value={Number.isFinite(Number(video.volume)) ? Number(video.volume) : 1}
+            format={(f) => `${Math.round(f * 100)}%`}
+            onCommit={(f) => send(ACTIONS.videoVolume, f)}
+          />
+        </section>
+      )}
+
+      {show('youtube') && (
+        <section className={`group ${isActive('youtube') ? 'active-group' : ''}`}>
+          <h3>▶️ YouTube</h3>
+          <div className="field">
+            <input
+              className="text-input"
+              placeholder={yt.url || 'YouTube link or video ID'}
+              value={ytInput}
+              onChange={(e) => setYtInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') loadYt(); }}
+              autoCapitalize="off" autoCorrect="off" spellCheck={false}
+            />
+            <button className="btn" onClick={loadYt}>Load</button>
+          </div>
+          <div className="row">
+            <button className="btn big" onClick={() => send(ACTIONS.ytPlay)}>▶ Play</button>
+            <button className="btn big" onClick={() => send(ACTIONS.ytPause)}>⏸ Pause</button>
+            <button className="btn big" onClick={() => send(ACTIONS.ytMute)}>
+              {yt.muted ? '🔈 Unmute' : '🔇 Mute'}
+            </button>
+          </div>
+          <Slider
+            label="🔊"
+            value={Number.isFinite(Number(yt.volume)) ? Number(yt.volume) : 1}
+            format={(f) => `${Math.round(f * 100)}%`}
+            onCommit={(f) => send(ACTIONS.ytVolume, f)}
+          />
+        </section>
+      )}
+
+      {show('web') && (
+        <section className={`group ${isActive('web') ? 'active-group' : ''}`}>
+          <h3>🌐 Web Page</h3>
+          <div className="field">
+            <input
+              className="text-input"
+              placeholder={web.url || 'example.com'}
+              value={webInput}
+              onChange={(e) => setWebInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') goWeb(); }}
+              inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+            />
+            <button className="btn" onClick={goWeb}>Go</button>
+          </div>
+          <div className="row">
+            <button className="btn" onClick={() => send(ACTIONS.webBack)}>◀ Back</button>
+            <button className="btn" onClick={() => send(ACTIONS.webReload)}>⟳ Reload</button>
+            <button className="btn" onClick={() => send(ACTIONS.webFwd)}>Fwd ▶</button>
+          </div>
+        </section>
+      )}
+
+      {show('excel') && sheets.length > 1 && (
+        <section className={`group ${isActive('excel') ? 'active-group' : ''}`}>
+          <h3>📊 Spreadsheet</h3>
+          <div className="field">
+            <select
+              className="select"
+              value={excel.active || 0}
+              onChange={(e) => send(ACTIONS.excelSheet, Number(e.target.value))}
+            >
+              {sheets.map((n, i) => <option key={i} value={i}>{n}</option>)}
+            </select>
+          </div>
+        </section>
+      )}
 
       <footer className="foot">Codes give full control while active. Keep this code private.</footer>
     </div>

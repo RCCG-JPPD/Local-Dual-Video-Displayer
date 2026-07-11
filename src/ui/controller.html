@@ -1718,10 +1718,62 @@
           case 'slide.prev': clickIf('slidePrevBtn'); break;
           case 'slide.playpause': clickIf('slidePlayBtn'); break;
           case 'slide.blank': electronAPI.sendSlideshowCommand('blank'); break;
+          case 'slide.goto': electronAPI.sendSlideshowCommand('goto', value); break;
           case 'video.playpause': clickIf('playBtn'); break;
           case 'video.next': clickIf('nextBtn'); break;
           case 'video.prev': clickIf('prevBtn'); break;
           case 'video.stop': clickIf('stopBtn'); break;
+          case 'video.goto':
+            // Main script's playlist loader (bounds-checked there).
+            if (typeof load === 'function') load(value);
+            break;
+          case 'video.seek':
+            if (typeof duration !== 'undefined' && duration) {
+              if (scrubEl) scrubEl.value = value * 100;
+              electronAPI.sendPlaybackCommand('seek', value * duration);
+            }
+            break;
+          case 'video.volume': {
+            const el = document.getElementById('vol');
+            if (el) el.value = value;
+            electronAPI.sendPlaybackCommand('setVolume', value);
+            break;
+          }
+          case 'yt.play': clickIf('ytPlay'); break;
+          case 'yt.pause': clickIf('ytPause'); break;
+          case 'yt.mute': clickIf('ytMute'); break;
+          case 'yt.volume': {
+            const el = document.getElementById('ytVol');
+            if (el) el.value = value;
+            electronAPI.sendYouTubeCommand('setVolume', value);
+            break;
+          }
+          case 'yt.load': {
+            const el = document.getElementById('ytUrl');
+            // Only accept things that actually parse as a YouTube link/ID.
+            if (el && electronAPI.extractYouTubeId(value)) {
+              el.value = value;
+              clickIf('ytPlayBtn');
+            }
+            break;
+          }
+          case 'web.load': {
+            const el = document.getElementById('webUrl');
+            const url = electronAPI.normalizeWebUrl(value);
+            if (el && url) { el.value = url; clickIf('webGo'); }
+            break;
+          }
+          case 'web.back': clickIf('webBack'); break;
+          case 'web.fwd': clickIf('webFwd'); break;
+          case 'web.reload': clickIf('webReload'); break;
+          case 'excel.sheet': {
+            const el = document.getElementById('xlSheet');
+            if (el && value < el.options.length) {
+              el.value = String(value);
+              el.dispatchEvent(new Event('change')); // fires its onchange handler
+            }
+            break;
+          }
         }
         publishState();
       }
@@ -1735,11 +1787,33 @@
         const curTime = scrubEl ? (Number(scrubEl.value) / 100) * dur : 0;
         const idx = (typeof currentIndex !== 'undefined') ? currentIndex : -1;
         const list = (typeof playlist !== 'undefined' && playlist) || [];
-        const title = (idx >= 0 && list[idx] && typeof pathBasename === 'function')
-          ? pathBasename(list[idx]) : '';
+        const names = (typeof pathBasename === 'function') ? list.map(f => pathBasename(f)) : [];
+        const title = (idx >= 0 && names[idx]) || '';
+
+        // Which roles have a screen, so the phone hides sections with nothing
+        // to control. Falls back to null (= show all) before config arrives.
+        const assigned = new Set(
+          ((typeof config !== 'undefined' && config && config.displays) || [])
+            .map(d => d && d.role),
+        );
+        const roles = assigned.size ? {
+          presentation: assigned.has('powerpoint'),
+          slideshow: assigned.has('slideshow'),
+          video: assigned.has('video'),
+          youtube: assigned.has('youtube'),
+          web: assigned.has('web'),
+          excel: assigned.has('excel'),
+        } : null;
+
+        const volEl = document.getElementById('vol');
+        const ytUrlEl = document.getElementById('ytUrl');
+        const ytVolEl = document.getElementById('ytVol');
+        const webUrlEl = document.getElementById('webUrl');
+        const xlSel = document.getElementById('xlSheet');
 
         const snapshot = electronAPI.remote.buildStateSnapshot({
           activePanel,
+          roles,
           presentation: (typeof presState !== 'undefined')
             ? { index: presState.index, total: presState.count } : {},
           slideshow: {
@@ -1751,7 +1825,19 @@
             playing: (typeof isPlaying !== 'undefined') ? isPlaying : false,
             index: idx, playlistLength: list.length, title,
             currentTime: curTime, duration: dur,
+            volume: volEl ? Number(volEl.value) : 1,
+            playlist: names,
           },
+          youtube: {
+            url: ytUrlEl ? ytUrlEl.value : '',
+            muted: (typeof ytMuted !== 'undefined') ? ytMuted : false,
+            volume: ytVolEl ? Number(ytVolEl.value) : 1,
+          },
+          web: { url: webUrlEl ? webUrlEl.value : '' },
+          excel: xlSel ? {
+            sheets: Array.from(xlSel.options).map(o => o.textContent),
+            active: Number(xlSel.value) || 0,
+          } : {},
         });
         stateRef.set(snapshot).catch(() => {});
       }

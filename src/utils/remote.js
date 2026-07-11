@@ -14,13 +14,35 @@ const SESSION_CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const DEFAULT_REMOTE_BASE = 'https://multi-displayer.web.app';
 
 // Every command a paired device is allowed to send. Anything else is dropped.
-// Scope: slides (presentation + slideshow) + video play/pause. Kept in sync with
-// the dispatch table in controller.html.
+// Full-remote scope: slides, slideshow, local video (incl. seek/volume/playlist),
+// YouTube, web page, and spreadsheet sheets. Kept in sync with the dispatch
+// table in controller.html and the ACTIONS map in the web controller.
 const REMOTE_ACTIONS = [
   'pres.next', 'pres.prev', 'pres.goto', 'pres.blank',
-  'slide.next', 'slide.prev', 'slide.playpause', 'slide.blank',
+  'slide.next', 'slide.prev', 'slide.goto', 'slide.playpause', 'slide.blank',
   'video.playpause', 'video.next', 'video.prev', 'video.stop',
+  'video.goto', 'video.seek', 'video.volume',
+  'yt.play', 'yt.pause', 'yt.mute', 'yt.volume', 'yt.load',
+  'web.load', 'web.back', 'web.fwd', 'web.reload',
+  'excel.sheet',
 ];
+
+// Value requirement per action (actions not listed take no value):
+//   index    → non-negative integer (floored)
+//   fraction → finite number, clamped to [0, 1]
+//   string   → trimmed non-empty string, length-capped
+const VALUE_SPECS = {
+  'pres.goto': 'index',
+  'slide.goto': 'index',
+  'video.goto': 'index',
+  'excel.sheet': 'index',
+  'video.seek': 'fraction',
+  'video.volume': 'fraction',
+  'yt.volume': 'fraction',
+  'yt.load': 'string',
+  'web.load': 'string',
+};
+const STRING_MAX = { 'yt.load': 300, 'web.load': 1024 };
 
 /**
  * Generate a random session code from the unambiguous alphabet.
@@ -97,13 +119,23 @@ function sanitizeCommand(raw) {
   const { action } = raw;
   if (!REMOTE_ACTIONS.includes(action)) return null;
 
-  let value = null;
-  if (action === 'pres.goto') {
+  const spec = VALUE_SPECS[action];
+  if (!spec) return { action, value: null };
+
+  if (spec === 'index') {
     const n = Number(raw.value);
-    if (!Number.isFinite(n) || n < 0) return null; // goto needs a valid slide index
-    value = Math.floor(n);
+    if (!Number.isFinite(n) || n < 0) return null; // needs a valid index
+    return { action, value: Math.floor(n) };
   }
-  return { action, value };
+  if (spec === 'fraction') {
+    const n = Number(raw.value);
+    if (!Number.isFinite(n)) return null;
+    return { action, value: Math.min(1, Math.max(0, n)) };
+  }
+  // string
+  if (typeof raw.value !== 'string') return null;
+  const s = raw.value.trim().slice(0, STRING_MAX[action]);
+  return s ? { action, value: s } : null;
 }
 
 /**
@@ -116,21 +148,40 @@ function sanitizeCommand(raw) {
  */
 function buildStateSnapshot(input = {}, now = Date.now()) {
   const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
+  const clamp01 = (n) => Math.min(1, Math.max(0, n));
+  const str = (v, max = 200) => String(v == null ? '' : v).slice(0, max);
+  const list = (v, maxItems, maxLen) =>
+    (Array.isArray(v) ? v : []).slice(0, maxItems).map((t) => str(t, maxLen));
   const p = input.presentation || {};
   const s = input.slideshow || {};
   const v = input.video || {};
+  const y = input.youtube || {};
+  const w = input.web || {};
+  const x = input.excel || {};
+  const r = input.roles;
   return {
     activePanel: String(input.activePanel || 'previews'),
+    // Which roles have a screen assigned, so the phone can hide dead sections.
+    // null when the desktop can't tell (phone then shows everything).
+    roles: r ? {
+      presentation: !!r.presentation, slideshow: !!r.slideshow, video: !!r.video,
+      youtube: !!r.youtube, web: !!r.web, excel: !!r.excel,
+    } : null,
     presentation: { index: num(p.index), total: num(p.total) },
     slideshow: { index: num(s.index), total: num(s.total), playing: !!s.playing },
     video: {
       playing: !!v.playing,
       index: num(v.index, -1),
       playlistLength: num(v.playlistLength),
-      title: String(v.title || ''),
+      title: str(v.title),
       currentTime: num(v.currentTime),
       duration: num(v.duration),
+      volume: clamp01(num(v.volume, 1)),
+      playlist: list(v.playlist, 100, 120), // file basenames for the phone's picker
     },
+    youtube: { url: str(y.url, 300), muted: !!y.muted, volume: clamp01(num(y.volume, 1)) },
+    web: { url: str(w.url, 1024) },
+    excel: { sheets: list(x.sheets, 50, 80), active: num(x.active) },
     updatedAt: num(now),
   };
 }

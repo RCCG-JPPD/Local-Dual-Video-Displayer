@@ -72,8 +72,18 @@ internet — nothing to install on the phone:
    **<https://multi-displayer.web.app>** and type the 6-character **session code** shown on screen.)
 3. When the phone joins, the panel shows **✓ 1 device connected**. Multiple devices can share one code.
 
-The phone shows live status (current slide, video title/time) and buttons for slides (prev/next/blank), slideshow
-(prev/next/play-pause), and video (play-pause/prev/next/stop).
+The phone is a **full remote** for every screen role, and only shows sections that have a screen assigned:
+
+| Section | Controls from the phone |
+| --- | --- |
+| **Slides** | previous / next / blank, jump to any slide number |
+| **Slideshow** | previous / next, play-pause |
+| **Video** | pick any playlist entry, play-pause, **seek**, **volume**, stop |
+| **YouTube** | send a link, play / pause / mute, volume |
+| **Web Page** | open an address, back / forward / reload |
+| **Spreadsheet** | switch sheets |
+
+It also shows live status — the current slide number, video title and playback time.
 
 **The code is per app run:** it's generated once when first needed and stays the same until you quit the app —
 changing displays or toggling Remote Mode off/on keeps paired phones working, and they reconnect automatically.

@@ -81,15 +81,43 @@ test('sanitizeCommand validates pres.goto value', () => {
   assert.equal(sanitizeCommand({ action: 'pres.goto' }), null);
 });
 
+// A valid sample value per action that requires one (mirrors VALUE_SPECS).
+const SAMPLE_VALUES = {
+  'pres.goto': [0, 0], 'slide.goto': [3, 3], 'video.goto': [2, 2], 'excel.sheet': [1, 1],
+  'video.seek': [0.5, 0.5], 'video.volume': [0.8, 0.8], 'yt.volume': [1, 1],
+  'yt.load': ['dQw4w9WgXcQ', 'dQw4w9WgXcQ'], 'web.load': ['example.com', 'example.com'],
+};
+
 test('every REMOTE_ACTION is namespaced and sanitizes cleanly', () => {
   for (const action of REMOTE_ACTIONS) {
-    assert.match(action, /^(pres|slide|video)\./);
-    const value = action === 'pres.goto' ? 0 : undefined;
-    assert.deepEqual(sanitizeCommand({ action, value }), {
-      action,
-      value: action === 'pres.goto' ? 0 : null,
-    });
+    assert.match(action, /^(pres|slide|video|yt|web|excel)\./);
+    const [value, expected] = SAMPLE_VALUES[action] || [undefined, null];
+    assert.deepEqual(sanitizeCommand({ action, value }), { action, value: expected });
   }
+});
+
+test('sanitizeCommand clamps fraction values to [0, 1]', () => {
+  assert.deepEqual(sanitizeCommand({ action: 'video.seek', value: 1.5 }), { action: 'video.seek', value: 1 });
+  assert.deepEqual(sanitizeCommand({ action: 'video.volume', value: -0.2 }), { action: 'video.volume', value: 0 });
+  assert.deepEqual(sanitizeCommand({ action: 'yt.volume', value: '0.4' }), { action: 'yt.volume', value: 0.4 });
+  assert.equal(sanitizeCommand({ action: 'video.seek', value: 'x' }), null);
+  assert.equal(sanitizeCommand({ action: 'video.seek' }), null);
+});
+
+test('sanitizeCommand validates index values for goto-style actions', () => {
+  assert.deepEqual(sanitizeCommand({ action: 'video.goto', value: '3' }), { action: 'video.goto', value: 3 });
+  assert.deepEqual(sanitizeCommand({ action: 'slide.goto', value: 2.7 }), { action: 'slide.goto', value: 2 });
+  assert.equal(sanitizeCommand({ action: 'excel.sheet', value: -1 }), null);
+  assert.equal(sanitizeCommand({ action: 'excel.sheet', value: 'first' }), null);
+});
+
+test('sanitizeCommand trims, caps, and type-checks string values', () => {
+  assert.deepEqual(sanitizeCommand({ action: 'web.load', value: '  example.com  ' }),
+    { action: 'web.load', value: 'example.com' });
+  assert.equal(sanitizeCommand({ action: 'web.load', value: '   ' }), null);
+  assert.equal(sanitizeCommand({ action: 'web.load', value: 42 }), null);
+  assert.equal(sanitizeCommand({ action: 'yt.load', value: 'a'.repeat(500) }).value.length, 300);
+  assert.equal(sanitizeCommand({ action: 'web.load', value: 'b'.repeat(5000) }).value.length, 1024);
 });
 
 test('buildStateSnapshot normalizes types and fills defaults', () => {
@@ -102,11 +130,50 @@ test('buildStateSnapshot normalizes types and fills defaults', () => {
 
   assert.deepEqual(snap, {
     activePanel: 'presentation',
+    roles: null, // caller didn't say — phone shows all sections
     presentation: { index: 3, total: 10 },
     slideshow: { index: 1, total: 4, playing: true },
-    video: { playing: false, index: 2, playlistLength: 5, title: 'clip.mp4', currentTime: 12.5, duration: 60 },
+    video: {
+      playing: false, index: 2, playlistLength: 5, title: 'clip.mp4',
+      currentTime: 12.5, duration: 60, volume: 1, playlist: [],
+    },
+    youtube: { url: '', muted: false, volume: 1 },
+    web: { url: '' },
+    excel: { sheets: [], active: 0 },
     updatedAt: 1000,
   });
+});
+
+test('buildStateSnapshot carries full-remote state (volume, playlist, yt, web, excel, roles)', () => {
+  const snap = buildStateSnapshot({
+    roles: { video: 1, youtube: 0, web: true, presentation: true, slideshow: false, excel: false },
+    video: { volume: '0.3', playlist: ['a.mp4', 'b.mp4'] },
+    youtube: { url: 'https://youtu.be/x', muted: 1, volume: 2 },
+    web: { url: 'https://example.com' },
+    excel: { sheets: ['Sheet1', 'Totals'], active: '1' },
+  }, 0);
+
+  assert.deepEqual(snap.roles, {
+    presentation: true, slideshow: false, video: true, youtube: false, web: true, excel: false,
+  });
+  assert.equal(snap.video.volume, 0.3);
+  assert.deepEqual(snap.video.playlist, ['a.mp4', 'b.mp4']);
+  assert.deepEqual(snap.youtube, { url: 'https://youtu.be/x', muted: true, volume: 1 }); // volume clamped
+  assert.equal(snap.web.url, 'https://example.com');
+  assert.deepEqual(snap.excel, { sheets: ['Sheet1', 'Totals'], active: 1 });
+});
+
+test('buildStateSnapshot caps list sizes and string lengths (RTDB payload safety)', () => {
+  const snap = buildStateSnapshot({
+    video: { playlist: Array.from({ length: 150 }, (_, i) => 'v' + i + 'x'.repeat(300)) },
+    excel: { sheets: Array.from({ length: 80 }, () => 's'.repeat(200)) },
+    web: { url: 'u'.repeat(3000) },
+  }, 0);
+  assert.equal(snap.video.playlist.length, 100);
+  assert.equal(snap.video.playlist[0].length, 120);
+  assert.equal(snap.excel.sheets.length, 50);
+  assert.equal(snap.excel.sheets[0].length, 80);
+  assert.equal(snap.web.url.length, 1024);
 });
 
 test('buildStateSnapshot is RTDB-safe (no undefined) for empty input', () => {
