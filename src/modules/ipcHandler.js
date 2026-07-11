@@ -119,8 +119,10 @@ class IPCHandler {
       ]);
     });
 
-    // Resolve a chosen presentation file to a PDF the viewer can render.
-    // PDFs pass through; PowerPoint/ODP are converted via headless LibreOffice.
+    // Resolve a chosen presentation file for the viewer. PDFs pass through.
+    // PowerPoint/ODP get TWO LibreOffice conversions: a PDF (page counting,
+    // thumbnails, static fallback) and an animated SVG whose embedded
+    // presentation engine plays the deck's transitions and animations.
     ipcMain.handle('convert-presentation', async (event, filePath) => {
       if (!filePath) return { error: 'No file selected' };
       const path = require('path');
@@ -130,14 +132,21 @@ class IPCHandler {
 
       if (['.pptx', '.ppt', '.odp'].includes(ext)) {
         const { app } = require('electron');
-        const { findSoffice, convertToPdf } = require('./officeConvert');
+        const { findSoffice, convertToPdf, convertToSvg } = require('./officeConvert');
         if (!findSoffice()) {
           return { error: 'LibreOffice was not found. Install LibreOffice (free, libreoffice.org) to open PowerPoint files directly — or export your deck to PDF and open that.' };
         }
         try {
           const outDir = path.join(app.getPath('userData'), 'cache', 'presentations');
           const pdf = await convertToPdf(filePath, outDir);
-          return { type: 'pdf', source: pdf, name };
+          let svg = '';
+          try {
+            svg = await convertToSvg(filePath, outDir);
+          } catch (err) {
+            // Older LibreOffice or export hiccup — slides still work, statically.
+            console.warn('SVG (animated) conversion failed, using static PDF:', err.message);
+          }
+          return { type: 'pdf', source: pdf, svg, name };
         } catch (err) {
           console.error('convert-presentation failed:', err);
           return { error: 'Could not convert this presentation: ' + (err && err.message ? err.message : String(err)) };
@@ -177,6 +186,20 @@ class IPCHandler {
         this.configManager.updateConfig({ presentation: { index: data } });
       }
       this.broadcastToRole('powerpoint', 'presentation-command', cmd, data);
+    });
+
+    // The display owns the live slide index (animations consume "next" presses
+    // in animated SVG mode), so the primary screen reports it back for the
+    // controller's counter / remote status. Persisted for restart restore.
+    ipcMain.on('presentation-index', (event, index) => {
+      const [primary] = this.displayManager.getWindowsByRole('powerpoint');
+      if (primary && event.sender.id === primary.webContents.id && typeof index === 'number') {
+        this.configManager.updateConfig({ presentation: { index } });
+        const controller = this.displayManager.windows.controller;
+        if (controller && !controller.isDestroyed()) {
+          controller.webContents.send('presentation-index', index);
+        }
+      }
     });
 
     // ════════════════════════════════════════════════════════════════

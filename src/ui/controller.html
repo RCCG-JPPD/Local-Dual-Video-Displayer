@@ -1297,13 +1297,14 @@
     // PRESENTATION CONTROL
     // ════════════════════════════════════════════════════════════════
 
-    let presState = { type: 'pdf', source: '', images: [], index: 0, count: 0 };
+    let presState = { type: 'pdf', source: '', svg: '', images: [], index: 0, count: 0 };
 
     function initPresentation(cfg) {
       const p = (cfg && cfg.presentation) || {};
       presState = {
         type: p.type || 'pdf',
         source: p.source || '',
+        svg: p.svg || '', // animated LibreOffice export (transitions + animations)
         images: p.images || [],
         index: p.index || 0,
         count: p.count || (p.images ? p.images.length : 0),
@@ -1332,40 +1333,43 @@
       if (!paths || !paths.length) return;
       const presHint = document.getElementById('presHint');
 
-      // A single PowerPoint/PDF → resolve to a PDF (PowerPoint is converted in main).
+      // A single PowerPoint/PDF → converted in main (PDF + animated SVG when possible).
       const doc = paths.find(p => PRES_DOC_RE.test(p));
       if (doc) {
         presHint.textContent = /\.pdf$/i.test(doc) ? 'Loading…' : 'Converting… (LibreOffice)';
         const res = await electronAPI.convertPresentation(doc);
         if (!res || res.error) { presHint.textContent = '✗ ' + ((res && res.error) || 'Could not open file'); return; }
         const count = await countPdfPages(res.source);
-        presState = { type: 'pdf', source: res.source, images: [], index: 0, count };
+        presState = { type: 'pdf', source: res.source, svg: res.svg || '', images: [], index: 0, count };
         electronAPI.sendPresentationLoad(presState);
         updatePresCounter();
-        presHint.textContent = `✓ ${res.name || 'Loaded'} — ${count} slide(s)`;
+        presHint.textContent = `✓ ${res.name || 'Loaded'} — ${count} slide(s)` +
+          (res.svg ? ' · animations & transitions on' : '');
         return;
       }
 
       // Otherwise treat the selection as image slides.
       const imgs = paths.filter(p => PRES_IMG_RE.test(p));
       if (!imgs.length) { presHint.textContent = '✗ Pick a PowerPoint/PDF or image files'; return; }
-      presState = { type: 'images', source: '', images: imgs, index: 0, count: imgs.length };
+      presState = { type: 'images', source: '', svg: '', images: imgs, index: 0, count: imgs.length };
       electronAPI.sendPresentationLoad(presState);
       updatePresCounter();
       presHint.textContent = `✓ Loaded ${imgs.length} image slide(s)`;
     };
 
+    // Next/Prev are sent as commands (not indexes): in animated decks a press
+    // plays the next animation before advancing, so the display owns the index
+    // and reports it back (onPresentationIndex) for the counter.
     function presNavigate(dir) {
       if (!presState.count) return;
-      let i = presState.index + (dir === 'next' ? 1 : -1);
-      i = Math.max(0, Math.min(i, presState.count - 1));
-      if (i === presState.index) return;
-      presState.index = i;
-      electronAPI.sendPresentationCommand('goto', i);
-      updatePresCounter();
+      electronAPI.sendPresentationCommand(dir === 'next' ? 'next' : 'prev');
     }
     document.getElementById('presPrev').onclick = () => presNavigate('prev');
     document.getElementById('presNext').onclick = () => presNavigate('next');
+
+    electronAPI.onPresentationIndex((i) => {
+      if (typeof i === 'number') { presState.index = i; updatePresCounter(); }
+    });
 
     // ════════════════════════════════════════════════════════════════
     // MEDIA SLIDESHOW CONTROL

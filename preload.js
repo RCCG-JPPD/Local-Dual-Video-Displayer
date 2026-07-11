@@ -151,12 +151,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ════════════════════════════════════════════════════════════════
 
   selectPresentationFiles: () => ipcRenderer.invoke('open-presentation-dialog'),
-  // Resolve a chosen file to a renderable PDF (converts PowerPoint via LibreOffice)
+  // Resolve a chosen file to renderable sources (converts PowerPoint via
+  // LibreOffice): a PDF, plus an animated SVG when the deck has one.
   convertPresentation: (filePath) => ipcRenderer.invoke('convert-presentation', filePath),
   sendPresentationLoad: (data) => ipcRenderer.send('presentation-load', data),
   sendPresentationCommand: (cmd, data) => ipcRenderer.send('presentation-command', cmd, data),
   onPresentationLoad: (cb) => ipcRenderer.on('presentation-load', (e, data) => cb(data)),
   onPresentationCommand: (cb) => ipcRenderer.on('presentation-command', (e, cmd, data) => cb(cmd, data)),
+  // Display → controller: the live slide index (animations consume presses).
+  sendPresentationIndex: (index) => ipcRenderer.send('presentation-index', index),
+  onPresentationIndex: (cb) => ipcRenderer.on('presentation-index', (e, index) => cb(index)),
 
   // ════════════════════════════════════════════════════════════════
   // SLIDESHOW (role 'slideshow')
