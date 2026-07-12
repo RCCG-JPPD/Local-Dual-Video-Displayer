@@ -222,3 +222,35 @@ test('a fresh store (new app run) gets a fresh code', () => {
   assert.equal(createSessionStore(gen).getState().code, 'RUN001');
   assert.equal(createSessionStore(gen).getState().code, 'RUN002');
 });
+
+test('createSessionStore seeds from a valid persisted code (keep-code opt-in)', () => {
+  let calls = 0;
+  const store = createSessionStore(() => { calls++; return 'NEW111'; }, 'ABC123');
+  assert.equal(store.getState().code, 'ABC123'); // reused, not regenerated
+  assert.equal(calls, 0);
+});
+
+test('createSessionStore ignores an invalid persisted code', () => {
+  assert.equal(createSessionStore(() => 'NEW111', 'bogus!').getState().code, 'NEW111');
+  assert.equal(createSessionStore(() => 'NEW111', '').getState().code, 'NEW111');
+  assert.equal(createSessionStore(() => 'NEW111', null).getState().code, 'NEW111');
+});
+
+test('resetCode issues a different code and keeps the enabled flag', () => {
+  let n = 0;
+  const store = createSessionStore(() => 'CODE0' + (n++));
+  store.setEnabled(true);
+  const first = store.getState().code;
+  const st = store.resetCode();
+  assert.notEqual(st.code, first);
+  assert.equal(st.enabled, true);
+  assert.equal(store.getState().code, st.code); // new code sticks
+});
+
+test('resetCode retries when the generator repeats the current code', () => {
+  const codes = ['SAME00', 'SAME00', 'DIFF00'];
+  let i = 0;
+  const store = createSessionStore(() => codes[Math.min(i++, codes.length - 1)]);
+  assert.equal(store.getState().code, 'SAME00');
+  assert.equal(store.resetCode().code, 'DIFF00');
+});

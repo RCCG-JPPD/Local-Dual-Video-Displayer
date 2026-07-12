@@ -88,6 +88,12 @@ module.exports = {
     url: '',
   },
 
+  // Remote Mode (phone/web control) pairing code.
+  remote: {
+    persistCode: false, // opt-in: reuse the same pairing code across app runs
+    code: '',           // the saved code (only meaningful when persistCode is on)
+  },
+
   // Canvas preview settings
   preview: {
     enabled: true,

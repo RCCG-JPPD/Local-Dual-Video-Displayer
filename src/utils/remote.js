@@ -189,18 +189,35 @@ function buildStateSnapshot(input = {}, now = Date.now()) {
 /**
  * Per-run session store. Lives in the MAIN process so the pairing code is
  * generated once per app run and survives controller reloads / display
- * reconfigures — a new code only appears after the app is quit and reopened.
- * `enabled` lets a reloaded controller re-arm Remote Mode automatically.
+ * reconfigures. By default a new code appears after the app is quit and
+ * reopened; seeding `initialCode` (the opt-in persisted code) reuses the same
+ * code across runs. `enabled` lets a reloaded controller re-arm Remote Mode
+ * automatically.
  * @param {() => string} generate  code generator; injectable for testing
+ * @param {string|null} initialCode  persisted code to reuse; ignored if invalid
  */
-function createSessionStore(generate = generateSessionCode) {
-  const state = { code: null, enabled: false };
+function createSessionStore(generate = generateSessionCode, initialCode = null) {
+  const state = {
+    code: isValidSessionCode(initialCode) ? initialCode : null,
+    enabled: false,
+  };
   return {
     getState() {
       if (!state.code) state.code = generate();
       return { ...state };
     },
     setEnabled(on) { state.enabled = !!on; },
+    // Invalidate the current code and issue a fresh one (paired devices are
+    // kicked by the caller tearing the old session down).
+    resetCode() {
+      const old = state.code;
+      let next = generate();
+      // A random 6-char collision is ~1e-9, but a "reset" must never hand
+      // back the same code — retry a few times if the generator repeats.
+      for (let i = 0; i < 5 && next === old; i++) next = generate();
+      state.code = next;
+      return { ...state };
+    },
   };
 }
 

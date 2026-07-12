@@ -13,7 +13,22 @@ class IPCHandler {
     this.callbacks = callbacks;
     // Remote Mode pairing state — kept here (main process) so the code is
     // per-app-run: it survives controller reloads and display reconfigures.
-    this.remoteSession = createSessionStore();
+    // With the opt-in "keep code between sessions" setting, the saved code
+    // seeds the store so it also survives app restarts.
+    const savedRemote = this.configManager.loadConfig().remote || {};
+    this.remoteSession = createSessionStore(
+      undefined,
+      savedRemote.persistCode ? savedRemote.code : null,
+    );
+  }
+
+  /** Session state + the persisted-code preference, for the Remote panel. */
+  _remoteState() {
+    const cfg = this.configManager.loadConfig();
+    return {
+      ...this.remoteSession.getState(),
+      persistCode: !!(cfg.remote && cfg.remote.persistCode),
+    };
   }
 
   /** Send to every live window currently serving `role`. */
@@ -365,8 +380,33 @@ class IPCHandler {
     // The controller fetches the per-run pairing code (generated lazily on
     // first use) and reports the on/off toggle so a reloaded controller can
     // re-arm Remote Mode with the same code.
-    ipcMain.handle('remote-get-state', () => this.remoteSession.getState());
+    ipcMain.handle('remote-get-state', () => this._remoteState());
     ipcMain.on('remote-set-enabled', (event, on) => this.remoteSession.setEnabled(on));
+
+    // Invalidate the current pairing code and issue a fresh one. If the code
+    // is persisted across sessions, the new one replaces it on disk.
+    ipcMain.handle('remote-reset-code', () => {
+      this.remoteSession.resetCode();
+      const cfg = this.configManager.loadConfig();
+      if (cfg.remote && cfg.remote.persistCode) {
+        this.configManager.updateConfig({ remote: { code: this.remoteSession.getState().code } });
+      }
+      return this._remoteState();
+    });
+
+    // Opt in/out of reusing the pairing code across app runs (off by default).
+    // Opting in saves the current code; opting out wipes it so the next run
+    // generates a fresh one.
+    ipcMain.handle('remote-set-persist', (event, on) => {
+      const persist = !!on;
+      this.configManager.updateConfig({
+        remote: {
+          persistCode: persist,
+          code: persist ? this.remoteSession.getState().code : '',
+        },
+      });
+      return this._remoteState();
+    });
 
     // ════════════════════════════════════════════════════════════════
     // DISPLAY RECONFIGURATION / TOOLS

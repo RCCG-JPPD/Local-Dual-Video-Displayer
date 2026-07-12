@@ -738,8 +738,13 @@
       </p>
       <div class="button-group">
         <button id="remoteToggleBtn" class="btn-primary">📡 Enable Remote Mode</button>
+        <button id="remoteResetBtn">🔄 New code</button>
       </div>
       <div id="remoteStatus" class="display-status">Remote Mode is off.</div>
+      <label class="overlay-item" style="margin-top:8px;">
+        <input type="checkbox" id="remoteKeepCode">
+        Keep this code between sessions (same code after closing and reopening the app)
+      </label>
 
       <div id="remotePairing" style="display:none;">
         <div class="remote-pair">
@@ -752,7 +757,7 @@
           </div>
         </div>
         <p class="section-hint">⚠️ Anyone with this code can control the presentation. Turn Remote Mode off when you're done — the session is deleted automatically if the app closes.</p>
-        <p class="section-hint">💡 The code stays the same for this run of the app — changing displays or toggling Remote Mode off and on keeps paired phones working. A new code is only issued after the app is closed and reopened.</p>
+        <p class="section-hint">💡 The code stays the same for this run of the app — changing displays or toggling Remote Mode off and on keeps paired phones working. Press <strong>🔄 New code</strong> to invalidate it, or tick <strong>Keep this code between sessions</strong> to reuse it after restarting the app.</p>
       </div>
     </div>
     </main>
@@ -1777,6 +1782,8 @@
     // on-screen buttons use — so there's one command path, not two.
     (function () {
       const toggleBtn = document.getElementById('remoteToggleBtn');
+      const resetBtn = document.getElementById('remoteResetBtn');
+      const keepCodeEl = document.getElementById('remoteKeepCode');
       const statusEl = document.getElementById('remoteStatus');
       const pairingEl = document.getElementById('remotePairing');
       const codeEl = document.getElementById('remoteCode');
@@ -2048,6 +2055,40 @@
         finally { busy = false; toggleBtn.disabled = false; }
       });
 
+      // ── New code: invalidate the current code and re-pair. When Remote Mode
+      // is on, the old Firebase session is torn down first (kicking every
+      // paired device), then re-armed under the fresh code. ──
+      resetBtn.addEventListener('click', async () => {
+        if (busy) return;
+        const warn = active
+          ? 'Generate a new session code?\n\nAll paired devices will be disconnected and must scan the new QR code.'
+          : 'Generate a new session code?\n\nDevices that saved the old code will no longer be able to connect.';
+        if (!confirm(warn)) return;
+        busy = true; resetBtn.disabled = true; toggleBtn.disabled = true;
+        try {
+          const wasActive = active;
+          if (wasActive) await disableRemote(); // removes the old session → kicks devices
+          await electronAPI.remote.resetCode();
+          if (wasActive) await enableRemote();  // re-arm with the new code + QR
+          else setStatus('New code generated — it will be used when Remote Mode is turned on.');
+        } finally { busy = false; resetBtn.disabled = false; toggleBtn.disabled = false; }
+      });
+
+      // ── Keep-code-between-sessions opt-in (default OFF). Turning it on is a
+      // security trade-off, so it warns before taking effect. ──
+      keepCodeEl.addEventListener('change', async () => {
+        if (keepCodeEl.checked) {
+          const ok = confirm(
+            '⚠️ Keep the same session code after the app is closed and reopened?\n\n'
+            + 'Anyone who has this code (or scanned the QR) will be able to reconnect and '
+            + 'control your screens in FUTURE sessions too — until you untick this or press '
+            + '"🔄 New code".');
+          if (!ok) { keepCodeEl.checked = false; return; }
+        }
+        try { await electronAPI.remote.setPersist(keepCodeEl.checked); }
+        catch (err) { console.error('Could not save the keep-code setting:', err); }
+      });
+
       // Best-effort session cleanup if the controller window closes.
       window.addEventListener('beforeunload', () => {
         if (sessionRef) { try { sessionRef.remove(); } catch (_) {} }
@@ -2055,9 +2096,12 @@
 
       // If the controller was reloaded while Remote Mode was on (e.g. around a
       // display change), re-arm it automatically with the same per-run code so
-      // already-paired phones reconnect without re-scanning.
+      // already-paired phones reconnect without re-scanning. Also reflect the
+      // saved keep-code-between-sessions preference.
       electronAPI.remote.getState().then((st) => {
-        if (st && st.enabled && !active && !busy) enableRemote();
+        if (!st) return;
+        keepCodeEl.checked = !!st.persistCode;
+        if (st.enabled && !active && !busy) enableRemote();
       }).catch(() => {});
     })();
   </script>

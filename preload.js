@@ -48,6 +48,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // reloads — a new code only appears after quitting and reopening the app.
     getState: () => ipcRenderer.invoke('remote-get-state'),
     setEnabled: (on) => ipcRenderer.send('remote-set-enabled', !!on),
+    // Invalidate the code and get a fresh one (persisted too, when opted in).
+    resetCode: () => ipcRenderer.invoke('remote-reset-code'),
+    // Opt in/out of keeping the same code across app runs (off by default).
+    setPersist: (on) => ipcRenderer.invoke('remote-set-persist', !!on),
   },
 
   // ════════════════════════════════════════════════════════════════
