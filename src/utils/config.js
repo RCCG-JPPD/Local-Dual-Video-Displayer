@@ -94,17 +94,6 @@ module.exports = {
     code: '',           // the saved code (only meaningful when persistCode is on)
   },
 
-  // Canvas preview settings
-  preview: {
-    enabled: true,
-    updateInterval: 500, // ms - send canvas updates this frequently
-    previewSize: {
-      width: 200,
-      height: 150,
-    },
-    quality: 0.7, // JPEG quality for compressed preview
-  },
-
   // Application metadata
   version: '2.0.0',
   lastModified: null,

@@ -286,17 +286,6 @@ class IPCHandler {
     });
 
     // ════════════════════════════════════════════════════════════════
-    // CANVAS PREVIEW / MIRRORING
-    // ════════════════════════════════════════════════════════════════
-
-    ipcMain.on('canvas-preview-data', (event, data) => {
-      const controller = this.displayManager.windows.controller;
-      if (controller && !controller.isDestroyed()) {
-        controller.webContents.send('preview-updated', data);
-      }
-    });
-
-    // ════════════════════════════════════════════════════════════════
     // WEB / YOUTUBE
     // ════════════════════════════════════════════════════════════════
 

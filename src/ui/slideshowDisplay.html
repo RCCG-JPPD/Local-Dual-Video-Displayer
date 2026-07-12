@@ -64,7 +64,12 @@
       clearTimer();
       videoEl.pause();
       const n = state.items.length;
-      if (!n) { showOnly(messageEl); return; }
+      if (!n) {
+        // Cleared — release the last clip's media player, not just hide it.
+        if (videoEl.getAttribute('src')) { videoEl.removeAttribute('src'); videoEl.load(); }
+        showOnly(messageEl);
+        return;
+      }
 
       state.index = Math.max(0, Math.min(i, n - 1));
       const item = state.items[state.index];

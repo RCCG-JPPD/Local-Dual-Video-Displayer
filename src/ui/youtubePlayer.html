@@ -13,7 +13,6 @@
       position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
       color: #888; font-family: 'Segoe UI', sans-serif; font-size: 22px;
     }
-    #preview-canvas { display: none; position: absolute; top: -9999px; left: -9999px; }
   </style>
 </head>
 <body>
@@ -22,13 +21,12 @@
        file:// app carry no Referer, which YouTube rejects ("Error 153") — the
        main process injects one (see setupYouTubeEmbedReferer in main.js). -->
   <webview id="yt" allowpopups></webview>
-  <canvas id="preview-canvas"></canvas>
 
   <script>
     // electronAPI is a preload global (contextBridge) — don't redeclare it.
+    // (Controller previews are live whole-screen desktopCapturer thumbnails.)
     const yt = document.getElementById('yt');
     const placeholder = document.getElementById('placeholder');
-    const previewCanvas = document.getElementById('preview-canvas');
     let currentVideoId = '';
     let webviewReady = false;
 
@@ -70,21 +68,6 @@
         case 'mute': ytExec(`var v=document.querySelector('video'); if(v) v.muted=${data ? 'true' : 'false'};`); break;
       }
     });
-
-    // ── controller thumbnail (kept lightweight) ──
-    function capturePreviewFrame() {
-      try {
-        previewCanvas.width = 320; previewCanvas.height = 180;
-        const ctx = previewCanvas.getContext('2d');
-        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 320, 180);
-        ctx.fillStyle = '#fff'; ctx.font = 'bold 24px Arial'; ctx.textAlign = 'center';
-        ctx.fillText('YouTube', 160, 40);
-        ctx.font = '14px Arial'; ctx.fillStyle = '#aaa';
-        ctx.fillText(currentVideoId ? `Video: ${currentVideoId}` : 'Waiting for video…', 160, 160);
-        electronAPI.sendPreviewData({ role: 'youtube', imageData: previewCanvas.toDataURL('image/jpeg', 0.7), videoId: currentVideoId });
-      } catch (_) {}
-    }
-    setInterval(capturePreviewFrame, 1500);
 
     // Restore the last video on startup — lets a video be queued from the
     // controller before any screen is assigned to YouTube. Loaded PAUSED:

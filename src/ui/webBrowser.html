@@ -42,13 +42,6 @@
       font-family: 'Segoe UI', Tahoma, sans-serif;
       font-size: 20px;
     }
-
-    #preview-canvas {
-      display: none;
-      position: absolute;
-      top: -9999px;
-      left: -9999px;
-    }
   </style>
 </head>
 <body>
@@ -57,19 +50,14 @@
     <webview id="web-frame" allowpopups></webview>
   </div>
 
-  <!-- Hidden canvas for preview rendering -->
-  <canvas id="preview-canvas"></canvas>
-
   <script>
     // electronAPI is a preload global (contextBridge) — don't redeclare it.
+    // (Controller previews are live whole-screen desktopCapturer thumbnails.)
 
     const webFrame = document.getElementById('web-frame'); // <webview>
-    const webContainer = document.getElementById('web-container');
-    const previewCanvas = document.getElementById('preview-canvas');
     const placeholder = document.getElementById('placeholder');
 
     let currentUrl = '';
-    let updatePreviewInterval;
 
     // ════════════════════════════════════════════════════════════════
     // INITIALIZATION
@@ -77,22 +65,12 @@
 
     function initialize() {
       console.log('Web browser display initialized');
-      setupPreviewCanvas();
 
       // Listen for URL updates from controller
       electronAPI.onWebUrlChange((url) => {
         console.log('Loading URL:', url);
         navigateToUrl(url);
       });
-
-      // Start periodic preview capture
-      startPreviewCapture();
-    }
-
-    function setupPreviewCanvas() {
-      if (!previewCanvas) return;
-      previewCanvas.width = webContainer.offsetWidth;
-      previewCanvas.height = webContainer.offsetHeight;
     }
 
     function navigateToUrl(url) {
@@ -116,61 +94,8 @@
     }
 
     // ════════════════════════════════════════════════════════════════
-    // PREVIEW CAPTURE
-    // ════════════════════════════════════════════════════════════════
-
-    function capturePreviewFrame() {
-      try {
-        if (!previewCanvas || !webContainer) return;
-
-        const ctx = previewCanvas.getContext('2d');
-        if (!ctx) return;
-
-        // Draw white background
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
-
-        // Draw border
-        ctx.strokeStyle = '#ddd';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(0, 0, previewCanvas.width, previewCanvas.height);
-
-        // Draw text showing URL
-        ctx.fillStyle = '#333';
-        ctx.font = '14px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('Web Browser', previewCanvas.width / 2, 30);
-        ctx.font = '12px Arial';
-        ctx.fillStyle = '#666';
-        const displayUrl = currentUrl.length > 50 ? currentUrl.substring(0, 47) + '...' : currentUrl;
-        ctx.fillText(displayUrl, previewCanvas.width / 2, previewCanvas.height - 20);
-
-        // Send preview data
-        const imageData = previewCanvas.toDataURL('image/jpeg', 0.7);
-        electronAPI.sendPreviewData({
-          role: 'web',
-          imageData: imageData,
-          timestamp: Date.now(),
-          url: currentUrl,
-        });
-      } catch (error) {
-        console.error('Error capturing preview frame:', error);
-      }
-    }
-
-    function startPreviewCapture() {
-      updatePreviewInterval = setInterval(capturePreviewFrame, 1000);
-    }
-
-    // ════════════════════════════════════════════════════════════════
     // STARTUP
     // ════════════════════════════════════════════════════════════════
-
-    // Handle window resize
-    window.addEventListener('resize', () => {
-      setupPreviewCanvas();
-      capturePreviewFrame();
-    });
 
     // Escape hatch: press Esc to close this fullscreen display window.
     window.addEventListener('keydown', (e) => {

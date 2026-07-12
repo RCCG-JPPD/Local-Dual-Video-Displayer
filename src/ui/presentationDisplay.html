@@ -109,6 +109,9 @@
 
     async function loadSource(data) {
       state = { ...state, ...(data || {}) };
+      // Free the previous deck — pdf.js keeps page/worker memory alive until
+      // the document is explicitly destroyed.
+      if (pdfDoc) { try { pdfDoc.destroy(); } catch (_) {} }
       pdfDoc = null;
       renderToken++;
       svgMode = false;

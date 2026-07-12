@@ -29,19 +29,17 @@
       white-space: nowrap;
     }
 
-    #preview-canvas { display: none; position: absolute; top: -9999px; left: -9999px; }
   </style>
 </head>
 <body>
   <canvas id="fx"></canvas>
   <div id="stage"><div id="clock">00:00:00</div></div>
-  <canvas id="preview-canvas"></canvas>
 
   <script>
     // electronAPI is a preload global (contextBridge) — don't redeclare it.
+    // (Controller previews are live whole-screen desktopCapturer thumbnails.)
     const bodyEl = document.body;
     const clockEl = document.getElementById('clock');
-    const previewCanvas = document.getElementById('preview-canvas');
 
     let settings = {
       mode: 'time', theme: 'dark', size: 'medium', corner: 'bottom-right',
@@ -241,32 +239,6 @@
       ctx.fill(); ctx.restore();
     }
     function loop() { frame++; spawn(); step(); rafId = requestAnimationFrame(loop); }
-
-    // ── controller thumbnail ──
-    function capturePreviewFrame() {
-      try {
-        previewCanvas.width = 320; previewCanvas.height = 120;
-        const c = previewCanvas.getContext('2d');
-        const holidayKey = electronAPI.getActiveHoliday(new Date())?.key;
-        const theme = electronAPI.resolveClockTheme(settings.theme, holidayKey);
-        if (theme.bg === 'transparent') {
-          // Checkerboard so the thumbnail reads as "see-through" (the live screen
-          // preview in the controller shows the real transparency).
-          const s = 16;
-          for (let y = 0; y < 120; y += s) for (let x = 0; x < 320; x += s) {
-            c.fillStyle = (((x + y) / s) % 2 === 0) ? '#c0c0c0' : '#909090';
-            c.fillRect(x, y, s, s);
-          }
-        } else {
-          c.fillStyle = theme.bg; c.fillRect(0, 0, 320, 120);
-        }
-        c.fillStyle = theme.text;
-        c.font = 'bold 56px Monaco, monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
-        c.fillText(clockEl.textContent, 160, 60);
-        electronAPI.sendPreviewData({ role: 'clock', imageData: previewCanvas.toDataURL('image/jpeg', 0.7), time: clockEl.textContent });
-      } catch (_) {}
-    }
-    setInterval(capturePreviewFrame, 1000);
 
     // ── startup ──
     electronAPI.getConfig().then(cfg => applySettings(cfg && cfg.clock ? cfg.clock : {})).catch(() => applySettings({}));

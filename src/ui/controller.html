@@ -821,6 +821,8 @@
     function showTab(name) {
       navItems.forEach(n => n.classList.toggle('active', n.dataset.tab === name));
       tabPanels.forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+      // Screen-capture previews only poll while their tab is showing.
+      updatePreviewPolling();
     }
     navItems.forEach(n => n.addEventListener('click', () => {
       // Action items (e.g. Clear All Content) have no data-tab.
@@ -856,8 +858,8 @@
         // Apply role availability + clock controls for the current config
         refreshControllerForConfig(config);
 
-        // Start live whole-screen previews
-        startScreenPreviews();
+        // Start live whole-screen previews (polls only while the tab shows)
+        updatePreviewPolling();
 
         // Load window status
         const windowStatus = await electronAPI.getWindowStatus();
@@ -927,26 +929,42 @@
       });
     }
 
-    // ── Live WHOLE-SCREEN previews (desktopCapturer): one card per assigned screen ──
+    // ── Live WHOLE-SCREEN previews (desktopCapturer): one card per assigned
+    // screen. Capturing every display is expensive, so the poll only runs
+    // while the Previews tab is showing AND the controller is visible; the
+    // card DOM is built once per screen layout and only the thumbnail <img>
+    // src is swapped on each tick. ──
     let previewTimer = null;
-    function startScreenPreviews() {
-      refreshScreenPreviews();
-      if (previewTimer) clearInterval(previewTimer);
-      previewTimer = setInterval(refreshScreenPreviews, 1500);
+    let previewSlots = new Map(); // previewKey -> { holder, img }
+    let previewGridKeys = '';     // signature of the built card layout
+
+    const previewKey = (d, i) =>
+      `${d.displayIndex != null ? d.displayIndex : i}:${d.role}:${d.id}`;
+
+    function previewsVisible() {
+      const panel = document.querySelector('.tab-panel[data-panel="previews"]');
+      return !document.hidden && panel && panel.classList.contains('active');
     }
 
-    async function refreshScreenPreviews() {
-      let previews = [];
-      try { previews = await electronAPI.getScreenPreviews(); } catch (_) {}
-      const byId = new Map((previews || []).filter(p => p.id != null).map(p => [String(p.id), p.dataURL]));
+    function updatePreviewPolling() {
+      if (previewsVisible()) {
+        if (previewTimer) return;
+        refreshScreenPreviews();
+        previewTimer = setInterval(refreshScreenPreviews, 1500);
+      } else if (previewTimer) {
+        clearInterval(previewTimer);
+        previewTimer = null;
+      }
+    }
+    document.addEventListener('visibilitychange', updatePreviewPolling);
 
-      const displays = (config.displays || []).filter(d => d.role && d.role !== 'unassigned');
+    function rebuildPreviewGrid(displays) {
       previewGrid.innerHTML = '';
+      previewSlots = new Map();
       if (!displays.length) {
         previewGrid.innerHTML = '<div class="preview-status" style="padding:10px">No screens assigned yet — use “Reconfigure Displays”.</div>';
         return;
       }
-
       displays.forEach((d, i) => {
         const card = document.createElement('div');
         card.className = 'preview-card';
@@ -955,14 +973,8 @@
 
         const image = document.createElement('div');
         image.className = 'preview-image';
-        const url = byId.get(String(d.id)) || (previews[i] && previews[i].dataURL);
-        if (url) {
-          const im = document.createElement('img');
-          im.src = url;
-          image.appendChild(im);
-        } else {
-          image.textContent = 'No preview';
-        }
+        image.textContent = 'No preview';
+        const img = document.createElement('img');
 
         const info = document.createElement('div');
         info.className = 'preview-info';
@@ -975,6 +987,38 @@
         card.appendChild(image);
         card.appendChild(info);
         previewGrid.appendChild(card);
+        previewSlots.set(previewKey(d, i), { holder: image, img });
+      });
+    }
+
+    async function refreshScreenPreviews() {
+      const displays = (config.displays || []).filter(d => d.role && d.role !== 'unassigned');
+
+      // Rebuild the cards only when the screen layout actually changed.
+      const keys = displays.map((d, i) => previewKey(d, i)).join('|');
+      if (keys !== previewGridKeys) {
+        previewGridKeys = keys;
+        rebuildPreviewGrid(displays);
+      }
+      if (!displays.length) return; // nothing to capture
+
+      let previews = [];
+      try { previews = await electronAPI.getScreenPreviews(); } catch (_) {}
+      const byId = new Map((previews || []).filter(p => p.id != null).map(p => [String(p.id), p.dataURL]));
+
+      displays.forEach((d, i) => {
+        const slot = previewSlots.get(previewKey(d, i));
+        if (!slot) return;
+        const url = byId.get(String(d.id)) || (previews[i] && previews[i].dataURL);
+        if (url) {
+          if (slot.img.parentNode !== slot.holder) {
+            slot.holder.textContent = '';
+            slot.holder.appendChild(slot.img);
+          }
+          slot.img.src = url;
+        } else if (slot.img.parentNode) {
+          slot.holder.textContent = 'No preview'; // detaches the img (kept in the slot)
+        }
       });
     }
 
@@ -1384,7 +1428,11 @@
       try {
         const bytes = nodeAPI.fs.readBytes(pdfPath);
         const doc = await pdfjsLib.getDocument({ data: bytes }).promise;
-        return doc.numPages;
+        const count = doc.numPages;
+        // Free the document — we only needed the page count, and pdf.js holds
+        // the whole PDF in memory until destroy() is called.
+        doc.destroy().catch(() => {});
+        return count;
       } catch (err) { console.error('Could not read PDF page count:', err); return 0; }
     }
 
@@ -1489,19 +1537,33 @@
     }
     function pushSlideshow() { electronAPI.sendSlideshowLoad(slideshowData()); }
 
+    // Each thumb slot reuses ONE <img> and ONE <video>: Chromium caps live
+    // media players per renderer and tears them down lazily, so creating a
+    // fresh <video> every slide advance eventually breaks thumbnails during
+    // long slideshows.
     function setThumb(host, path) {
-      host.innerHTML = '';
-      if (!path) { host.textContent = '—'; return; }
-      if (VIDEO_RE.test(path)) {
-        const v = document.createElement('video');
-        v.src = electronAPI.toFileURL(path);
+      if (!host._img) {
+        host._img = document.createElement('img');
+        const v = host._vid = document.createElement('video');
         v.muted = true; v.preload = 'metadata';
         v.addEventListener('loadeddata', () => { try { v.currentTime = 0.1; } catch (_) {} });
-        host.appendChild(v);
+      }
+      const releaseVideo = () => {
+        if (host._vid.getAttribute('src')) { host._vid.removeAttribute('src'); host._vid.load(); }
+      };
+      if (!path) {
+        releaseVideo();
+        host.textContent = '—';
+        return;
+      }
+      const url = electronAPI.toFileURL(path);
+      if (VIDEO_RE.test(path)) {
+        if (host._vid.src !== url) host._vid.src = url;
+        if (host._vid.parentNode !== host) { host.textContent = ''; host.appendChild(host._vid); }
       } else {
-        const im = document.createElement('img');
-        im.src = electronAPI.toFileURL(path);
-        host.appendChild(im);
+        releaseVideo();
+        host._img.src = url;
+        if (host._img.parentNode !== host) { host.textContent = ''; host.appendChild(host._img); }
       }
     }
 

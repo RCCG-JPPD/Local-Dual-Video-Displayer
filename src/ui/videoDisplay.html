@@ -33,14 +33,6 @@
       height: auto;
       object-fit: contain;
     }
-
-    /* Hidden preview canvas for frame capture */
-    #preview-canvas {
-      display: none;
-      position: absolute;
-      top: -9999px;
-      left: -9999px;
-    }
   </style>
 </head>
 <body>
@@ -48,105 +40,24 @@
     <video id="vid" autoplay playsinline></video>
   </div>
 
-  <!-- Hidden canvas for preview rendering -->
-  <canvas id="preview-canvas"></canvas>
-
   <script>
     // electronAPI is a preload global (contextBridge) — don't redeclare it.
+    // (Controller previews are live whole-screen desktopCapturer thumbnails,
+    // so this window does no capture work of its own.)
 
     const vid = document.getElementById('vid');
-    const previewCanvas = document.getElementById('preview-canvas');
-    const videoContainer = document.getElementById('video-container');
 
     let windowRole = 'video'; // every local-video screen shares this role
     let isPlaying = false;
-
-    // ════════════════════════════════════════════════════════════════
-    // WINDOW ROLE & INITIALIZATION
-    // ════════════════════════════════════════════════════════════════
 
     // Receive window role from main process
     electronAPI.onWindowRole((role) => {
       windowRole = role;
       console.log(`Video display window role: ${windowRole}`);
-
-      // Set up canvas for preview rendering
-      setupPreviewCanvas();
     });
 
-    // ════════════════════════════════════════════════════════════════
-    // CANVAS PREVIEW SETUP
-    // ════════════════════════════════════════════════════════════════
-
-    function setupPreviewCanvas() {
-      if (!previewCanvas) return;
-
-      previewCanvas.width = videoContainer.offsetWidth;
-      previewCanvas.height = videoContainer.offsetHeight;
-
-      startPreviewCapture();
-    }
-
-    /**
-     * Capture video frame to canvas and send to controller for preview
-     */
-    function capturePreviewFrame() {
-      try {
-        if (!previewCanvas || vid.readyState !== 4) return; // Video not ready
-
-        const ctx = previewCanvas.getContext('2d');
-        if (!ctx) return;
-
-        // Draw current video frame to canvas
-        ctx.drawImage(vid, 0, 0, previewCanvas.width, previewCanvas.height);
-
-        // Send preview data to controller
-        const imageData = previewCanvas.toDataURL('image/jpeg', 0.7);
-        electronAPI.sendPreviewData({
-          role: windowRole,
-          imageData: imageData,
-          timestamp: Date.now(),
-          duration: vid.duration,
-          currentTime: vid.currentTime,
-          isPaused: vid.paused,
-        });
-      } catch (error) {
-        console.error('Error capturing preview frame:', error);
-      }
-    }
-
-    /**
-     * Start periodic preview capture
-     */
-    function startPreviewCapture() {
-      // Capture every 500ms or when seeking/playing changes
-      setInterval(capturePreviewFrame, 500);
-
-      vid.addEventListener('play', () => {
-        console.log('Video play event');
-        isPlaying = true;
-        capturePreviewFrame();
-      });
-
-      vid.addEventListener('pause', () => {
-        console.log('Video pause event');
-        isPlaying = false;
-        capturePreviewFrame();
-      });
-
-      vid.addEventListener('seeked', () => {
-        console.log('Video seeked event');
-        capturePreviewFrame();
-      });
-
-      vid.addEventListener('timeupdate', () => {
-        // Don't capture every timeupdate - too frequent
-      });
-    }
-
-    // ════════════════════════════════════════════════════════════════
-    // PLAYBACK COMMANDS
-    // ════════════════════════════════════════════════════════════════
+    vid.addEventListener('play', () => { isPlaying = true; });
+    vid.addEventListener('pause', () => { isPlaying = false; });
 
     // ════════════════════════════════════════════════════════════════
     // PLAYBACK CONTROL - IPC COMMANDS
@@ -219,8 +130,6 @@
         default:
           console.warn(`Unknown command: ${cmd}`);
       }
-
-      capturePreviewFrame();
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -230,11 +139,8 @@
     // Start paused
     vid.pause();
 
-    // Set up canvas when video metadata loads
     vid.addEventListener('loadedmetadata', () => {
       console.log(`Video loaded: ${vid.videoWidth}x${vid.videoHeight}`);
-      setupPreviewCanvas();
-      capturePreviewFrame();
     });
 
     // Handle video errors
