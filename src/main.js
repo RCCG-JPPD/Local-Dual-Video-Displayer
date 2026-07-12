@@ -153,14 +153,10 @@ function startup() {
     userConfig = configManager.loadConfig();
     console.log('Config loaded:', userConfig.version);
 
-    // Check if config is valid (has displays configured)
-    if (configManager.isConfigValid(userConfig)) {
-      console.log('Using saved configuration');
-      launchDisplayWindows();
-    } else {
-      console.log('No valid configuration found - showing selector');
-      showDisplaySelector();
-    }
+    // Always start on the mode/screen picker instead of auto-launching the
+    // saved setup. The selector pre-fills last run's roles, so keeping the
+    // same setup is a single click on Start.
+    showDisplaySelector();
   } catch (error) {
     console.error('Startup error:', error);
     app.quit();
