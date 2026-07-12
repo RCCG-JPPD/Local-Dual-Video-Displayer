@@ -122,3 +122,46 @@
 .row:last-child { margin-bottom: 0; }
 
 .foot { color: #5b6478; font-size: 12px; text-align: center; margin-top: auto; padding-top: 8px; }
+
+/* ── Full-remote inputs (URL fields, pickers, sliders) ── */
+.field { display: flex; gap: 8px; margin-bottom: 10px; }
+.field:last-child { margin-bottom: 0; }
+.row > .btn { flex: 1; }
+
+.text-input {
+  flex: 1;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #333a4d;
+  background: #0d0f16;
+  color: #fff;
+  font-size: 15px;
+}
+.text-input:focus { outline: none; border-color: var(--accent); }
+.num-input { flex: 0 0 76px; text-align: center; }
+
+.select {
+  flex: 1;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #333a4d;
+  background: #0d0f16;
+  color: #fff;
+  font-size: 15px;
+}
+.select:focus { outline: none; border-color: var(--accent); }
+
+.slider-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.slider-row:last-child { margin-bottom: 0; }
+.slider-row .lbl { font-size: 14px; min-width: 24px; }
+.slider-row .val {
+  font-size: 12px; color: var(--muted); min-width: 78px; text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.slider-row input[type='range'] {
+  flex: 1; min-width: 0; height: 28px;
+  accent-color: var(--accent);
+  touch-action: none; /* the slider owns the gesture; don't scroll the page */
+}

@@ -13,7 +13,22 @@ class IPCHandler {
     this.callbacks = callbacks;
     // Remote Mode pairing state — kept here (main process) so the code is
     // per-app-run: it survives controller reloads and display reconfigures.
-    this.remoteSession = createSessionStore();
+    // With the opt-in "keep code between sessions" setting, the saved code
+    // seeds the store so it also survives app restarts.
+    const savedRemote = this.configManager.loadConfig().remote || {};
+    this.remoteSession = createSessionStore(
+      undefined,
+      savedRemote.persistCode ? savedRemote.code : null,
+    );
+  }
+
+  /** Session state + the persisted-code preference, for the Remote panel. */
+  _remoteState() {
+    const cfg = this.configManager.loadConfig();
+    return {
+      ...this.remoteSession.getState(),
+      persistCode: !!(cfg.remote && cfg.remote.persistCode),
+    };
   }
 
   /** Send to every live window currently serving `role`. */
@@ -110,6 +125,12 @@ class IPCHandler {
       return canceled ? [] : filePaths;
     });
 
+    // Controller persists playlist edits (remove / clear) — additions are
+    // persisted by the open-file-dialog handler above.
+    ipcMain.on('save-playlist', (event, playlist) => {
+      this.configManager.savePlaylist(Array.isArray(playlist) ? playlist : []);
+    });
+
     // Presentation: pick a PowerPoint/PDF or a set of slide images.
     ipcMain.handle('open-presentation-dialog', async () => {
       return this._openFiles('Choose a presentation, PDF, or slide images', [
@@ -119,8 +140,10 @@ class IPCHandler {
       ]);
     });
 
-    // Resolve a chosen presentation file to a PDF the viewer can render.
-    // PDFs pass through; PowerPoint/ODP are converted via headless LibreOffice.
+    // Resolve a chosen presentation file for the viewer. PDFs pass through.
+    // PowerPoint/ODP get TWO LibreOffice conversions: a PDF (page counting,
+    // thumbnails, static fallback) and an animated SVG whose embedded
+    // presentation engine plays the deck's transitions and animations.
     ipcMain.handle('convert-presentation', async (event, filePath) => {
       if (!filePath) return { error: 'No file selected' };
       const path = require('path');
@@ -130,14 +153,21 @@ class IPCHandler {
 
       if (['.pptx', '.ppt', '.odp'].includes(ext)) {
         const { app } = require('electron');
-        const { findSoffice, convertToPdf } = require('./officeConvert');
+        const { findSoffice, convertToPdf, convertToSvg } = require('./officeConvert');
         if (!findSoffice()) {
           return { error: 'LibreOffice was not found. Install LibreOffice (free, libreoffice.org) to open PowerPoint files directly — or export your deck to PDF and open that.' };
         }
         try {
           const outDir = path.join(app.getPath('userData'), 'cache', 'presentations');
           const pdf = await convertToPdf(filePath, outDir);
-          return { type: 'pdf', source: pdf, name };
+          let svg = '';
+          try {
+            svg = await convertToSvg(filePath, outDir);
+          } catch (err) {
+            // Older LibreOffice or export hiccup — slides still work, statically.
+            console.warn('SVG (animated) conversion failed, using static PDF:', err.message);
+          }
+          return { type: 'pdf', source: pdf, svg, name };
         } catch (err) {
           console.error('convert-presentation failed:', err);
           return { error: 'Could not convert this presentation: ' + (err && err.message ? err.message : String(err)) };
@@ -177,6 +207,20 @@ class IPCHandler {
         this.configManager.updateConfig({ presentation: { index: data } });
       }
       this.broadcastToRole('powerpoint', 'presentation-command', cmd, data);
+    });
+
+    // The display owns the live slide index (animations consume "next" presses
+    // in animated SVG mode), so the primary screen reports it back for the
+    // controller's counter / remote status. Persisted for restart restore.
+    ipcMain.on('presentation-index', (event, index) => {
+      const [primary] = this.displayManager.getWindowsByRole('powerpoint');
+      if (primary && event.sender.id === primary.webContents.id && typeof index === 'number') {
+        this.configManager.updateConfig({ presentation: { index } });
+        const controller = this.displayManager.windows.controller;
+        if (controller && !controller.isDestroyed()) {
+          controller.webContents.send('presentation-index', index);
+        }
+      }
     });
 
     // ════════════════════════════════════════════════════════════════
@@ -235,6 +279,8 @@ class IPCHandler {
     ipcMain.on('excel-command', (event, cmd, data) => {
       if (cmd === 'selectSheet' && typeof data === 'number') {
         this.configManager.updateConfig({ spreadsheet: { activeSheet: data } });
+      } else if (cmd === 'clear') {
+        this.configManager.updateConfig({ spreadsheet: { source: '', activeSheet: 0 } });
       }
       this.broadcastToRole('excel', 'excel-command', cmd, data);
     });
@@ -254,16 +300,22 @@ class IPCHandler {
     // WEB / YOUTUBE
     // ════════════════════════════════════════════════════════════════
 
+    // URLs are persisted so a Web/YouTube screen assigned later (or on the
+    // next run) restores the page — content can be prepared before any
+    // screen has the role. 'about:blank' means cleared.
     ipcMain.on('web-url-change', (event, url) => {
+      this.configManager.updateConfig({ web: { url: url === 'about:blank' ? '' : url } });
       this.broadcastToRole('web', 'web-url-change', url);
     });
 
     ipcMain.on('youtube-url-change', (event, url) => {
+      this.configManager.updateConfig({ youtube: { url } });
       this.broadcastToRole('youtube', 'youtube-url-change', url);
     });
 
-    // Controller → YouTube screens: play / pause / setVolume / mute.
+    // Controller → YouTube screens: play / pause / setVolume / mute / clear.
     ipcMain.on('youtube-command', (event, cmd, data) => {
+      if (cmd === 'clear') this.configManager.updateConfig({ youtube: { url: '' } });
       this.broadcastToRole('youtube', 'youtube-command', cmd, data);
     });
 
@@ -328,8 +380,33 @@ class IPCHandler {
     // The controller fetches the per-run pairing code (generated lazily on
     // first use) and reports the on/off toggle so a reloaded controller can
     // re-arm Remote Mode with the same code.
-    ipcMain.handle('remote-get-state', () => this.remoteSession.getState());
+    ipcMain.handle('remote-get-state', () => this._remoteState());
     ipcMain.on('remote-set-enabled', (event, on) => this.remoteSession.setEnabled(on));
+
+    // Invalidate the current pairing code and issue a fresh one. If the code
+    // is persisted across sessions, the new one replaces it on disk.
+    ipcMain.handle('remote-reset-code', () => {
+      this.remoteSession.resetCode();
+      const cfg = this.configManager.loadConfig();
+      if (cfg.remote && cfg.remote.persistCode) {
+        this.configManager.updateConfig({ remote: { code: this.remoteSession.getState().code } });
+      }
+      return this._remoteState();
+    });
+
+    // Opt in/out of reusing the pairing code across app runs (off by default).
+    // Opting in saves the current code; opting out wipes it so the next run
+    // generates a fresh one.
+    ipcMain.handle('remote-set-persist', (event, on) => {
+      const persist = !!on;
+      this.configManager.updateConfig({
+        remote: {
+          persistCode: persist,
+          code: persist ? this.remoteSession.getState().code : '',
+        },
+      });
+      return this._remoteState();
+    });
 
     // ════════════════════════════════════════════════════════════════
     // DISPLAY RECONFIGURATION / TOOLS

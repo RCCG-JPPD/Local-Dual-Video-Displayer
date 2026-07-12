@@ -1,8 +1,10 @@
 /**
- * Office → PDF conversion via a headless LibreOffice install.
- * Lets the Presentation viewer open .pptx/.ppt/.odp directly (converted to PDF,
- * then rendered by the existing pdf.js pipeline). No bundled binary — uses a
- * LibreOffice the user already has installed.
+ * Office document conversion via a headless LibreOffice install.
+ * Lets the Presentation viewer open .pptx/.ppt/.odp directly:
+ *   - PDF   → static pages for the pdf.js pipeline (thumbnails + fallback)
+ *   - SVG   → LibreOffice's animated export, embedding its presentation engine,
+ *             so slide transitions and element animations play like PowerPoint.
+ * No bundled binary — uses a LibreOffice the user already has installed.
  */
 
 const fs = require('fs');
@@ -37,10 +39,11 @@ function findSoffice() {
 }
 
 /**
- * Convert an office file to PDF in `outDir`. Resolves to the PDF path.
- * Rejects if LibreOffice isn't installed or the conversion fails.
+ * Convert an office file to `format` ('pdf' or 'svg') in `outDir`.
+ * Resolves to the output path. Rejects if LibreOffice isn't installed or the
+ * conversion fails.
  */
-function convertToPdf(file, outDir) {
+function convertTo(file, outDir, format) {
   return new Promise((resolve, reject) => {
     const soffice = findSoffice();
     if (!soffice) return reject(new Error('LibreOffice not found'));
@@ -51,16 +54,20 @@ function convertToPdf(file, outDir) {
     const args = [
       '--headless', '--norestore',
       `-env:UserInstallation=${profile}`,
-      '--convert-to', 'pdf', '--outdir', outDir, file,
+      '--convert-to', format, '--outdir', outDir, file,
     ];
 
     execFile(soffice, args, { timeout: 180000 }, (err, stdout, stderr) => {
       if (err) return reject(err);
-      const out = path.join(outDir, path.basename(file, path.extname(file)) + '.pdf');
+      const out = path.join(outDir, path.basename(file, path.extname(file)) + '.' + format);
       if (fs.existsSync(out)) resolve(out);
-      else reject(new Error('Conversion produced no PDF. ' + (stderr || stdout || '').toString().trim()));
+      else reject(new Error(`Conversion produced no ${format.toUpperCase()}. ` + (stderr || stdout || '').toString().trim()));
     });
   });
 }
 
-module.exports = { findSoffice, convertToPdf };
+const convertToPdf = (file, outDir) => convertTo(file, outDir, 'pdf');
+// Impress SVG export: one SVG with every slide + the JS presentation engine.
+const convertToSvg = (file, outDir) => convertTo(file, outDir, 'svg');
+
+module.exports = { findSoffice, convertToPdf, convertToSvg };

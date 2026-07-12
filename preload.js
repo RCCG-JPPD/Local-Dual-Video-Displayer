@@ -48,6 +48,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // reloads — a new code only appears after quitting and reopening the app.
     getState: () => ipcRenderer.invoke('remote-get-state'),
     setEnabled: (on) => ipcRenderer.send('remote-set-enabled', !!on),
+    // Invalidate the code and get a fresh one (persisted too, when opted in).
+    resetCode: () => ipcRenderer.invoke('remote-reset-code'),
+    // Opt in/out of keeping the same code across app runs (off by default).
+    setPersist: (on) => ipcRenderer.invoke('remote-set-persist', !!on),
   },
 
   // ════════════════════════════════════════════════════════════════
@@ -151,12 +155,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ════════════════════════════════════════════════════════════════
 
   selectPresentationFiles: () => ipcRenderer.invoke('open-presentation-dialog'),
-  // Resolve a chosen file to a renderable PDF (converts PowerPoint via LibreOffice)
+  // Resolve a chosen file to renderable sources (converts PowerPoint via
+  // LibreOffice): a PDF, plus an animated SVG when the deck has one.
   convertPresentation: (filePath) => ipcRenderer.invoke('convert-presentation', filePath),
   sendPresentationLoad: (data) => ipcRenderer.send('presentation-load', data),
   sendPresentationCommand: (cmd, data) => ipcRenderer.send('presentation-command', cmd, data),
   onPresentationLoad: (cb) => ipcRenderer.on('presentation-load', (e, data) => cb(data)),
   onPresentationCommand: (cb) => ipcRenderer.on('presentation-command', (e, cmd, data) => cb(cmd, data)),
+  // Display → controller: the live slide index (animations consume presses).
+  sendPresentationIndex: (index) => ipcRenderer.send('presentation-index', index),
+  onPresentationIndex: (cb) => ipcRenderer.on('presentation-index', (e, index) => cb(index)),
 
   // ════════════════════════════════════════════════════════════════
   // SLIDESHOW (role 'slideshow')
@@ -187,6 +195,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Open file dialog for video selection
   selectVideoFiles: () => ipcRenderer.invoke('open-file-dialog'),
+
+  // Persist the controller's playlist after edits (remove / clear) so it
+  // matches on the next run — additions are persisted by the file dialog.
+  savePlaylist: (playlist) => ipcRenderer.send('save-playlist', playlist),
 
   // Convert an absolute filesystem path into a correct file:// URL.
   // Uses Node's pathToFileURL so Windows drive letters (C:\), spaces and

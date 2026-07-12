@@ -77,6 +77,10 @@
       if (cmd === 'selectSheet' && typeof value === 'number') {
         data.activeSheet = Math.max(0, Math.min(value, (data.sheetNames || []).length - 1));
         renderSheet();
+      } else if (cmd === 'clear') {
+        data = { sheetNames: [], htmlBySheet: [], activeSheet: 0 };
+        hostEl.innerHTML = '<div id="message">No spreadsheet loaded — open one from the controller.</div>';
+        renderTabs();
       }
     });
 

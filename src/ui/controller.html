@@ -348,7 +348,6 @@
       width: 100%; height: 380px; border: 1px solid #ddd; border-radius: 6px;
       background: #fff; display: inline-flex;
     }
-    .controls-section.unavailable webview { pointer-events: none; }
 
     /* Clock settings grid */
     .clock-grid {
@@ -372,16 +371,17 @@
     .overlay-list { display: flex; flex-direction: column; gap: 8px; }
     .overlay-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #444; cursor: pointer; }
 
-    /* A section whose display role isn't assigned to any screen */
-    .controls-section.unavailable {
-      opacity: 0.55;
+    /* Notice shown when a section's role has no screen yet — the section stays
+       usable so content can be prepared ahead of assigning a screen. */
+    .role-note {
+      background: #fff7ed; border: 1px solid #fdba74; color: #9a3412;
+      border-radius: 6px; padding: 8px 12px; font-size: 12.5px;
+      margin-bottom: 14px; display: none;
     }
 
-    .controls-section.unavailable input,
-    .controls-section.unavailable button,
-    .controls-section.unavailable select {
-      pointer-events: none;
-    }
+    /* Sidebar "Clear All Content" action */
+    .nav-item.nav-clear { color: #f2a4a1; }
+    .nav-item.nav-clear:hover:not(:disabled) { background: #3a2733; color: #ff8f8b; }
 
     /* Preview cards are clickable to enlarge */
     .preview-card { cursor: zoom-in; transition: border-color 0.15s; }
@@ -500,6 +500,7 @@
       <button class="nav-item" data-tab="excel">📊 Spreadsheet</button>
       <button class="nav-item" data-tab="clock">🕐 Clock</button>
       <span class="nav-spacer"></span>
+      <button class="nav-item nav-clear" id="clearAllBtn">🧹 Clear All Content</button>
       <button class="nav-item" data-tab="remote">📱 Remote</button>
       <button class="nav-item" data-tab="displays">🖥️ Displays</button>
     </nav>
@@ -525,6 +526,7 @@
         <div class="button-group">
           <button id="addBtn" class="btn-primary">+ Add Video…</button>
           <button id="removeBtn" class="btn-danger">✕ Remove</button>
+          <button id="clearVideoBtn" class="btn-danger">🧹 Clear all</button>
         </div>
       </div>
 
@@ -556,6 +558,7 @@
       <div class="url-row">
         <input id="ytUrl" type="text" placeholder="Paste a YouTube link or video ID…">
         <button id="ytPlayBtn" class="btn-primary">Load on YouTube screen</button>
+        <button id="ytClearBtn" class="btn-danger">🧹 Clear</button>
       </div>
       <div class="playback-controls" style="margin-top:12px;">
         <button id="ytPlay">▶ Play</button>
@@ -578,6 +581,7 @@
         <button id="webReload" title="Reload">⟳</button>
         <input id="webUrl" type="text" placeholder="Enter a website address (e.g. example.com)…">
         <button id="webGo" class="btn-primary">Go</button>
+        <button id="webClearBtn" class="btn-danger">🧹 Clear</button>
       </div>
       <webview id="ctlWeb" class="ctl-web" src="about:blank" allowpopups></webview>
       <div class="section-hint" id="webHint">Browse here — the page is mirrored onto your Web screen(s).</div>
@@ -649,14 +653,15 @@
     <div class="controls-section tab-panel" id="section-presentation" data-panel="presentation">
       <h2>📽️ Presentation</h2>
       <div class="button-group">
-        <button id="presLoadBtn" class="btn-primary">📂 Load PDF / images…</button>
+        <button id="presLoadBtn" class="btn-primary">📂 Load PowerPoint / PDF / images…</button>
+        <button id="presClearBtn" class="btn-danger">🧹 Clear</button>
       </div>
       <div class="playback-controls">
         <button id="presPrev">◀ Prev</button>
         <span id="presCounter" class="time-display" style="min-width:120px;text-align:center;">No slides</span>
         <button id="presNext">Next ▶</button>
       </div>
-      <div class="section-hint" id="presHint">Export your slides to PDF (or pick a set of images), then navigate them here.</div>
+      <div class="section-hint" id="presHint">Load a PowerPoint (.pptx / .ppt / .odp — animations included, needs LibreOffice), a PDF, or a set of slide images.</div>
     </div>
 
     <!-- MEDIA SLIDESHOW SECTION -->
@@ -668,6 +673,7 @@
         <div class="button-group">
           <button id="slideAddBtn" class="btn-primary">+ Add images/videos…</button>
           <button id="slideRemoveBtn" class="btn-danger">✕ Remove</button>
+          <button id="slideClearBtn" class="btn-danger">🧹 Clear all</button>
           <button id="slideUpBtn">↑ Up</button>
           <button id="slideDownBtn">↓ Down</button>
         </div>
@@ -701,6 +707,7 @@
       <h2>📊 Spreadsheet</h2>
       <div class="button-group">
         <button id="xlLoadBtn" class="btn-primary">📂 Load spreadsheet…</button>
+        <button id="xlClearBtn" class="btn-danger">🧹 Clear</button>
       </div>
       <div class="url-row" id="xlSheetRow" style="display:none;">
         <label style="font-size:13px;color:#555;display:flex;align-items:center;gap:8px;">Sheet
@@ -731,8 +738,13 @@
       </p>
       <div class="button-group">
         <button id="remoteToggleBtn" class="btn-primary">📡 Enable Remote Mode</button>
+        <button id="remoteResetBtn">🔄 New code</button>
       </div>
       <div id="remoteStatus" class="display-status">Remote Mode is off.</div>
+      <label class="overlay-item" style="margin-top:8px;">
+        <input type="checkbox" id="remoteKeepCode">
+        Keep this code between sessions (same code after closing and reopening the app)
+      </label>
 
       <div id="remotePairing" style="display:none;">
         <div class="remote-pair">
@@ -745,7 +757,7 @@
           </div>
         </div>
         <p class="section-hint">⚠️ Anyone with this code can control the presentation. Turn Remote Mode off when you're done — the session is deleted automatically if the app closes.</p>
-        <p class="section-hint">💡 The code stays the same for this run of the app — changing displays or toggling Remote Mode off and on keeps paired phones working. A new code is only issued after the app is closed and reopened.</p>
+        <p class="section-hint">💡 The code stays the same for this run of the app — changing displays or toggling Remote Mode off and on keeps paired phones working. Press <strong>🔄 New code</strong> to invalidate it, or tick <strong>Keep this code between sessions</strong> to reuse it after restarting the app.</p>
       </div>
     </div>
     </main>
@@ -805,15 +817,14 @@
 
     const navItems = Array.from(document.querySelectorAll('.nav-item'));
     const tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
-    // Tabs usable regardless of which screens are assigned.
-    const ALWAYS_ON_TABS = new Set(['previews', 'clock', 'displays', 'remote']);
 
     function showTab(name) {
       navItems.forEach(n => n.classList.toggle('active', n.dataset.tab === name));
       tabPanels.forEach(p => p.classList.toggle('active', p.dataset.panel === name));
     }
     navItems.forEach(n => n.addEventListener('click', () => {
-      if (!n.disabled) showTab(n.dataset.tab);
+      // Action items (e.g. Clear All Content) have no data-tab.
+      if (n.dataset.tab) showTab(n.dataset.tab);
     }));
 
     // ════════════════════════════════════════════════════════════════
@@ -874,6 +885,18 @@
       initPresentation(cfg);
       initSlideshow(cfg);
       initExcel(cfg);
+      initUrlInputs(cfg);
+    }
+
+    // Show the persisted YouTube / Web URLs in their boxes (they're restored on
+    // the screens themselves) — without stomping on anything being typed.
+    function initUrlInputs(cfg) {
+      const y = (cfg && cfg.youtube) || {};
+      const ytEl = document.getElementById('ytUrl');
+      if (y.url && ytEl && !ytEl.value) ytEl.value = y.url;
+      const w = (cfg && cfg.web) || {};
+      const webEl = document.getElementById('webUrl');
+      if (w.url && webEl && !webEl.value) webEl.value = w.url;
     }
 
     // Per-screen "show clock overlay" checkboxes (Clock tab). Lets the clock float
@@ -975,6 +998,7 @@
     document.getElementById('removeBtn').onclick = () => {
       if (currentIndex > -1) {
         playlist.splice(currentIndex, 1);
+        electronAPI.savePlaylist(playlist);
         if (currentIndex >= playlist.length) currentIndex--;
         renderPlaylist();
         if (currentIndex >= 0) {
@@ -986,6 +1010,24 @@
           playBtn.textContent = '▶ Play';
         }
       }
+    };
+
+    // Clear the playlist AND blank the video screen(s).
+    function clearVideo() {
+      send('clear');
+      playlist = [];
+      currentIndex = -1;
+      isPlaying = false;
+      playBtn.textContent = '▶ Play';
+      duration = 0;
+      scrub.value = 0;
+      timeLabel.textContent = '00:00 / 00:00';
+      renderPlaylist();
+      electronAPI.savePlaylist([]);
+    }
+    document.getElementById('clearVideoBtn').onclick = () => {
+      clearVideo();
+      statusBar.textContent = '🧹 Video playlist cleared';
     };
 
     function renderPlaylist() {
@@ -1150,6 +1192,16 @@
       document.getElementById('ytMute').textContent = ytMuted ? '🔈 Unmute' : '🔇 Mute';
     };
 
+    // Unload the video from the YouTube screen(s) and forget the saved URL.
+    function clearYouTube() {
+      ytUrl.value = '';
+      electronAPI.sendYouTubeCommand('clear');
+    }
+    document.getElementById('ytClearBtn').onclick = () => {
+      clearYouTube();
+      statusBar.textContent = '🧹 YouTube screen cleared';
+    };
+
     // ════════════════════════════════════════════════════════════════
     // WEB BROWSER — browse in the controller; mirror the page to web screens
     // ════════════════════════════════════════════════════════════════
@@ -1181,6 +1233,17 @@
     ctlWeb.addEventListener('did-navigate-in-page', (e) => { if (e.isMainFrame) mirrorWeb(e.url); });
     // Keep target=_blank / popups inside the same embedded browser.
     ctlWeb.addEventListener('new-window', (e) => { if (e.url) ctlWeb.src = e.url; });
+
+    // Blank the web screen(s) and the embedded browser, and forget the saved URL.
+    function clearWeb() {
+      webUrl.value = '';
+      ctlWeb.src = 'about:blank';
+      electronAPI.sendWebUrl('about:blank');
+    }
+    document.getElementById('webClearBtn').onclick = () => {
+      clearWeb();
+      statusBar.textContent = '🧹 Web screen cleared';
+    };
 
     // ════════════════════════════════════════════════════════════════
     // CLOCK CONTROLS
@@ -1262,9 +1325,9 @@
     clk.target.addEventListener('change', pushClock);
     document.getElementById('clkStart').onclick = pushClock; // restart countdown with current H:M:S
 
-    // Dim + disable sections whose display role isn't assigned to any screen,
-    // so the controller only offers what the current setup can actually show.
-    // Tab → the display role it needs (Clock/Previews/Displays are always usable).
+    // Tab → the display role it shows on. Every tab stays usable even when no
+    // screen has its role: content added there is saved and appears on the
+    // screen as soon as one is assigned. A notice in the section says so.
     const TAB_ROLE = {
       localvideo: 'video', youtube: 'youtube', web: 'web',
       presentation: 'powerpoint', slideshow: 'slideshow', excel: 'excel',
@@ -1273,37 +1336,35 @@
     function applyRoleAvailability(cfg) {
       const roles = new Set((cfg.displays || []).map(d => d.role));
 
-      navItems.forEach(n => {
-        const tab = n.dataset.tab;
-        if (ALWAYS_ON_TABS.has(tab)) { n.disabled = false; return; }
-        const available = roles.has(TAB_ROLE[tab]);
-        n.disabled = !available;
+      navItems.forEach(n => { n.disabled = false; });
+
+      Object.entries(TAB_ROLE).forEach(([tab, role]) => {
         const panel = document.querySelector(`.tab-panel[data-panel="${tab}"]`);
-        if (panel) panel.classList.toggle('unavailable', !available);
+        if (!panel) return;
+        let note = panel.querySelector('.role-note');
+        if (!note) {
+          note = document.createElement('div');
+          note.className = 'role-note';
+          note.textContent = '⚠️ No screen is showing this yet — everything you add here is saved '
+            + 'and appears as soon as you assign a screen (Displays → ⚙️ Reconfigure Displays).';
+          panel.querySelector('h2').insertAdjacentElement('afterend', note);
+        }
+        note.style.display = roles.has(role) ? 'none' : 'block';
       });
-
-      // If the active tab just became unavailable, fall back to Previews.
-      const active = document.querySelector('.nav-item.active');
-      if (active && active.disabled) showTab('previews');
-
-      const hint = 'No screen is assigned to this. Use “Reconfigure Displays” to add one.';
-      document.getElementById('ytHint').textContent = roles.has('youtube') ? '' : hint;
-      document.getElementById('webHint').textContent = roles.has('web')
-        ? 'Browse here — the page is mirrored onto your Web screen(s).'
-        : hint;
     }
 
     // ════════════════════════════════════════════════════════════════
     // PRESENTATION CONTROL
     // ════════════════════════════════════════════════════════════════
 
-    let presState = { type: 'pdf', source: '', images: [], index: 0, count: 0 };
+    let presState = { type: 'pdf', source: '', svg: '', images: [], index: 0, count: 0 };
 
     function initPresentation(cfg) {
       const p = (cfg && cfg.presentation) || {};
       presState = {
         type: p.type || 'pdf',
         source: p.source || '',
+        svg: p.svg || '', // animated LibreOffice export (transitions + animations)
         images: p.images || [],
         index: p.index || 0,
         count: p.count || (p.images ? p.images.length : 0),
@@ -1332,40 +1393,56 @@
       if (!paths || !paths.length) return;
       const presHint = document.getElementById('presHint');
 
-      // A single PowerPoint/PDF → resolve to a PDF (PowerPoint is converted in main).
+      // A single PowerPoint/PDF → converted in main (PDF + animated SVG when possible).
       const doc = paths.find(p => PRES_DOC_RE.test(p));
       if (doc) {
         presHint.textContent = /\.pdf$/i.test(doc) ? 'Loading…' : 'Converting… (LibreOffice)';
         const res = await electronAPI.convertPresentation(doc);
         if (!res || res.error) { presHint.textContent = '✗ ' + ((res && res.error) || 'Could not open file'); return; }
         const count = await countPdfPages(res.source);
-        presState = { type: 'pdf', source: res.source, images: [], index: 0, count };
+        presState = { type: 'pdf', source: res.source, svg: res.svg || '', images: [], index: 0, count };
         electronAPI.sendPresentationLoad(presState);
         updatePresCounter();
-        presHint.textContent = `✓ ${res.name || 'Loaded'} — ${count} slide(s)`;
+        presHint.textContent = `✓ ${res.name || 'Loaded'} — ${count} slide(s)` +
+          (res.svg ? ' · animations & transitions on' : '');
         return;
       }
 
       // Otherwise treat the selection as image slides.
       const imgs = paths.filter(p => PRES_IMG_RE.test(p));
       if (!imgs.length) { presHint.textContent = '✗ Pick a PowerPoint/PDF or image files'; return; }
-      presState = { type: 'images', source: '', images: imgs, index: 0, count: imgs.length };
+      presState = { type: 'images', source: '', svg: '', images: imgs, index: 0, count: imgs.length };
       electronAPI.sendPresentationLoad(presState);
       updatePresCounter();
       presHint.textContent = `✓ Loaded ${imgs.length} image slide(s)`;
     };
 
+    // Next/Prev are sent as commands (not indexes): in animated decks a press
+    // plays the next animation before advancing, so the display owns the index
+    // and reports it back (onPresentationIndex) for the counter.
     function presNavigate(dir) {
       if (!presState.count) return;
-      let i = presState.index + (dir === 'next' ? 1 : -1);
-      i = Math.max(0, Math.min(i, presState.count - 1));
-      if (i === presState.index) return;
-      presState.index = i;
-      electronAPI.sendPresentationCommand('goto', i);
-      updatePresCounter();
+      electronAPI.sendPresentationCommand(dir === 'next' ? 'next' : 'prev');
     }
     document.getElementById('presPrev').onclick = () => presNavigate('prev');
     document.getElementById('presNext').onclick = () => presNavigate('next');
+
+    // Unload the deck: the screen goes back to "No presentation loaded".
+    function clearPresentation() {
+      presState = { type: 'pdf', source: '', svg: '', images: [], index: 0, count: 0 };
+      electronAPI.sendPresentationLoad(presState);
+      updatePresCounter();
+      document.getElementById('presHint').textContent =
+        'Load a PowerPoint (.pptx / .ppt / .odp — animations included, needs LibreOffice), a PDF, or a set of slide images.';
+    }
+    document.getElementById('presClearBtn').onclick = () => {
+      clearPresentation();
+      statusBar.textContent = '🧹 Presentation cleared';
+    };
+
+    electronAPI.onPresentationIndex((i) => {
+      if (typeof i === 'number') { presState.index = i; updatePresCounter(); }
+    });
 
     // ════════════════════════════════════════════════════════════════
     // MEDIA SLIDESHOW CONTROL
@@ -1467,6 +1544,22 @@
     document.getElementById('slideUpBtn').onclick = () => moveSlide(-1);
     document.getElementById('slideDownBtn').onclick = () => moveSlide(1);
 
+    // Empty the slideshow: the screen goes back to "No slideshow yet".
+    function clearSlideshow() {
+      slideItems = [];
+      slideIndex = 0;
+      slidePlaying = false;
+      renderSlideList();
+      updateSlideThumbs();
+      updateSlidePlayBtn();
+      pushSlideshow();
+      document.getElementById('slideHint').textContent = '';
+    }
+    document.getElementById('slideClearBtn').onclick = () => {
+      clearSlideshow();
+      statusBar.textContent = '🧹 Slideshow cleared';
+    };
+
     slidePlayBtn.onclick = () => {
       slidePlaying = !slidePlaying;
       electronAPI.sendSlideshowCommand(slidePlaying ? 'play' : 'pause');
@@ -1521,6 +1614,34 @@
     };
 
     xlSheetSel.onchange = (e) => electronAPI.sendExcelCommand('selectSheet', parseInt(e.target.value, 10));
+
+    // Unload the workbook: the screen goes back to "No spreadsheet loaded".
+    function clearSpreadsheet() {
+      electronAPI.sendExcelCommand('clear');
+      populateSheets([]);
+      xlHint.textContent = 'Open an .xlsx, .xls or .csv file to show it on the Spreadsheet screen.';
+    }
+    document.getElementById('xlClearBtn').onclick = () => {
+      clearSpreadsheet();
+      statusBar.textContent = '🧹 Spreadsheet cleared';
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    // CLEAR ALL CONTENT (sidebar) — every screen back to its idle state
+    // ════════════════════════════════════════════════════════════════
+
+    document.getElementById('clearAllBtn').onclick = () => {
+      const ok = confirm('Clear ALL content — videos, YouTube, web page, presentation, '
+        + 'slideshow and spreadsheet — from every screen?');
+      if (!ok) return;
+      clearVideo();
+      clearYouTube();
+      clearWeb();
+      clearPresentation();
+      clearSlideshow();
+      clearSpreadsheet();
+      statusBar.textContent = '🧹 All content cleared from every screen';
+    };
 
     // ════════════════════════════════════════════════════════════════
     // CLICK-TO-ENLARGE LIGHTBOX (bigger, but not fullscreen)
@@ -1661,6 +1782,8 @@
     // on-screen buttons use — so there's one command path, not two.
     (function () {
       const toggleBtn = document.getElementById('remoteToggleBtn');
+      const resetBtn = document.getElementById('remoteResetBtn');
+      const keepCodeEl = document.getElementById('remoteKeepCode');
       const statusEl = document.getElementById('remoteStatus');
       const pairingEl = document.getElementById('remotePairing');
       const codeEl = document.getElementById('remoteCode');
@@ -1718,10 +1841,62 @@
           case 'slide.prev': clickIf('slidePrevBtn'); break;
           case 'slide.playpause': clickIf('slidePlayBtn'); break;
           case 'slide.blank': electronAPI.sendSlideshowCommand('blank'); break;
+          case 'slide.goto': electronAPI.sendSlideshowCommand('goto', value); break;
           case 'video.playpause': clickIf('playBtn'); break;
           case 'video.next': clickIf('nextBtn'); break;
           case 'video.prev': clickIf('prevBtn'); break;
           case 'video.stop': clickIf('stopBtn'); break;
+          case 'video.goto':
+            // Main script's playlist loader (bounds-checked there).
+            if (typeof load === 'function') load(value);
+            break;
+          case 'video.seek':
+            if (typeof duration !== 'undefined' && duration) {
+              if (scrubEl) scrubEl.value = value * 100;
+              electronAPI.sendPlaybackCommand('seek', value * duration);
+            }
+            break;
+          case 'video.volume': {
+            const el = document.getElementById('vol');
+            if (el) el.value = value;
+            electronAPI.sendPlaybackCommand('setVolume', value);
+            break;
+          }
+          case 'yt.play': clickIf('ytPlay'); break;
+          case 'yt.pause': clickIf('ytPause'); break;
+          case 'yt.mute': clickIf('ytMute'); break;
+          case 'yt.volume': {
+            const el = document.getElementById('ytVol');
+            if (el) el.value = value;
+            electronAPI.sendYouTubeCommand('setVolume', value);
+            break;
+          }
+          case 'yt.load': {
+            const el = document.getElementById('ytUrl');
+            // Only accept things that actually parse as a YouTube link/ID.
+            if (el && electronAPI.extractYouTubeId(value)) {
+              el.value = value;
+              clickIf('ytPlayBtn');
+            }
+            break;
+          }
+          case 'web.load': {
+            const el = document.getElementById('webUrl');
+            const url = electronAPI.normalizeWebUrl(value);
+            if (el && url) { el.value = url; clickIf('webGo'); }
+            break;
+          }
+          case 'web.back': clickIf('webBack'); break;
+          case 'web.fwd': clickIf('webFwd'); break;
+          case 'web.reload': clickIf('webReload'); break;
+          case 'excel.sheet': {
+            const el = document.getElementById('xlSheet');
+            if (el && value < el.options.length) {
+              el.value = String(value);
+              el.dispatchEvent(new Event('change')); // fires its onchange handler
+            }
+            break;
+          }
         }
         publishState();
       }
@@ -1735,11 +1910,33 @@
         const curTime = scrubEl ? (Number(scrubEl.value) / 100) * dur : 0;
         const idx = (typeof currentIndex !== 'undefined') ? currentIndex : -1;
         const list = (typeof playlist !== 'undefined' && playlist) || [];
-        const title = (idx >= 0 && list[idx] && typeof pathBasename === 'function')
-          ? pathBasename(list[idx]) : '';
+        const names = (typeof pathBasename === 'function') ? list.map(f => pathBasename(f)) : [];
+        const title = (idx >= 0 && names[idx]) || '';
+
+        // Which roles have a screen, so the phone hides sections with nothing
+        // to control. Falls back to null (= show all) before config arrives.
+        const assigned = new Set(
+          ((typeof config !== 'undefined' && config && config.displays) || [])
+            .map(d => d && d.role),
+        );
+        const roles = assigned.size ? {
+          presentation: assigned.has('powerpoint'),
+          slideshow: assigned.has('slideshow'),
+          video: assigned.has('video'),
+          youtube: assigned.has('youtube'),
+          web: assigned.has('web'),
+          excel: assigned.has('excel'),
+        } : null;
+
+        const volEl = document.getElementById('vol');
+        const ytUrlEl = document.getElementById('ytUrl');
+        const ytVolEl = document.getElementById('ytVol');
+        const webUrlEl = document.getElementById('webUrl');
+        const xlSel = document.getElementById('xlSheet');
 
         const snapshot = electronAPI.remote.buildStateSnapshot({
           activePanel,
+          roles,
           presentation: (typeof presState !== 'undefined')
             ? { index: presState.index, total: presState.count } : {},
           slideshow: {
@@ -1751,7 +1948,19 @@
             playing: (typeof isPlaying !== 'undefined') ? isPlaying : false,
             index: idx, playlistLength: list.length, title,
             currentTime: curTime, duration: dur,
+            volume: volEl ? Number(volEl.value) : 1,
+            playlist: names,
           },
+          youtube: {
+            url: ytUrlEl ? ytUrlEl.value : '',
+            muted: (typeof ytMuted !== 'undefined') ? ytMuted : false,
+            volume: ytVolEl ? Number(ytVolEl.value) : 1,
+          },
+          web: { url: webUrlEl ? webUrlEl.value : '' },
+          excel: xlSel ? {
+            sheets: Array.from(xlSel.options).map(o => o.textContent),
+            active: Number(xlSel.value) || 0,
+          } : {},
         });
         stateRef.set(snapshot).catch(() => {});
       }
@@ -1846,6 +2055,40 @@
         finally { busy = false; toggleBtn.disabled = false; }
       });
 
+      // ── New code: invalidate the current code and re-pair. When Remote Mode
+      // is on, the old Firebase session is torn down first (kicking every
+      // paired device), then re-armed under the fresh code. ──
+      resetBtn.addEventListener('click', async () => {
+        if (busy) return;
+        const warn = active
+          ? 'Generate a new session code?\n\nAll paired devices will be disconnected and must scan the new QR code.'
+          : 'Generate a new session code?\n\nDevices that saved the old code will no longer be able to connect.';
+        if (!confirm(warn)) return;
+        busy = true; resetBtn.disabled = true; toggleBtn.disabled = true;
+        try {
+          const wasActive = active;
+          if (wasActive) await disableRemote(); // removes the old session → kicks devices
+          await electronAPI.remote.resetCode();
+          if (wasActive) await enableRemote();  // re-arm with the new code + QR
+          else setStatus('New code generated — it will be used when Remote Mode is turned on.');
+        } finally { busy = false; resetBtn.disabled = false; toggleBtn.disabled = false; }
+      });
+
+      // ── Keep-code-between-sessions opt-in (default OFF). Turning it on is a
+      // security trade-off, so it warns before taking effect. ──
+      keepCodeEl.addEventListener('change', async () => {
+        if (keepCodeEl.checked) {
+          const ok = confirm(
+            '⚠️ Keep the same session code after the app is closed and reopened?\n\n'
+            + 'Anyone who has this code (or scanned the QR) will be able to reconnect and '
+            + 'control your screens in FUTURE sessions too — until you untick this or press '
+            + '"🔄 New code".');
+          if (!ok) { keepCodeEl.checked = false; return; }
+        }
+        try { await electronAPI.remote.setPersist(keepCodeEl.checked); }
+        catch (err) { console.error('Could not save the keep-code setting:', err); }
+      });
+
       // Best-effort session cleanup if the controller window closes.
       window.addEventListener('beforeunload', () => {
         if (sessionRef) { try { sessionRef.remove(); } catch (_) {} }
@@ -1853,9 +2096,12 @@
 
       // If the controller was reloaded while Remote Mode was on (e.g. around a
       // display change), re-arm it automatically with the same per-run code so
-      // already-paired phones reconnect without re-scanning.
+      // already-paired phones reconnect without re-scanning. Also reflect the
+      // saved keep-code-between-sessions preference.
       electronAPI.remote.getState().then((st) => {
-        if (st && st.enabled && !active && !busy) enableRemote();
+        if (!st) return;
+        keepCodeEl.checked = !!st.persistCode;
+        if (st.enabled && !active && !busy) enableRemote();
       }).catch(() => {});
     })();
   </script>

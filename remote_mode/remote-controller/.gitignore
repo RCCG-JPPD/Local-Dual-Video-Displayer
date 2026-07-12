@@ -11,6 +11,9 @@
 # production
 /build
 
+# firebase CLI deploy cache (machine-local, regenerated on every deploy)
+.firebase/
+
 # misc
 .DS_Store
 .env.local

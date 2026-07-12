@@ -18,8 +18,9 @@
 </head>
 <body>
   <div id="placeholder">Waiting for a YouTube video…</div>
-  <!-- A real webview navigates to youtube.com itself, so the file:// embed
-       restriction ("Error 153") does not apply, and we can script the <video>. -->
+  <!-- A webview so we can script the <video> directly. Embed requests from a
+       file:// app carry no Referer, which YouTube rejects ("Error 153") — the
+       main process injects one (see setupYouTubeEmbedReferer in main.js). -->
   <webview id="yt" allowpopups></webview>
   <canvas id="preview-canvas"></canvas>
 
@@ -31,13 +32,14 @@
     let currentVideoId = '';
     let webviewReady = false;
 
-    function loadYouTubeVideo(input) {
+    function loadYouTubeVideo(input, autoplay = true) {
       const id = electronAPI.extractYouTubeId(input);
       if (!id) { console.warn('Could not parse a YouTube video ID from:', input); return; }
       currentVideoId = id;
       placeholder.style.display = 'none';
+      yt.style.display = 'inline-flex';
       // enablejsapi so the page exposes the player; we also script <video> directly.
-      yt.src = `https://www.youtube.com/embed/${id}?autoplay=1&controls=1&rel=0&modestbranding=1&playsinline=1&enablejsapi=1`;
+      yt.src = `https://www.youtube.com/embed/${id}?autoplay=${autoplay ? 1 : 0}&controls=1&rel=0&modestbranding=1&playsinline=1&enablejsapi=1`;
     }
 
     yt.addEventListener('dom-ready', () => { webviewReady = true; });
@@ -53,6 +55,12 @@
       switch (cmd) {
         case 'play':  ytExec("var v=document.querySelector('video'); if(v) v.play();"); break;
         case 'pause': ytExec("var v=document.querySelector('video'); if(v) v.pause();"); break;
+        case 'clear':
+          currentVideoId = '';
+          yt.src = 'about:blank';
+          yt.style.display = 'none'; // about:blank paints white — keep the screen black
+          placeholder.style.display = 'flex';
+          break;
         case 'toggle': ytExec("var v=document.querySelector('video'); if(v){ v.paused? v.play() : v.pause(); }"); break;
         case 'setVolume': {
           const vol = Math.max(0, Math.min(1, Number(data) || 0));
@@ -77,6 +85,13 @@
       } catch (_) {}
     }
     setInterval(capturePreviewFrame, 1500);
+
+    // Restore the last video on startup — lets a video be queued from the
+    // controller before any screen is assigned to YouTube. Loaded PAUSED:
+    // only an explicit "Load on YouTube screen" from the controller autoplays.
+    electronAPI.getConfig()
+      .then(cfg => { const y = cfg && cfg.youtube; if (y && y.url) loadYouTubeVideo(y.url, false); })
+      .catch(() => {});
 
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.close(); });
     console.log('YouTube player ready');

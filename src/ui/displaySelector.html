@@ -264,6 +264,23 @@
         }
 
         displaysList = displays;
+
+        // Pre-select last run's roles (matched by display id) so keeping the
+        // previous setup is one click. Skipped if the user already picked
+        // roles in this session (e.g. after a Retry).
+        if (Object.keys(roleAssignments).length === 0 && electronAPI.getConfig) {
+          try {
+            const saved = await electronAPI.getConfig();
+            const connected = new Set(displaysList.map(d => String(d.id)));
+            (saved && saved.displays ? saved.displays : []).forEach(d => {
+              if (d.role && d.role !== 'unassigned' && d.role !== 'controller'
+                  && connected.has(String(d.id))) {
+                roleAssignments[d.id] = d.role;
+              }
+            });
+          } catch (_) { /* no saved setup — start blank */ }
+        }
+
         setLoading(false);
         document.getElementById('displays-container').classList.remove('hidden');
         renderDisplays();

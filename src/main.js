@@ -153,14 +153,10 @@ function startup() {
     userConfig = configManager.loadConfig();
     console.log('Config loaded:', userConfig.version);
 
-    // Check if config is valid (has displays configured)
-    if (configManager.isConfigValid(userConfig)) {
-      console.log('Using saved configuration');
-      launchDisplayWindows();
-    } else {
-      console.log('No valid configuration found - showing selector');
-      showDisplaySelector();
-    }
+    // Always start on the mode/screen picker instead of auto-launching the
+    // saved setup. The selector pre-fills last run's roles, so keeping the
+    // same setup is a single click on Start.
+    showDisplaySelector();
   } catch (error) {
     console.error('Startup error:', error);
     app.quit();
@@ -171,8 +167,28 @@ function startup() {
 // ELECTRON APP EVENTS
 // ════════════════════════════════════════════════════════════════
 
+/**
+ * YouTube refuses to configure its embed player when the request carries no
+ * HTTP Referer ("Video unavailable — Error 153"), which is always the case for
+ * pages loaded from file://. Identify our hosted controller site as the
+ * embedder on embed-document requests only; everything else is untouched.
+ * Videos whose owners disable embedding entirely (errors 101/150) still won't play.
+ */
+function setupYouTubeEmbedReferer() {
+  const { session } = require('electron');
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: ['https://www.youtube.com/embed/*', 'https://www.youtube-nocookie.com/embed/*'] },
+    (details, callback) => {
+      const headers = details.requestHeaders;
+      if (!headers.Referer && !headers.referer) headers.Referer = 'https://multi-displayer.web.app/';
+      callback({ requestHeaders: headers });
+    },
+  );
+}
+
 app.on('ready', () => {
   console.log('Electron app ready');
+  setupYouTubeEmbedReferer();
   startup();
   registerShortcuts();
 });

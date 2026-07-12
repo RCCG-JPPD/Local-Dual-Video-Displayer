@@ -7,6 +7,11 @@ Each connected screen can be assigned a role — and the **same role can go on s
 
 - **Video** — a local video, fullscreen. Put it on as many screens as you like; the first carries audio (master
   volume from the controller) and the rest are muted to avoid echo.
+- **Presentation** — a PowerPoint (`.pptx`/`.ppt`/`.odp`), PDF, or a set of slide images, fullscreen.
+  **PowerPoint decks keep their animations and slide transitions**: "Next" plays the next animation step first —
+  exactly like PowerPoint — then advances with the slide's own transition. Needs a free
+  [LibreOffice](https://www.libreoffice.org) install (used for conversion + its animated presentation engine);
+  without it, export the deck to PDF and slides show statically.
 - **YouTube** — plays a YouTube link fullscreen.
 - **Web Page** — shows any website fullscreen (rendered in a real embedded Chromium view).
 - **Clock** — a clock on a solid light/dark background, shown in a chosen **corner** at **tiny/very small/small/medium/large** size.
@@ -72,8 +77,18 @@ internet — nothing to install on the phone:
    **<https://multi-displayer.web.app>** and type the 6-character **session code** shown on screen.)
 3. When the phone joins, the panel shows **✓ 1 device connected**. Multiple devices can share one code.
 
-The phone shows live status (current slide, video title/time) and buttons for slides (prev/next/blank), slideshow
-(prev/next/play-pause), and video (play-pause/prev/next/stop).
+The phone is a **full remote** for every screen role, and only shows sections that have a screen assigned:
+
+| Section | Controls from the phone |
+| --- | --- |
+| **Slides** | previous / next / blank, jump to any slide number |
+| **Slideshow** | previous / next, play-pause |
+| **Video** | pick any playlist entry, play-pause, **seek**, **volume**, stop |
+| **YouTube** | send a link, play / pause / mute, volume |
+| **Web Page** | open an address, back / forward / reload |
+| **Spreadsheet** | switch sheets |
+
+It also shows live status — the current slide number, video title and playback time.
 
 **The code is per app run:** it's generated once when first needed and stays the same until you quit the app —
 changing displays or toggling Remote Mode off/on keeps paired phones working, and they reconnect automatically.
@@ -150,6 +165,9 @@ development and in an installed build.
 - **Web Page** uses a Chromium `<webview>`, which loads sites that block plain `<iframe>` embedding. Some sites with
   strict policies may still refuse to load.
 - **YouTube** uses the standard embed player; videos that disable embedding won't play.
+- **Presentation animations** are played by LibreOffice's presentation engine (animated SVG export), so fidelity
+  matches what LibreOffice Impress shows for the deck — the vast majority of PowerPoint transitions and entrance
+  effects work; a few exotic effects may render simplified. Without LibreOffice, decks fall back to static PDF pages.
 
 ## License
 

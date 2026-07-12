@@ -15,6 +15,11 @@
     #slide-canvas, #slide-img {
       max-width: 100%; max-height: 100%; object-fit: contain; display: none;
     }
+    /* Animated deck: LibreOffice's SVG presentation engine runs in an iframe. */
+    #svg-frame {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      border: none; background: #000; display: none;
+    }
     #message {
       color: #888; font-size: 22px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -30,6 +35,7 @@
     <img id="slide-img" alt="">
     <div id="message">No presentation loaded — add one from the controller.</div>
   </div>
+  <iframe id="svg-frame"></iframe>
   <div id="blank-overlay"></div>
 
   <!-- Vendored pdf.js (UMD build exposes window.pdfjsLib). -->
@@ -43,22 +49,78 @@
     const canvasEl = document.getElementById('slide-canvas');
     const imgEl = document.getElementById('slide-img');
     const messageEl = document.getElementById('message');
+    const frameEl = document.getElementById('svg-frame');
 
-    let state = { type: 'pdf', source: '', images: [], index: 0, count: 0 };
+    let state = { type: 'pdf', source: '', svg: '', images: [], index: 0, count: 0 };
     let pdfDoc = null;
     let renderToken = 0; // guards against overlapping async renders
+    let svgMode = false; // animated deck playing in the iframe engine
 
     function showOnly(el) {
       canvasEl.style.display = 'none';
       imgEl.style.display = 'none';
       messageEl.style.display = 'none';
-      if (el) el.style.display = el === messageEl ? 'block' : 'block';
+      frameEl.style.display = 'none';
+      if (el) el.style.display = 'block';
     }
+
+    // ── Animated SVG mode: drive LibreOffice's embedded presentation engine
+    //    the same way its own arrow-key bindings do. ──
+    function svgWin() {
+      try { return frameEl.contentWindow; } catch (_) { return null; }
+    }
+    function svgCall(fn) {
+      const w = svgWin();
+      if (!w || typeof w.dispatchEffects !== 'function') return false;
+      try { fn(w); return true; } catch (err) { console.error('SVG engine call failed:', err); return false; }
+    }
+    function loadSvg(svgPath) {
+      svgMode = true;
+      frameEl.onload = () => {
+        // Make the fixed-size SVG root fill the screen (viewBox handles scaling).
+        svgCall((w) => {
+          const root = w.document.documentElement;
+          root.setAttribute('width', '100%');
+          root.setAttribute('height', '100%');
+        });
+        // Restore the saved position (after a restart / reconfigure).
+        if (state.index > 0) svgCall((w) => w.aSlideShow.displaySlide(state.index, true));
+        reportIndex();
+      };
+      frameEl.src = electronAPI.toFileURL(svgPath);
+      showOnly(frameEl);
+    }
+
+    // The engine owns the live index in svg mode (animations consume presses),
+    // so poll it and report changes; pdf/images report from renderSlide.
+    let lastReported = -1;
+    function reportIndex() {
+      if (svgMode) {
+        svgCall((w) => {
+          if (typeof w.nCurSlide === 'number') state.index = w.nCurSlide;
+        });
+      }
+      if (state.index !== lastReported) {
+        lastReported = state.index;
+        electronAPI.sendPresentationIndex(state.index);
+      }
+    }
+    setInterval(reportIndex, 500);
 
     async function loadSource(data) {
       state = { ...state, ...(data || {}) };
       pdfDoc = null;
       renderToken++;
+      svgMode = false;
+      frameEl.onload = null;
+      lastReported = -1; // re-announce the index for the new source
+
+      // Animated deck available → the SVG engine takes over rendering.
+      if (state.svg && nodeAPI.fs.existsSync(state.svg)) {
+        loadSvg(state.svg);
+        return;
+      }
+      frameEl.src = 'about:blank';
 
       if (state.type === 'pdf' && state.source) {
         try {
@@ -113,9 +175,18 @@
       }
     }
 
-    function goto(i) { state.index = i; renderSlide(); }
-    function next() { if (state.index < state.count - 1) goto(state.index + 1); }
-    function prev() { if (state.index > 0) goto(state.index - 1); }
+    function goto(i) {
+      if (svgMode) { svgCall((w) => w.aSlideShow.displaySlide(i, true)); reportIndex(); return; }
+      state.index = i; renderSlide(); reportIndex();
+    }
+    function next() {
+      if (svgMode) { svgCall((w) => w.dispatchEffects(1)); return; } // plays the next animation, or advances with its transition
+      if (state.index < state.count - 1) goto(state.index + 1);
+    }
+    function prev() {
+      if (svgMode) { svgCall((w) => w.aSlideShow.rewindEffect()); return; }
+      if (state.index > 0) goto(state.index - 1);
+    }
 
     // Blackout toggle (remote "blank" command). `on` may be boolean, else toggle.
     function setBlank(on) {
@@ -132,8 +203,8 @@
       else if (cmd === 'blank') setBlank(data);
     });
 
-    // Re-fit the current slide if the window resizes.
-    window.addEventListener('resize', () => { if (state.type === 'pdf') renderSlide(); });
+    // Re-fit the current slide if the window resizes (SVG scales itself).
+    window.addEventListener('resize', () => { if (!svgMode && state.type === 'pdf') renderSlide(); });
 
     // Restore the last presentation on startup (after restart / reconfigure).
     electronAPI.getConfig()
