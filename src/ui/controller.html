@@ -1140,6 +1140,11 @@
 
     scrub.oninput = () => send('seek', scrub.value * duration / 100);
 
+    // Track dragging so incoming time updates don't yank the handle around
+    // mid-drag (onVideoTime checks this flag).
+    scrub.addEventListener('pointerdown', () => { scrub.dragging = true; });
+    window.addEventListener('pointerup', () => { scrub.dragging = false; });
+
     // Listen for video time updates
     electronAPI.onVideoTime((currentTime, dur) => {
       duration = dur;
@@ -1658,7 +1663,7 @@
         electronAPI.loadSpreadsheet(s.source).then(data => {
           if (data && !data.error) {
             populateSheets(data.sheetNames);
-            xlSheetSel.value = String(s.activeSheet || 0);
+            xlSheetSel.value = String(data.activeSheet || 0);
             xlHint.textContent = `✓ ${pathBasename(s.source)}`;
           }
         }).catch(() => {});
@@ -1964,6 +1969,13 @@
       }
 
       // Publish a snapshot of the current state for the phone to render.
+      // Only actually written to Firebase when something changed — the 1s poll
+      // otherwise costs a write per second (~86k/day) for idle sessions. A slow
+      // heartbeat keeps updatedAt moving so the session never looks frozen.
+      let lastPublished = '';   // last written snapshot, minus updatedAt
+      let lastPublishTs = 0;
+      const HEARTBEAT_MS = 10000;
+
       function publishState() {
         if (!stateRef) return;
         const activeNav = document.querySelector('.nav-item.active');
@@ -2024,6 +2036,12 @@
             active: Number(xlSel.value) || 0,
           } : {},
         });
+
+        const comparable = JSON.stringify({ ...snapshot, updatedAt: 0 });
+        const now = Date.now();
+        if (comparable === lastPublished && now - lastPublishTs < HEARTBEAT_MS) return;
+        lastPublished = comparable;
+        lastPublishTs = now;
         stateRef.set(snapshot).catch(() => {});
       }
 
@@ -2092,6 +2110,7 @@
         active = true;
         electronAPI.remote.setEnabled(true);
         showPairing(sessionCode);
+        lastPublished = ''; // new session ref — force the first write
         publishState();
         pollTimer = setInterval(publishState, 1000);
       }

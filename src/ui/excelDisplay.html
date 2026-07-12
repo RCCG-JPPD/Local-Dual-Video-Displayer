@@ -46,7 +46,9 @@
     const tabsEl = document.getElementById('tabs');
     const hostEl = document.getElementById('table-host');
 
-    let data = { sheetNames: [], htmlBySheet: [], activeSheet: 0 };
+    // Main renders one sheet at a time; switching sheets arrives as a fresh
+    // excel-load payload (so this window never holds every sheet's HTML).
+    let data = { sheetNames: [], html: '', activeSheet: 0 };
 
     function renderTabs() {
       tabsEl.innerHTML = '';
@@ -60,25 +62,21 @@
     }
 
     function renderSheet() {
-      const html = (data.htmlBySheet || [])[data.activeSheet];
-      hostEl.innerHTML = html || '<div id="message">This sheet is empty.</div>';
+      hostEl.innerHTML = data.html || '<div id="message">This sheet is empty.</div>';
       hostEl.scrollTop = 0; hostEl.scrollLeft = 0;
       renderTabs();
     }
 
     function load(payload) {
       if (!payload || payload.error) return;
-      data = { sheetNames: [], htmlBySheet: [], activeSheet: 0, ...payload };
+      data = { sheetNames: [], html: '', activeSheet: 0, ...payload };
       renderSheet();
     }
 
     electronAPI.onExcelLoad(load);
-    electronAPI.onExcelCommand((cmd, value) => {
-      if (cmd === 'selectSheet' && typeof value === 'number') {
-        data.activeSheet = Math.max(0, Math.min(value, (data.sheetNames || []).length - 1));
-        renderSheet();
-      } else if (cmd === 'clear') {
-        data = { sheetNames: [], htmlBySheet: [], activeSheet: 0 };
+    electronAPI.onExcelCommand((cmd) => {
+      if (cmd === 'clear') {
+        data = { sheetNames: [], html: '', activeSheet: 0 };
         hostEl.innerHTML = '<div id="message">No spreadsheet loaded — open one from the controller.</div>';
         renderTabs();
       }

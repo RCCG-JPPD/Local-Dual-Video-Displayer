@@ -56,3 +56,23 @@ test('loadConfig returns defaults on first run', () => {
   assert.equal(cfg.displays.length, 0);
   assert.ok(cfg.playback);
 });
+
+test('saveConfig serves reads from memory and flush() persists for a fresh reader', () => {
+  const { mgr, dir } = makeManager();
+  mgr.saveConfig({ displays: [{ role: 'clock' }], version: '2.0.0' });
+  // Same manager sees the write immediately (memory), before any disk flush.
+  assert.equal(mgr.loadConfig().displays[0].role, 'clock');
+  mgr.flush();
+  // A brand-new manager on the same dir (≈ next app run) reads the flushed file.
+  const mgr2 = new ConfigManager({ getPath: () => dir });
+  assert.equal(mgr2.loadConfig().displays[0].role, 'clock');
+});
+
+test('resetConfig drops the cache and any pending write', () => {
+  const { mgr, dir } = makeManager();
+  mgr.saveConfig({ displays: [{ role: 'video' }], version: '2.0.0' });
+  mgr.resetConfig();
+  mgr.flush(); // must not resurrect the deleted config
+  const mgr2 = new ConfigManager({ getPath: () => dir });
+  assert.equal(mgr2.loadConfig().displays.length, 0); // back to defaults
+});

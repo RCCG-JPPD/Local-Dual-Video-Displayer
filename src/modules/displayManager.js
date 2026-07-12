@@ -245,12 +245,15 @@ class DisplayManager {
     window.setAlwaysOnTop(true, 'screen-saver');
     window.loadFile(path.join(UI_DIR, 'clockDisplay.html'));
 
-    // Keep it pinned above other always-on-top windows (mirrors the old clock).
+    // Keep it pinned above other always-on-top windows. 5s is plenty — new
+    // content windows only appear around a reconfigure (which recreates the
+    // clock anyway), and re-asserting z-order every second churns the
+    // window server for nothing.
     const enforce = setInterval(() => {
       if (window.isDestroyed()) { clearInterval(enforce); return; }
       window.setAlwaysOnTop(true, 'screen-saver');
       window.moveTop();
-    }, 1000);
+    }, 5000);
 
     const entry = { window, role: 'clock', displayIndex, overlay: !!opts.overlay };
     this.contentWindows.push(entry);

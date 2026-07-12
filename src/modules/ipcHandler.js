@@ -22,6 +22,28 @@ class IPCHandler {
     );
   }
 
+  /**
+   * Render one sheet of a workbook as HTML. The parsed workbook is cached so
+   * switching sheets doesn't re-read the file.
+   */
+  _renderSheet(filePath, sheetIndex) {
+    try {
+      const XLSX = require('xlsx');
+      if (!this._workbookCache || this._workbookCache.source !== filePath) {
+        this._workbookCache = { source: filePath, wb: XLSX.readFile(filePath) };
+      }
+      const wb = this._workbookCache.wb;
+      const sheetNames = wb.SheetNames;
+      const i = Math.max(0, Math.min(Number(sheetIndex) || 0, sheetNames.length - 1));
+      const html = XLSX.utils.sheet_to_html(wb.Sheets[sheetNames[i]], { id: 'sheet', editable: false });
+      return { source: filePath, sheetNames, activeSheet: i, html };
+    } catch (err) {
+      console.error('load-spreadsheet failed:', err);
+      this._workbookCache = null;
+      return { error: err && err.message ? err.message : String(err) };
+    }
+  }
+
   /** Session state + the persisted-code preference, for the Remote panel. */
   _remoteState() {
     const cfg = this.configManager.loadConfig();
@@ -255,31 +277,38 @@ class IPCHandler {
     // SPREADSHEET (role 'excel')
     // ════════════════════════════════════════════════════════════════
 
-    // Parse a workbook with SheetJS (main process) → { sheetNames, htmlBySheet }.
-    // Also persist the source and broadcast to the excel screen(s).
+    // Parse a workbook with SheetJS (main process) and render ONE sheet as
+    // HTML → { source, sheetNames, activeSheet, html }. Only the visible
+    // sheet is converted — rendering every sheet up front multiplies big
+    // workbooks into HTML strings held in every window.
     ipcMain.handle('load-spreadsheet', async (event, filePath) => {
       if (!filePath) return null;
-      let data;
-      try {
-        const XLSX = require('xlsx');
-        const wb = XLSX.readFile(filePath);
-        const sheetNames = wb.SheetNames;
-        const htmlBySheet = sheetNames.map(name =>
-          XLSX.utils.sheet_to_html(wb.Sheets[name], { id: 'sheet', editable: false }));
-        data = { source: filePath, sheetNames, htmlBySheet, activeSheet: 0 };
-      } catch (err) {
-        console.error('load-spreadsheet failed:', err);
-        return { error: err && err.message ? err.message : String(err) };
-      }
-      this.configManager.updateConfig({ spreadsheet: { source: filePath, activeSheet: 0 } });
+      // Restoring the same workbook keeps its last selected sheet.
+      const cfg = this.configManager.loadConfig();
+      const active = (cfg.spreadsheet && cfg.spreadsheet.source === filePath)
+        ? (cfg.spreadsheet.activeSheet || 0) : 0;
+      const data = this._renderSheet(filePath, active);
+      if (data.error) return data;
+      this.configManager.updateConfig({ spreadsheet: { source: filePath, activeSheet: data.activeSheet } });
       this.broadcastToRole('excel', 'excel-load', data);
       return data;
     });
 
     ipcMain.on('excel-command', (event, cmd, data) => {
       if (cmd === 'selectSheet' && typeof data === 'number') {
-        this.configManager.updateConfig({ spreadsheet: { activeSheet: data } });
-      } else if (cmd === 'clear') {
+        // Render the newly selected sheet here and push it as a fresh load —
+        // displays no longer hold every sheet's HTML.
+        const cfg = this.configManager.loadConfig();
+        const source = cfg.spreadsheet && cfg.spreadsheet.source;
+        if (!source) return;
+        const payload = this._renderSheet(source, data);
+        if (payload.error) return;
+        this.configManager.updateConfig({ spreadsheet: { activeSheet: payload.activeSheet } });
+        this.broadcastToRole('excel', 'excel-load', payload);
+        return;
+      }
+      if (cmd === 'clear') {
+        this._workbookCache = null;
         this.configManager.updateConfig({ spreadsheet: { source: '', activeSheet: 0 } });
       }
       this.broadcastToRole('excel', 'excel-command', cmd, data);

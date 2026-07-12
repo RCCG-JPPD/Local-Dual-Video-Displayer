@@ -8,7 +8,6 @@ class WindowLifecycleManager {
   constructor(app) {
     this.app = app;
     this.parentWindow = null; // Controller window
-    this.childWindows = new Set(); // Display windows (public, private, clock, etc.)
   }
 
   /**
@@ -33,25 +32,7 @@ class WindowLifecycleManager {
   }
 
   /**
-   * Register a display window as child
-   */
-  registerChildWindow(displayWindow) {
-    if (!displayWindow) return;
-
-    const windowId = displayWindow.webContents.id;
-    this.childWindows.add(windowId);
-
-    // Clean up from set when child closes
-    displayWindow.on('closed', () => {
-      this.childWindows.delete(windowId);
-      console.log(`Child window closed. Remaining children: ${this.childWindows.size}`);
-    });
-
-    return displayWindow;
-  }
-
-  /**
-   * Close all child windows
+   * Close every window except the parent (used when the controller closes).
    */
   closeAllChildren() {
     const { BrowserWindow } = require('electron');
@@ -62,17 +43,6 @@ class WindowLifecycleManager {
         win.close();
       }
     });
-  }
-
-  /**
-   * Get status of window hierarchy
-   */
-  getStatus() {
-    return {
-      parentAlive: this.parentWindow && !this.parentWindow.isDestroyed(),
-      childrenCount: this.childWindows.size,
-      childrenIds: Array.from(this.childWindows),
-    };
   }
 }
 

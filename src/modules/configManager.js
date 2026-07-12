@@ -14,23 +14,37 @@ class ConfigManager {
     this.configFile = path.join(this.configDir, 'app-config.json');
     this.legacyConfigFile = path.join(this.configDir, 'legacy-config.json');
 
+    // In-memory copy of the config. Serves every read, and writes are
+    // debounced to disk — updateConfig fires on hot paths (web navigation,
+    // slide index changes), and each used to be a synchronous file
+    // read + write on the main process.
+    this._cache = null;
+    this._flushTimer = null;
+
     // Ensure config directory exists
     if (!fs.existsSync(this.configDir)) {
       fs.mkdirSync(this.configDir, { recursive: true });
     }
+
+    // Persist any pending write before the app exits. (Unit tests pass a
+    // stub app with no event emitter — guard for it.)
+    if (typeof app.on === 'function') {
+      app.on('will-quit', () => this.flush());
+    }
   }
 
   /**
-   * Load configuration from disk or return defaults if not found
+   * Load configuration: from memory once cached, else disk, else defaults.
    */
   loadConfig() {
+    if (this._cache) return this._cache;
     try {
       // Check if new config exists
       if (fs.existsSync(this.configFile)) {
         const data = fs.readFileSync(this.configFile, 'utf8');
-        const config = JSON.parse(data);
+        this._cache = JSON.parse(data);
         console.log('Loaded config from:', this.configFile);
-        return config;
+        return this._cache;
       }
 
       // Check if we need to migrate from old setup
@@ -41,7 +55,7 @@ class ConfigManager {
         return migratedConfig;
       }
 
-      // Return default config for first run
+      // Return default config for first run (not cached — nothing saved yet)
       console.log('First run - using default config');
       return JSON.parse(JSON.stringify(configSchema));
     } catch (error) {
@@ -76,6 +90,8 @@ class ConfigManager {
    * Delete the saved configuration (full reset → next launch shows the selector).
    */
   resetConfig() {
+    this._cache = null;
+    if (this._flushTimer) { clearTimeout(this._flushTimer); this._flushTimer = null; }
     try {
       if (fs.existsSync(this.configFile)) {
         fs.unlinkSync(this.configFile);
@@ -89,14 +105,27 @@ class ConfigManager {
   }
 
   /**
-   * Save configuration to disk
+   * Save configuration: updates the in-memory copy immediately and debounces
+   * the disk write (bursts of updates → one file write).
    */
   saveConfig(config) {
+    config.lastModified = new Date().toISOString();
+    this._cache = config;
+    if (!this._flushTimer) {
+      this._flushTimer = setTimeout(() => this.flush(), 500);
+      if (this._flushTimer.unref) this._flushTimer.unref(); // never hold the app open
+    }
+    return true;
+  }
+
+  /**
+   * Write the in-memory config to disk now (pending debounce or app quit).
+   */
+  flush() {
+    if (this._flushTimer) { clearTimeout(this._flushTimer); this._flushTimer = null; }
+    if (!this._cache) return true;
     try {
-      config.lastModified = new Date().toISOString();
-      const data = JSON.stringify(config, null, 2);
-      fs.writeFileSync(this.configFile, data, 'utf8');
-      console.log('Config saved to:', this.configFile);
+      fs.writeFileSync(this.configFile, JSON.stringify(this._cache, null, 2), 'utf8');
       return true;
     } catch (error) {
       console.error('Error saving config:', error);
