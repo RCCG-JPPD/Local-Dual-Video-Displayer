@@ -653,7 +653,7 @@
     <div class="controls-section tab-panel" id="section-presentation" data-panel="presentation">
       <h2>📽️ Presentation</h2>
       <div class="button-group">
-        <button id="presLoadBtn" class="btn-primary">📂 Load PDF / images…</button>
+        <button id="presLoadBtn" class="btn-primary">📂 Load PowerPoint / PDF / images…</button>
         <button id="presClearBtn" class="btn-danger">🧹 Clear</button>
       </div>
       <div class="playback-controls">
@@ -661,7 +661,7 @@
         <span id="presCounter" class="time-display" style="min-width:120px;text-align:center;">No slides</span>
         <button id="presNext">Next ▶</button>
       </div>
-      <div class="section-hint" id="presHint">Export your slides to PDF (or pick a set of images), then navigate them here.</div>
+      <div class="section-hint" id="presHint">Load a PowerPoint (.pptx / .ppt / .odp — animations included, needs LibreOffice), a PDF, or a set of slide images.</div>
     </div>
 
     <!-- MEDIA SLIDESHOW SECTION -->
@@ -1428,7 +1428,7 @@
       electronAPI.sendPresentationLoad(presState);
       updatePresCounter();
       document.getElementById('presHint').textContent =
-        'Export your slides to PDF (or pick a set of images), then navigate them here.';
+        'Load a PowerPoint (.pptx / .ppt / .odp — animations included, needs LibreOffice), a PDF, or a set of slide images.';
     }
     document.getElementById('presClearBtn').onclick = () => {
       clearPresentation();
