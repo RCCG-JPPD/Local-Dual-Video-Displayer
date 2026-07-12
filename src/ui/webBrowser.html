@@ -96,6 +96,14 @@
     }
 
     function navigateToUrl(url) {
+      // 'about:blank' is the controller's "clear" — back to the placeholder.
+      if (url === 'about:blank') {
+        currentUrl = '';
+        webFrame.src = 'about:blank';
+        if (placeholder) placeholder.style.display = 'flex';
+        return;
+      }
+
       const normalized = electronAPI.normalizeWebUrl(url);
       if (!normalized) return;
 
@@ -171,6 +179,12 @@
 
     // Initialize (placeholder stays until the controller sends a URL)
     initialize();
+
+    // Restore the last page on startup — lets a page be queued from the
+    // controller before any screen is assigned to Web.
+    electronAPI.getConfig()
+      .then(cfg => { const w = cfg && cfg.web; if (w && w.url) navigateToUrl(w.url); })
+      .catch(() => {});
 
     console.log('Web browser display ready');
   </script>

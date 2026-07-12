@@ -110,6 +110,12 @@ class IPCHandler {
       return canceled ? [] : filePaths;
     });
 
+    // Controller persists playlist edits (remove / clear) — additions are
+    // persisted by the open-file-dialog handler above.
+    ipcMain.on('save-playlist', (event, playlist) => {
+      this.configManager.savePlaylist(Array.isArray(playlist) ? playlist : []);
+    });
+
     // Presentation: pick a PowerPoint/PDF or a set of slide images.
     ipcMain.handle('open-presentation-dialog', async () => {
       return this._openFiles('Choose a presentation, PDF, or slide images', [
@@ -258,6 +264,8 @@ class IPCHandler {
     ipcMain.on('excel-command', (event, cmd, data) => {
       if (cmd === 'selectSheet' && typeof data === 'number') {
         this.configManager.updateConfig({ spreadsheet: { activeSheet: data } });
+      } else if (cmd === 'clear') {
+        this.configManager.updateConfig({ spreadsheet: { source: '', activeSheet: 0 } });
       }
       this.broadcastToRole('excel', 'excel-command', cmd, data);
     });
@@ -277,16 +285,22 @@ class IPCHandler {
     // WEB / YOUTUBE
     // ════════════════════════════════════════════════════════════════
 
+    // URLs are persisted so a Web/YouTube screen assigned later (or on the
+    // next run) restores the page — content can be prepared before any
+    // screen has the role. 'about:blank' means cleared.
     ipcMain.on('web-url-change', (event, url) => {
+      this.configManager.updateConfig({ web: { url: url === 'about:blank' ? '' : url } });
       this.broadcastToRole('web', 'web-url-change', url);
     });
 
     ipcMain.on('youtube-url-change', (event, url) => {
+      this.configManager.updateConfig({ youtube: { url } });
       this.broadcastToRole('youtube', 'youtube-url-change', url);
     });
 
-    // Controller → YouTube screens: play / pause / setVolume / mute.
+    // Controller → YouTube screens: play / pause / setVolume / mute / clear.
     ipcMain.on('youtube-command', (event, cmd, data) => {
+      if (cmd === 'clear') this.configManager.updateConfig({ youtube: { url: '' } });
       this.broadcastToRole('youtube', 'youtube-command', cmd, data);
     });
 

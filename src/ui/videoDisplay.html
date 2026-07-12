@@ -208,6 +208,14 @@
           isPlaying = false;
           break;
 
+        case 'clear':
+          console.log('Clearing video...');
+          vid.pause();
+          vid.removeAttribute('src');
+          vid.load(); // unload the frame so the screen goes back to black
+          isPlaying = false;
+          break;
+
         default:
           console.warn(`Unknown command: ${cmd}`);
       }

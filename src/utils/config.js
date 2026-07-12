@@ -76,6 +76,18 @@ module.exports = {
     activeSheet: 0,  // index of the visible sheet
   },
 
+  // YouTube screen (role 'youtube'): the last loaded video URL, restored when
+  // a YouTube screen is (re)created — so a video can be queued before any
+  // screen has the role.
+  youtube: {
+    url: '',
+  },
+
+  // Web screen (role 'web'): the last mirrored page URL, restored the same way.
+  web: {
+    url: '',
+  },
+
   // Canvas preview settings
   preview: {
     enabled: true,

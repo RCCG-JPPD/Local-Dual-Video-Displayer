@@ -37,6 +37,7 @@
       if (!id) { console.warn('Could not parse a YouTube video ID from:', input); return; }
       currentVideoId = id;
       placeholder.style.display = 'none';
+      yt.style.display = 'inline-flex';
       // enablejsapi so the page exposes the player; we also script <video> directly.
       yt.src = `https://www.youtube.com/embed/${id}?autoplay=1&controls=1&rel=0&modestbranding=1&playsinline=1&enablejsapi=1`;
     }
@@ -54,6 +55,12 @@
       switch (cmd) {
         case 'play':  ytExec("var v=document.querySelector('video'); if(v) v.play();"); break;
         case 'pause': ytExec("var v=document.querySelector('video'); if(v) v.pause();"); break;
+        case 'clear':
+          currentVideoId = '';
+          yt.src = 'about:blank';
+          yt.style.display = 'none'; // about:blank paints white — keep the screen black
+          placeholder.style.display = 'flex';
+          break;
         case 'toggle': ytExec("var v=document.querySelector('video'); if(v){ v.paused? v.play() : v.pause(); }"); break;
         case 'setVolume': {
           const vol = Math.max(0, Math.min(1, Number(data) || 0));
@@ -78,6 +85,12 @@
       } catch (_) {}
     }
     setInterval(capturePreviewFrame, 1500);
+
+    // Restore the last video on startup — lets a video be queued from the
+    // controller before any screen is assigned to YouTube.
+    electronAPI.getConfig()
+      .then(cfg => { const y = cfg && cfg.youtube; if (y && y.url) loadYouTubeVideo(y.url); })
+      .catch(() => {});
 
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.close(); });
     console.log('YouTube player ready');

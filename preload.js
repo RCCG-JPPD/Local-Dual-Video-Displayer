@@ -192,6 +192,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Open file dialog for video selection
   selectVideoFiles: () => ipcRenderer.invoke('open-file-dialog'),
 
+  // Persist the controller's playlist after edits (remove / clear) so it
+  // matches on the next run — additions are persisted by the file dialog.
+  savePlaylist: (playlist) => ipcRenderer.send('save-playlist', playlist),
+
   // Convert an absolute filesystem path into a correct file:// URL.
   // Uses Node's pathToFileURL so Windows drive letters (C:\), spaces and
   // unicode are encoded properly — `file://${path}` breaks on Windows.
