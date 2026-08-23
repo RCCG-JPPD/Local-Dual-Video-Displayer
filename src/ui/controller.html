@@ -278,6 +278,47 @@
       width: 150px;
     }
 
+    /* ZOOM CONTROLS (one block per media tab) */
+    .zoom-container {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 15px;
+    }
+
+    .zoom-container label {
+      font-size: 13px;
+      color: #666;
+    }
+
+    .zoom-container .zoom-presets {
+      display: flex;
+      gap: 6px;
+    }
+
+    .zoom-container .zoom-presets button {
+      padding: 6px 12px;
+    }
+
+    /* The preset matching the current mode+scale reads as selected. */
+    .zoom-container .zoom-presets button.active {
+      background: #667eea;
+      color: white;
+      border-color: #667eea;
+    }
+
+    .zoom-container input[type=range] {
+      width: 150px;
+    }
+
+    .zoom-value {
+      font-size: 13px;
+      color: #666;
+      min-width: 44px;
+      text-align: right;
+    }
+
     /* DISPLAY MANAGEMENT */
     .display-management {
       border-top: 1px solid #e0e0e0;
@@ -550,6 +591,18 @@
         <input id="vol" type="range" min="0" max="1" step="0.01" value="1">
       </div>
 
+      <!-- Zoom: fixes small videos sitting in the middle of a big screen -->
+      <div class="zoom-container">
+        <label for="vidZoom">🔍 Zoom</label>
+        <div class="zoom-presets">
+          <button id="vidZoomFit" title="Fit the whole video on screen">Fit</button>
+          <button id="vidZoomFill" title="Fill the screen, cropping the edges">Fill</button>
+          <button id="vidZoomNative" title="Original size, never enlarged">100%</button>
+        </div>
+        <input id="vidZoom" type="range" min="0.5" max="3" step="0.05" value="1">
+        <span class="zoom-value" id="vidZoomVal">100%</span>
+      </div>
+
     </div>
 
     <!-- YOUTUBE SECTION -->
@@ -568,6 +621,14 @@
           <label for="ytVol" style="font-size:13px;color:#666;">🔊 Volume</label>
           <input id="ytVol" type="range" min="0" max="1" step="0.01" value="1" style="width:140px;">
         </span>
+      </div>
+      <div class="zoom-container">
+        <label for="ytZoom">🔍 Zoom</label>
+        <div class="zoom-presets">
+          <button id="ytZoomFit" title="Reset to the embed's own size">Fit</button>
+        </div>
+        <input id="ytZoom" type="range" min="0.5" max="3" step="0.05" value="1">
+        <span class="zoom-value" id="ytZoomVal">100%</span>
       </div>
       <div class="section-hint" id="ytHint"></div>
     </div>
@@ -688,6 +749,16 @@
         <button id="slidePrevBtn">◀ Prev</button>
         <button id="slidePlayBtn">▶ Play</button>
         <button id="slideNextBtn">Next ▶</button>
+      </div>
+      <div class="zoom-container" style="margin-bottom:15px;">
+        <label for="slideZoom">🔍 Zoom</label>
+        <div class="zoom-presets">
+          <button id="slideZoomFit" title="Fit the whole image/clip on screen">Fit</button>
+          <button id="slideZoomFill" title="Fill the screen, cropping the edges">Fill</button>
+          <button id="slideZoomNative" title="Original size, never enlarged">100%</button>
+        </div>
+        <input id="slideZoom" type="range" min="0.5" max="3" step="0.05" value="1">
+        <span class="zoom-value" id="slideZoomVal">100%</span>
       </div>
       <div class="slide-thumbs">
         <div class="slide-thumb-wrap">
@@ -886,6 +957,7 @@
       initSlideshow(cfg);
       initExcel(cfg);
       initUrlInputs(cfg);
+      initZoomFromConfig(cfg);
     }
 
     // Show the persisted YouTube / Web URLs in their boxes (they're restored on
@@ -1115,6 +1187,95 @@
     // ════════════════════════════════════════════════════════════════
 
     volSlider.oninput = () => send('setVolume', parseFloat(volSlider.value));
+
+    // ════════════════════════════════════════════════════════════════
+    // ZOOM CONTROLS
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Wire one "🔍 Zoom" block (Fit / Fill / 100% presets + a scale slider).
+     * Elements are found by convention: `<prefix>Zoom`, `<prefix>ZoomVal`,
+     * `<prefix>ZoomFit|Fill|Native` — same id-per-control style as the rest of
+     * this file. `hasFill` is false for YouTube, whose screen is a <webview>:
+     * only the scale half of a zoom means anything there (see youtubePlayer.html).
+     * @returns {{get: () => object, set: (z: object) => void}}
+     */
+    function initZoomControls({ prefix, send: sendZoom, hasFill = true }) {
+      const byId = (suffix) => document.getElementById(prefix + suffix);
+      const slider = byId('Zoom');
+      const valueLabel = byId('ZoomVal');
+      if (!slider) return { get: () => null, set: () => {} };
+
+      const presets = {
+        fit: byId('ZoomFit'),
+        fill: hasFill ? byId('ZoomFill') : null,
+        native: hasFill ? byId('ZoomNative') : null,
+      };
+      let mode = 'contain';
+
+      const current = () =>
+        electronAPI.zoom.normalize({ mode, scale: parseFloat(slider.value) });
+
+      // Show the % and light up whichever preset the current state matches.
+      function render() {
+        const z = current();
+        if (valueLabel) valueLabel.textContent = `${Math.round(z.scale * 100)}%`;
+        Object.keys(presets).forEach((key) => {
+          const btn = presets[key];
+          if (!btn) return;
+          const p = electronAPI.zoom.PRESETS[key];
+          btn.classList.toggle('active', z.mode === p.mode && z.scale === p.scale);
+        });
+      }
+
+      function push() { render(); sendZoom(current()); }
+
+      slider.oninput = push;
+      Object.keys(presets).forEach((key) => {
+        const btn = presets[key];
+        if (!btn) return;
+        btn.onclick = () => {
+          const p = electronAPI.zoom.PRESETS[key];
+          mode = p.mode;
+          slider.value = p.scale;
+          push();
+        };
+      });
+
+      render();
+      return {
+        get: current,
+        // Reflect a zoom in the UI without echoing a command back to the screens.
+        set(z) {
+          const n = electronAPI.zoom.normalize(z);
+          mode = n.mode;
+          slider.value = n.scale;
+          render();
+        },
+      };
+    }
+
+    const videoZoom = initZoomControls({
+      prefix: 'vid',
+      send: (z) => electronAPI.sendPlaybackCommand('setZoom', z),
+    });
+    const slideshowZoom = initZoomControls({
+      prefix: 'slide',
+      send: (z) => electronAPI.sendSlideshowCommand('setZoom', z),
+    });
+    const youtubeZoom = initZoomControls({
+      prefix: 'yt',
+      send: (z) => electronAPI.sendYouTubeCommand('setZoom', z),
+      hasFill: false, // a <webview> can only be scaled, not object-fit
+    });
+
+    /** Restore all three zoom blocks from the saved config. */
+    function initZoomFromConfig(cfg) {
+      const z = (cfg && cfg.zoom) || {};
+      videoZoom.set(z.video);
+      slideshowZoom.set(z.slideshow);
+      youtubeZoom.set(z.youtube);
+    }
 
     // Previews are now live whole-screen thumbnails (see refreshScreenPreviews).
 
@@ -1862,6 +2023,18 @@
             electronAPI.sendPlaybackCommand('setVolume', value);
             break;
           }
+          case 'video.zoom':
+            if (typeof videoZoom !== 'undefined') videoZoom.set(value);
+            electronAPI.sendPlaybackCommand('setZoom', value);
+            break;
+          case 'slide.zoom':
+            if (typeof slideshowZoom !== 'undefined') slideshowZoom.set(value);
+            electronAPI.sendSlideshowCommand('setZoom', value);
+            break;
+          case 'yt.zoom':
+            if (typeof youtubeZoom !== 'undefined') youtubeZoom.set(value);
+            electronAPI.sendYouTubeCommand('setZoom', value);
+            break;
           case 'yt.play': clickIf('ytPlay'); break;
           case 'yt.pause': clickIf('ytPause'); break;
           case 'yt.mute': clickIf('ytMute'); break;
@@ -1899,6 +2072,19 @@
           }
         }
         publishState();
+      }
+
+      // Read one of the main script's zoom controls. They're `const`s in the
+      // other <script> — global lexical bindings, not window properties — so
+      // they're passed as a thunk and the try/catch covers the TDZ window
+      // before that script has run. null makes buildStateSnapshot use the default.
+      function zoomOf(getControl) {
+        try {
+          const ctl = getControl();
+          return ctl && typeof ctl.get === 'function' ? ctl.get() : null;
+        } catch (_) {
+          return null;
+        }
       }
 
       // Publish a snapshot of the current state for the phone to render.
@@ -1943,18 +2129,21 @@
             index: (typeof slideIndex !== 'undefined') ? slideIndex : 0,
             total: (typeof slideItems !== 'undefined' && slideItems) ? slideItems.length : 0,
             playing: (typeof slidePlaying !== 'undefined') ? slidePlaying : false,
+            zoom: zoomOf(() => slideshowZoom),
           },
           video: {
             playing: (typeof isPlaying !== 'undefined') ? isPlaying : false,
             index: idx, playlistLength: list.length, title,
             currentTime: curTime, duration: dur,
             volume: volEl ? Number(volEl.value) : 1,
+            zoom: zoomOf(() => videoZoom),
             playlist: names,
           },
           youtube: {
             url: ytUrlEl ? ytUrlEl.value : '',
             muted: (typeof ytMuted !== 'undefined') ? ytMuted : false,
             volume: ytVolEl ? Number(ytVolEl.value) : 1,
+            zoom: zoomOf(() => youtubeZoom),
           },
           web: { url: webUrlEl ? webUrlEl.value : '' },
           excel: xlSel ? {

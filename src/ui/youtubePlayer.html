@@ -8,6 +8,7 @@
     html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
     #yt {
       width: 100%; height: 100%; border: none; display: inline-flex;
+      transform-origin: center center; /* zoom scales about the middle */
     }
     #placeholder {
       position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -31,6 +32,20 @@
     const previewCanvas = document.getElementById('preview-canvas');
     let currentVideoId = '';
     let webviewReady = false;
+    let ytZoom = 1; // scale multiplier; re-applied whenever the webview reloads
+
+    /**
+     * Zoom the YouTube screen. This is a <webview>, not a media element, so
+     * object-fit doesn't apply and only the `scale` half of a zoom is meaningful
+     * — we transform the whole embed. (webContents.setZoomFactor is no good here:
+     * it re-lays-out the page, so YouTube just shrinks the video to fit.)
+     * Scaling up crops the embed's letterbox/pillarbox bars, which is the point.
+     */
+    function applyZoom(zoom) {
+      const z = electronAPI.zoom.normalize(zoom);
+      ytZoom = z.scale;
+      yt.style.transform = `scale(${ytZoom})`;
+    }
 
     function loadYouTubeVideo(input, autoplay = true) {
       const id = electronAPI.extractYouTubeId(input);
@@ -42,7 +57,10 @@
       yt.src = `https://www.youtube.com/embed/${id}?autoplay=${autoplay ? 1 : 0}&controls=1&rel=0&modestbranding=1&playsinline=1&enablejsapi=1`;
     }
 
-    yt.addEventListener('dom-ready', () => { webviewReady = true; });
+    yt.addEventListener('dom-ready', () => {
+      webviewReady = true;
+      yt.style.transform = `scale(${ytZoom})`; // re-assert after a navigation
+    });
 
     electronAPI.onYouTubeUrlChange((url) => loadYouTubeVideo(url));
 
@@ -67,6 +85,7 @@
           ytExec(`var v=document.querySelector('video'); if(v){ v.muted=false; v.volume=${vol}; }`);
           break;
         }
+        case 'setZoom': applyZoom(data); break;
         case 'mute': ytExec(`var v=document.querySelector('video'); if(v) v.muted=${data ? 'true' : 'false'};`); break;
       }
     });
@@ -90,7 +109,11 @@
     // controller before any screen is assigned to YouTube. Loaded PAUSED:
     // only an explicit "Load on YouTube screen" from the controller autoplays.
     electronAPI.getConfig()
-      .then(cfg => { const y = cfg && cfg.youtube; if (y && y.url) loadYouTubeVideo(y.url, false); })
+      .then(cfg => {
+        if (cfg && cfg.zoom) applyZoom(cfg.zoom.youtube);
+        const y = cfg && cfg.youtube;
+        if (y && y.url) loadYouTubeVideo(y.url, false);
+      })
       .catch(() => {});
 
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.close(); });

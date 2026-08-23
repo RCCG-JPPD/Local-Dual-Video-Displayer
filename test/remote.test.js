@@ -82,10 +82,12 @@ test('sanitizeCommand validates pres.goto value', () => {
 });
 
 // A valid sample value per action that requires one (mirrors VALUE_SPECS).
+const ZOOM_IN = { mode: 'cover', scale: 1.5 };
 const SAMPLE_VALUES = {
   'pres.goto': [0, 0], 'slide.goto': [3, 3], 'video.goto': [2, 2], 'excel.sheet': [1, 1],
   'video.seek': [0.5, 0.5], 'video.volume': [0.8, 0.8], 'yt.volume': [1, 1],
   'yt.load': ['dQw4w9WgXcQ', 'dQw4w9WgXcQ'], 'web.load': ['example.com', 'example.com'],
+  'video.zoom': [ZOOM_IN, ZOOM_IN], 'slide.zoom': [ZOOM_IN, ZOOM_IN], 'yt.zoom': [ZOOM_IN, ZOOM_IN],
 };
 
 test('every REMOTE_ACTION is namespaced and sanitizes cleanly', () => {
@@ -102,6 +104,19 @@ test('sanitizeCommand clamps fraction values to [0, 1]', () => {
   assert.deepEqual(sanitizeCommand({ action: 'yt.volume', value: '0.4' }), { action: 'yt.volume', value: 0.4 });
   assert.equal(sanitizeCommand({ action: 'video.seek', value: 'x' }), null);
   assert.equal(sanitizeCommand({ action: 'video.seek' }), null);
+});
+
+test('sanitizeCommand normalizes zoom values and rejects non-objects', () => {
+  assert.deepEqual(sanitizeCommand({ action: 'video.zoom', value: { mode: 'cover', scale: '2' } }),
+    { action: 'video.zoom', value: { mode: 'cover', scale: 2 } });
+  // Unknown mode / out-of-range scale are pulled back rather than rejected.
+  assert.deepEqual(sanitizeCommand({ action: 'slide.zoom', value: { mode: 'bogus', scale: 99 } }),
+    { action: 'slide.zoom', value: { mode: 'contain', scale: 4 } });
+  assert.deepEqual(sanitizeCommand({ action: 'yt.zoom', value: {} }),
+    { action: 'yt.zoom', value: { mode: 'contain', scale: 1 } });
+  // A zoom is an object — a bare number or a missing value is a malformed command.
+  assert.equal(sanitizeCommand({ action: 'video.zoom', value: 1.5 }), null);
+  assert.equal(sanitizeCommand({ action: 'video.zoom' }), null);
 });
 
 test('sanitizeCommand validates index values for goto-style actions', () => {
@@ -128,16 +143,17 @@ test('buildStateSnapshot normalizes types and fills defaults', () => {
     video: { playing: 0, index: 2, playlistLength: 5, title: 'clip.mp4', currentTime: '12.5', duration: 60 },
   }, 1000);
 
+  const FIT = { mode: 'contain', scale: 1 }; // default zoom, filled in per screen
   assert.deepEqual(snap, {
     activePanel: 'presentation',
     roles: null, // caller didn't say — phone shows all sections
     presentation: { index: 3, total: 10 },
-    slideshow: { index: 1, total: 4, playing: true },
+    slideshow: { index: 1, total: 4, playing: true, zoom: FIT },
     video: {
       playing: false, index: 2, playlistLength: 5, title: 'clip.mp4',
-      currentTime: 12.5, duration: 60, volume: 1, playlist: [],
+      currentTime: 12.5, duration: 60, volume: 1, zoom: FIT, playlist: [],
     },
-    youtube: { url: '', muted: false, volume: 1 },
+    youtube: { url: '', muted: false, volume: 1, zoom: FIT },
     web: { url: '' },
     excel: { sheets: [], active: 0 },
     updatedAt: 1000,
@@ -158,9 +174,25 @@ test('buildStateSnapshot carries full-remote state (volume, playlist, yt, web, e
   });
   assert.equal(snap.video.volume, 0.3);
   assert.deepEqual(snap.video.playlist, ['a.mp4', 'b.mp4']);
-  assert.deepEqual(snap.youtube, { url: 'https://youtu.be/x', muted: true, volume: 1 }); // volume clamped
+  assert.deepEqual(snap.youtube, {
+    url: 'https://youtu.be/x', muted: true, volume: 1, // volume clamped
+    zoom: { mode: 'contain', scale: 1 },               // defaulted when absent
+  });
   assert.equal(snap.web.url, 'https://example.com');
   assert.deepEqual(snap.excel, { sheets: ['Sheet1', 'Totals'], active: 1 });
+});
+
+test('buildStateSnapshot normalizes zoom for every screen', () => {
+  const snap = buildStateSnapshot({
+    video: { zoom: { mode: 'cover', scale: '1.5' } },
+    slideshow: { zoom: { mode: 'native', scale: 1 } },
+    youtube: { zoom: { mode: 'bogus', scale: 99 } },
+  }, 0);
+  assert.deepEqual(snap.video.zoom, { mode: 'cover', scale: 1.5 });
+  assert.deepEqual(snap.slideshow.zoom, { mode: 'native', scale: 1 });
+  assert.deepEqual(snap.youtube.zoom, { mode: 'contain', scale: 4 }); // clamped + fallback
+  // Absent zoom must still be a real object — RTDB rejects undefined.
+  assert.deepEqual(buildStateSnapshot({}, 0).video.zoom, { mode: 'contain', scale: 1 });
 });
 
 test('buildStateSnapshot caps list sizes and string lengths (RTDB payload safety)', () => {

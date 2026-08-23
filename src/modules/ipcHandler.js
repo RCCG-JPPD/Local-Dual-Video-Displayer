@@ -5,6 +5,7 @@
 
 const { ipcMain } = require('electron');
 const { createSessionStore } = require('../utils/remote');
+const { normalizeZoom } = require('../utils/zoom');
 
 class IPCHandler {
   constructor(displayManager, configManager, callbacks = {}) {
@@ -29,6 +30,26 @@ class IPCHandler {
       ...this.remoteSession.getState(),
       persistCode: !!(cfg.remote && cfg.remote.persistCode),
     };
+  }
+
+  /**
+   * Persist a screen's zoom, coalescing the writes.
+   *
+   * Zoom arrives on every tick of the controller's slider, and updateConfig
+   * re-reads and rewrites the whole config file each time — so batch the pending
+   * roles and write once the drag settles. Broadcasting stays immediate, so the
+   * screens still follow the slider live.
+   * @param {'video'|'slideshow'|'youtube'} role
+   * @param {{mode: string, scale: number}} zoom
+   */
+  _persistZoom(role, zoom) {
+    this._pendingZoom = { ...(this._pendingZoom || {}), [role]: zoom };
+    clearTimeout(this._zoomWriteTimer);
+    this._zoomWriteTimer = setTimeout(() => {
+      const pending = this._pendingZoom;
+      this._pendingZoom = null;
+      if (pending) this.configManager.updateConfig({ zoom: pending });
+    }, 400);
   }
 
   /** Send to every live window currently serving `role`. */
@@ -82,9 +103,15 @@ class IPCHandler {
     // VIDEO PLAYBACK CONTROL
     // ════════════════════════════════════════════════════════════════
 
-    // Controller → all video windows.
+    // Controller → all video windows. Zoom is the one command worth persisting:
+    // it's a screen setting, not a transport action, so it survives a restart.
     ipcMain.on('controller-command', (event, cmd, data) => {
-      this.broadcastToRole('video', 'playback-command', cmd, data);
+      let payload = data;
+      if (cmd === 'setZoom') {
+        payload = normalizeZoom(data);
+        this._persistZoom('video', payload);
+      }
+      this.broadcastToRole('video', 'playback-command', cmd, payload);
     });
 
     // Only the first/primary video window reports time back to the controller.
@@ -233,10 +260,14 @@ class IPCHandler {
     });
 
     ipcMain.on('slideshow-command', (event, cmd, data) => {
+      let payload = data;
       if (cmd === 'goto' && typeof data === 'number') {
         this.configManager.updateConfig({ slideshow: { index: data } });
+      } else if (cmd === 'setZoom') {
+        payload = normalizeZoom(data);
+        this._persistZoom('slideshow', payload);
       }
-      this.broadcastToRole('slideshow', 'slideshow-command', cmd, data);
+      this.broadcastToRole('slideshow', 'slideshow-command', cmd, payload);
     });
 
     // The slideshow window auto-advances on its own timer; the first/primary screen
@@ -315,8 +346,14 @@ class IPCHandler {
 
     // Controller → YouTube screens: play / pause / setVolume / mute / clear.
     ipcMain.on('youtube-command', (event, cmd, data) => {
-      if (cmd === 'clear') this.configManager.updateConfig({ youtube: { url: '' } });
-      this.broadcastToRole('youtube', 'youtube-command', cmd, data);
+      let payload = data;
+      if (cmd === 'clear') {
+        this.configManager.updateConfig({ youtube: { url: '' } });
+      } else if (cmd === 'setZoom') {
+        payload = normalizeZoom(data);
+        this._persistZoom('youtube', payload);
+      }
+      this.broadcastToRole('youtube', 'youtube-command', cmd, payload);
     });
 
     // ════════════════════════════════════════════════════════════════

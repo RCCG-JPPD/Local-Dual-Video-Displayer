@@ -6,6 +6,8 @@
  * web controller app. Mirrors the convention of youtube.js / weburl.js / slideshow.js.
  */
 
+const { normalizeZoom } = require('./zoom');
+
 // Crockford base32 alphabet — excludes I, L, O, U so codes are unambiguous to
 // read off a screen and type on a phone.
 const SESSION_CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
@@ -21,8 +23,9 @@ const REMOTE_ACTIONS = [
   'pres.next', 'pres.prev', 'pres.goto', 'pres.blank',
   'slide.next', 'slide.prev', 'slide.goto', 'slide.playpause', 'slide.blank',
   'video.playpause', 'video.next', 'video.prev', 'video.stop',
-  'video.goto', 'video.seek', 'video.volume',
-  'yt.play', 'yt.pause', 'yt.mute', 'yt.volume', 'yt.load',
+  'video.goto', 'video.seek', 'video.volume', 'video.zoom',
+  'slide.zoom',
+  'yt.play', 'yt.pause', 'yt.mute', 'yt.volume', 'yt.load', 'yt.zoom',
   'web.load', 'web.back', 'web.fwd', 'web.reload',
   'excel.sheet',
 ];
@@ -31,6 +34,7 @@ const REMOTE_ACTIONS = [
 //   index    → non-negative integer (floored)
 //   fraction → finite number, clamped to [0, 1]
 //   string   → trimmed non-empty string, length-capped
+//   zoom     → { mode, scale } object, clamped by normalizeZoom
 const VALUE_SPECS = {
   'pres.goto': 'index',
   'slide.goto': 'index',
@@ -41,6 +45,9 @@ const VALUE_SPECS = {
   'yt.volume': 'fraction',
   'yt.load': 'string',
   'web.load': 'string',
+  'video.zoom': 'zoom',
+  'slide.zoom': 'zoom',
+  'yt.zoom': 'zoom',
 };
 const STRING_MAX = { 'yt.load': 300, 'web.load': 1024 };
 
@@ -112,7 +119,7 @@ function parseSessionParam(search) {
  * Validate + normalize a raw command received from a paired device.
  * Returns a safe `{ action, value }` or null if the command is not allowed.
  * @param {{action?: string, value?: *}} raw
- * @returns {{action: string, value: number|null}|null}
+ * @returns {{action: string, value: number|string|object|null}|null}
  */
 function sanitizeCommand(raw) {
   if (!raw || typeof raw !== 'object') return null;
@@ -131,6 +138,12 @@ function sanitizeCommand(raw) {
     const n = Number(raw.value);
     if (!Number.isFinite(n)) return null;
     return { action, value: Math.min(1, Math.max(0, n)) };
+  }
+  if (spec === 'zoom') {
+    // normalizeZoom is total (it falls back rather than throwing), so an
+    // object of any shape yields a safe zoom — but a non-object is a bad command.
+    if (!raw.value || typeof raw.value !== 'object') return null;
+    return { action, value: normalizeZoom(raw.value) };
   }
   // string
   if (typeof raw.value !== 'string') return null;
@@ -168,7 +181,10 @@ function buildStateSnapshot(input = {}, now = Date.now()) {
       youtube: !!r.youtube, web: !!r.web, excel: !!r.excel,
     } : null,
     presentation: { index: num(p.index), total: num(p.total) },
-    slideshow: { index: num(s.index), total: num(s.total), playing: !!s.playing },
+    slideshow: {
+      index: num(s.index), total: num(s.total), playing: !!s.playing,
+      zoom: normalizeZoom(s.zoom),
+    },
     video: {
       playing: !!v.playing,
       index: num(v.index, -1),
@@ -177,9 +193,15 @@ function buildStateSnapshot(input = {}, now = Date.now()) {
       currentTime: num(v.currentTime),
       duration: num(v.duration),
       volume: clamp01(num(v.volume, 1)),
+      zoom: normalizeZoom(v.zoom),
       playlist: list(v.playlist, 100, 120), // file basenames for the phone's picker
     },
-    youtube: { url: str(y.url, 300), muted: !!y.muted, volume: clamp01(num(y.volume, 1)) },
+    youtube: {
+      url: str(y.url, 300),
+      muted: !!y.muted,
+      volume: clamp01(num(y.volume, 1)),
+      zoom: normalizeZoom(y.zoom),
+    },
     web: { url: str(w.url, 1024) },
     excel: { sheets: list(x.sheets, 50, 80), active: num(x.active) },
     updatedAt: num(now),
