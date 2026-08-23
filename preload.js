@@ -12,6 +12,7 @@ const { nextIndex: slideshowNextIndex } = require('./src/utils/slideshow');
 const { getActiveHoliday, HOLIDAY_KEYS, ANIMATIONS } = require('./src/utils/holidays');
 const { THEMES, resolveTheme } = require('./src/utils/clockThemes');
 const remote = require('./src/utils/remote');
+const zoomUtil = require('./src/utils/zoom');
 
 // Expose safe IPC APIs to renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -52,6 +53,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     resetCode: () => ipcRenderer.invoke('remote-reset-code'),
     // Opt in/out of keeping the same code across app runs (off by default).
     setPersist: (on) => ipcRenderer.invoke('remote-set-persist', !!on),
+  },
+
+  // Screen zoom pure helpers (src/utils/zoom.js). Display windows apply the
+  // returned style patch with Object.assign(el.style, electronAPI.zoom.styles(z)).
+  zoom: {
+    normalize: (z) => zoomUtil.normalizeZoom(z),
+    styles: (z) => zoomUtil.zoomStyles(z),
+    PRESETS: zoomUtil.ZOOM_PRESETS,
+    MIN_SCALE: zoomUtil.MIN_SCALE,
+    MAX_SCALE: zoomUtil.MAX_SCALE,
   },
 
   // ════════════════════════════════════════════════════════════════

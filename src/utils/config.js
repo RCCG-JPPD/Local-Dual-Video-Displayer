@@ -28,6 +28,18 @@ module.exports = {
     mutePrivateWindow: true,
   },
 
+  // Per-screen zoom: how media is scaled onto the screen.
+  //   mode  'contain' = fit (letterboxed, upscales small media) — the default
+  //         'cover'   = fill the screen and crop the overflow
+  //         'native'  = intrinsic pixel size, never upscaled
+  //   scale extra multiplier applied on top (0.25–4).
+  // The YouTube screen is a <webview>, so only `scale` applies there.
+  zoom: {
+    video: { mode: 'contain', scale: 1.0 },
+    slideshow: { mode: 'contain', scale: 1.0 },
+    youtube: { mode: 'contain', scale: 1.0 },
+  },
+
   // Controller window preferences
   controller: {
     x: null, // null = auto-position on primary display

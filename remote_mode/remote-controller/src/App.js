@@ -22,7 +22,7 @@ function fmt(t) {
  * Range slider that tracks the finger locally and only sends when released,
  * so dragging doesn't flood the command channel.
  */
-function Slider({ label, value, step = 0.01, format, onCommit }) {
+function Slider({ label, value, step = 0.01, min = 0, max = 1, format, onCommit }) {
   const [local, setLocal] = useState(value);
   const [dragging, setDragging] = useState(false);
   useEffect(() => { if (!dragging) setLocal(value); }, [value, dragging]);
@@ -31,7 +31,7 @@ function Slider({ label, value, step = 0.01, format, onCommit }) {
     <div className="slider-row">
       <span className="lbl">{label}</span>
       <input
-        type="range" min="0" max="1" step={step} value={local}
+        type="range" min={min} max={max} step={step} value={local}
         onChange={(e) => { setDragging(true); setLocal(e.target.value); }}
         onPointerUp={commit}
         onTouchEnd={commit}
@@ -39,6 +39,48 @@ function Slider({ label, value, step = 0.01, format, onCommit }) {
       />
       {format && <span className="val">{format(Number(local))}</span>}
     </div>
+  );
+}
+
+// Zoom presets, mirroring src/utils/zoom.js on the desktop.
+const ZOOM_PRESETS = {
+  fit: { mode: 'contain', scale: 1 },
+  fill: { mode: 'cover', scale: 1 },
+  native: { mode: 'native', scale: 1 },
+};
+const DEFAULT_ZOOM = ZOOM_PRESETS.fit;
+
+/**
+ * Zoom controls for one screen: Fit / Fill / 100% presets plus a scale slider.
+ * `hasFill` is false for YouTube — that screen is a webview the desktop can only
+ * transform-scale, so the mode half of a zoom has no meaning there.
+ */
+function ZoomControls({ zoom, hasFill = true, onChange }) {
+  const z = (zoom && typeof zoom === 'object') ? zoom : DEFAULT_ZOOM;
+  const mode = z.mode || DEFAULT_ZOOM.mode;
+  const scale = Number.isFinite(Number(z.scale)) ? Number(z.scale) : 1;
+  const keys = hasFill ? ['fit', 'fill', 'native'] : ['fit'];
+  const labels = { fit: 'Fit', fill: 'Fill', native: '100%' };
+  const isOn = (k) => mode === ZOOM_PRESETS[k].mode && scale === ZOOM_PRESETS[k].scale;
+  return (
+    <>
+      <div className="row">
+        {keys.map((k) => (
+          <button
+            key={k}
+            className={`btn ${isOn(k) ? 'btn-primary' : ''}`}
+            onClick={() => onChange(ZOOM_PRESETS[k])}
+          >
+            {labels[k]}
+          </button>
+        ))}
+      </div>
+      <Slider
+        label="🔍" min={0.5} max={3} step={0.05} value={scale}
+        format={(f) => `${Math.round(f * 100)}%`}
+        onCommit={(f) => onChange({ mode, scale: f })}
+      />
+    </>
   );
 }
 
@@ -178,12 +220,12 @@ export default function App() {
   const s = state || {};
   const activePanel = s.activePanel || 'previews';
   const pres = s.presentation || { index: 0, total: 0 };
-  const slide = s.slideshow || { index: 0, total: 0, playing: false };
+  const slide = s.slideshow || { index: 0, total: 0, playing: false, zoom: DEFAULT_ZOOM };
   const video = s.video || {
     playing: false, index: -1, playlistLength: 0, title: '',
-    currentTime: 0, duration: 0, volume: 1, playlist: [],
+    currentTime: 0, duration: 0, volume: 1, zoom: DEFAULT_ZOOM, playlist: [],
   };
-  const yt = s.youtube || { url: '', muted: false, volume: 1 };
+  const yt = s.youtube || { url: '', muted: false, volume: 1, zoom: DEFAULT_ZOOM };
   const web = s.web || { url: '' };
   const excel = s.excel || { sheets: [], active: 0 };
   const playlist = Array.isArray(video.playlist) ? video.playlist : [];
@@ -265,6 +307,7 @@ export default function App() {
             <button className="btn big" onClick={() => send(ACTIONS.slidePlayPause)}>⏯ Play/Pause</button>
             <button className="btn big" onClick={() => send(ACTIONS.slideNext)}>Next ▶</button>
           </div>
+          <ZoomControls zoom={slide.zoom} onChange={(z) => send(ACTIONS.slideZoom, z)} />
         </section>
       )}
 
@@ -305,6 +348,7 @@ export default function App() {
             format={(f) => `${Math.round(f * 100)}%`}
             onCommit={(f) => send(ACTIONS.videoVolume, f)}
           />
+          <ZoomControls zoom={video.zoom} onChange={(z) => send(ACTIONS.videoZoom, z)} />
         </section>
       )}
 
@@ -335,6 +379,7 @@ export default function App() {
             format={(f) => `${Math.round(f * 100)}%`}
             onCommit={(f) => send(ACTIONS.ytVolume, f)}
           />
+          <ZoomControls zoom={yt.zoom} hasFill={false} onChange={(z) => send(ACTIONS.ytZoom, z)} />
         </section>
       )}
 

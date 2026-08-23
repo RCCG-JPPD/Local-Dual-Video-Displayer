@@ -9,9 +9,14 @@
     #stage {
       width: 100%; height: 100%;
       display: flex; align-items: center; justify-content: center; background: #000;
+      overflow: hidden; /* a zoom scale > 1 crops instead of spilling */
     }
+    /* Default zoom = "fit": a 100% box + object-fit scales small media UP to the
+       screen (max-width/height alone only ever scales down). Overridden inline by
+       applyZoom() — see the setZoom command. */
     #slide-img, #slide-video {
-      max-width: 100%; max-height: 100%; object-fit: contain; display: none;
+      width: 100%; height: 100%; max-width: none; max-height: none;
+      object-fit: contain; display: none;
     }
     #message {
       color: #888; font-size: 22px;
@@ -46,6 +51,16 @@
     let imageTimer = null;
 
     function clearTimer() { if (imageTimer) { clearTimeout(imageTimer); imageTimer = null; } }
+
+    /**
+     * Apply a { mode, scale } zoom to both media elements (see src/utils/zoom.js).
+     * Both are styled so the zoom survives switching between an image and a clip.
+     */
+    function applyZoom(z) {
+      const styles = electronAPI.zoom.styles(z);
+      Object.assign(imgEl.style, styles);
+      Object.assign(videoEl.style, styles);
+    }
 
     function showOnly(el) {
       imgEl.style.display = 'none';
@@ -108,6 +123,7 @@
         case 'prev': advance(-1); break;
         case 'goto': if (typeof data === 'number') render(data); break;
         case 'blank': setBlank(data); break;
+        case 'setZoom': applyZoom(data); break;
       }
     });
 
@@ -120,7 +136,11 @@
 
     // Restore the last slideshow on startup (after restart / reconfigure).
     electronAPI.getConfig()
-      .then(cfg => { const s = cfg && cfg.slideshow; if (s && (s.items || []).length) loadShow(s); })
+      .then(cfg => {
+        if (cfg && cfg.zoom) applyZoom(cfg.zoom.slideshow);
+        const s = cfg && cfg.slideshow;
+        if (s && (s.items || []).length) loadShow(s);
+      })
       .catch(() => {});
 
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.close(); });
