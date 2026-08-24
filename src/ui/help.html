@@ -85,6 +85,48 @@
   </div>
 
   <div class="card">
+    <h2>&#128247; Camera + live lyrics</h2>
+    <p>
+      Shows a live camera feed (crowd, musicians) on a screen, and can read the
+      lyrics off <em>another</em> screen &mdash; your lyrics software &mdash; and
+      re-draw them over the camera picture in your own font.
+    </p>
+    <ol>
+      <li>Give a screen the <strong>Camera</strong> role in the screen picker.</li>
+      <li>Open the <strong>&#128247; Camera</strong> tab, choose your camera, and press the
+        big <strong>ON AIR</strong> button.</li>
+      <li>Under <strong>Lyrics</strong>, pick the screen your lyrics software is on, press
+        <strong>Grab a picture of that screen</strong>, then <em>drag a box</em> around
+        where the words appear.</li>
+      <li>Leave <strong>Send lyrics to the screen</strong> switched <em>off</em> while you aim
+        the box &mdash; watch the <strong>Last read</strong> panel until it reads the words
+        cleanly. Then switch it on and press <strong>Start reading lyrics</strong>.</li>
+      <li>Set the look under <strong>Caption style</strong> &mdash; position, size, animation.
+        The preview box matches what the audience sees.</li>
+    </ol>
+    <ul>
+      <li><strong>&#128680; RESET</strong> fades the camera screen away completely, so whatever
+        app is running behind it shows through. <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>0</kbd>
+        does the same from anywhere, even when the control panel isn't in front.</li>
+      <li><strong>Your lyrics software must run windowed / borderless-fullscreen</strong>, not
+        true (exclusive) fullscreen. A true-fullscreen app takes over the display and nothing
+        can be drawn on top of it.</li>
+      <li>Lyrics appear roughly <strong>1&ndash;2 seconds</strong> behind the other screen. That is
+        the cost of reading them off a picture; to tighten it, shrink the box to just the
+        words and lower <strong>Confirm reads</strong> to 1 once the box is aimed well.</li>
+      <li>If the camera picture is <strong>black</strong> on the big screen, tick
+        <strong>Compatibility renderer</strong> under Compatibility.</li>
+      <li>If <strong>RESET shows black</strong> instead of the app behind it, check
+        <strong>See-through screen</strong> is on and press <strong>Restart camera screen</strong>
+        &mdash; that setting only applies to a freshly-built screen.</li>
+      <li>On a Mac, allow <strong>Camera</strong> and <strong>Screen Recording</strong> for this app
+        in System Settings &rarr; Privacy &amp; Security. Windows needs neither.</li>
+      <li>Lyric reading works with <strong>no internet</strong> &mdash; the language data ships
+        inside the app.</li>
+    </ul>
+  </div>
+
+  <div class="card">
     <h2>Handy controls</h2>
     <ul>
       <li><strong>Reconfigure Displays</strong> — re-open the screen picker any time to change roles.</li>

@@ -1,4 +1,6 @@
 const { test } = require('node:test');
+const fs = require('node:fs');
+const path = require('node:path');
 const assert = require('node:assert/strict');
 const {
   SESSION_CODE_ALPHABET,
@@ -88,11 +90,13 @@ const SAMPLE_VALUES = {
   'video.seek': [0.5, 0.5], 'video.volume': [0.8, 0.8], 'yt.volume': [1, 1],
   'yt.load': ['dQw4w9WgXcQ', 'dQw4w9WgXcQ'], 'web.load': ['example.com', 'example.com'],
   'video.zoom': [ZOOM_IN, ZOOM_IN], 'slide.zoom': [ZOOM_IN, ZOOM_IN], 'yt.zoom': [ZOOM_IN, ZOOM_IN],
+  'caption.text': ['Holy is the Lord', 'Holy is the Lord'],
+  'cam.zoom': [ZOOM_IN, ZOOM_IN],
 };
 
 test('every REMOTE_ACTION is namespaced and sanitizes cleanly', () => {
   for (const action of REMOTE_ACTIONS) {
-    assert.match(action, /^(pres|slide|video|yt|web|excel)\./);
+    assert.match(action, /^(pres|slide|video|yt|web|excel|cam|ocr|caption)\./);
     const [value, expected] = SAMPLE_VALUES[action] || [undefined, null];
     assert.deepEqual(sanitizeCommand({ action, value }), { action, value: expected });
   }
@@ -156,13 +160,18 @@ test('buildStateSnapshot normalizes types and fills defaults', () => {
     youtube: { url: '', muted: false, volume: 1, zoom: FIT },
     web: { url: '' },
     excel: { sheets: [], active: 0 },
+    camera: { live: false, visible: true, zoom: FIT },
+    ocr: { running: false, lastText: '' },
     updatedAt: 1000,
   });
 });
 
 test('buildStateSnapshot carries full-remote state (volume, playlist, yt, web, excel, roles)', () => {
   const snap = buildStateSnapshot({
-    roles: { video: 1, youtube: 0, web: true, presentation: true, slideshow: false, excel: false },
+    roles: {
+      video: 1, youtube: 0, web: true, presentation: true, slideshow: false,
+      excel: false, camera: true,
+    },
     video: { volume: '0.3', playlist: ['a.mp4', 'b.mp4'] },
     youtube: { url: 'https://youtu.be/x', muted: 1, volume: 2 },
     web: { url: 'https://example.com' },
@@ -170,7 +179,8 @@ test('buildStateSnapshot carries full-remote state (volume, playlist, yt, web, e
   }, 0);
 
   assert.deepEqual(snap.roles, {
-    presentation: true, slideshow: false, video: true, youtube: false, web: true, excel: false,
+    presentation: true, slideshow: false, video: true, youtube: false, web: true,
+    excel: false, camera: true,
   });
   assert.equal(snap.video.volume, 0.3);
   assert.deepEqual(snap.video.playlist, ['a.mp4', 'b.mp4']);
@@ -180,6 +190,24 @@ test('buildStateSnapshot carries full-remote state (volume, playlist, yt, web, e
   });
   assert.equal(snap.web.url, 'https://example.com');
   assert.deepEqual(snap.excel, { sheets: ['Sheet1', 'Totals'], active: 1 });
+});
+
+test('buildStateSnapshot carries camera and OCR state', () => {
+  const snap = buildStateSnapshot({
+    camera: { live: 1, visible: false, zoom: { mode: 'cover', scale: '1.2' } },
+    ocr: { running: 1, lastText: 'Holy is the Lord' },
+  }, 0);
+  assert.deepEqual(snap.camera, {
+    live: true, visible: false, zoom: { mode: 'cover', scale: 1.2 },
+  });
+  assert.deepEqual(snap.ocr, { running: true, lastText: 'Holy is the Lord' });
+});
+
+test('buildStateSnapshot defaults the camera to visible and caps the lyric line', () => {
+  // `visible` defaults to true: an absent value must not read as "reset".
+  assert.equal(buildStateSnapshot({}, 0).camera.visible, true);
+  const long = buildStateSnapshot({ ocr: { lastText: 'x'.repeat(500) } }, 0);
+  assert.equal(long.ocr.lastText.length, 240);
 });
 
 test('buildStateSnapshot normalizes zoom for every screen', () => {
@@ -285,4 +313,22 @@ test('resetCode retries when the generator repeats the current code', () => {
   const store = createSessionStore(() => codes[Math.min(i++, codes.length - 1)]);
   assert.equal(store.getState().code, 'SAME00');
   assert.equal(store.resetCode().code, 'DIFF00');
+});
+
+// The phone app carries a hand-written copy of the action list — there is no
+// build step linking the two, and a drift fails SILENTLY on the phone (the
+// desktop rejects an unknown action and the button just does nothing). This
+// reads the web copy as text so the guard needs no bundler and no ESM loader.
+test('the web remote mirrors every desktop action', () => {
+  const webRemote = path.join(__dirname, '..', 'remote_mode', 'remote-controller', 'src', 'remote.js');
+  const src = fs.readFileSync(webRemote, 'utf8');
+  const mirrored = new Set([...src.matchAll(/'([a-z]+\.[a-zA-Z]+)'/g)].map(m => m[1]));
+
+  const missing = REMOTE_ACTIONS.filter(a => !mirrored.has(a));
+  assert.deepEqual(missing, [],
+    `these actions exist on the desktop but not in the phone app: ${missing.join(', ')}`);
+
+  const extra = [...mirrored].filter(a => !REMOTE_ACTIONS.includes(a));
+  assert.deepEqual(extra, [],
+    `the phone app sends actions the desktop will reject: ${extra.join(', ')}`);
 });

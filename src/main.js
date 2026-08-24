@@ -186,9 +186,30 @@ function setupYouTubeEmbedReferer() {
   );
 }
 
+/**
+ * The camera screen calls getUserMedia and the lyric OCR uses desktopCapturer.
+ * Pages loaded from file:// have an opaque origin, so Chromium asks about both
+ * a request handler AND a check handler - without the check handler the camera
+ * screen is denied before it ever prompts.
+ *
+ * On macOS the OS still gates these behind Camera and Screen Recording in
+ * System Settings; this only covers Chromium's own layer.
+ */
+function setupMediaPermissions() {
+  const { session } = require('electron');
+  const ses = session.defaultSession;
+  const ALLOWED = ['media', 'display-capture', 'fullscreen'];
+
+  ses.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(ALLOWED.includes(permission));
+  });
+  ses.setPermissionCheckHandler((webContents, permission) => ALLOWED.includes(permission));
+}
+
 app.on('ready', () => {
   console.log('Electron app ready');
   setupYouTubeEmbedReferer();
+  setupMediaPermissions();
   startup();
   registerShortcuts();
 });
@@ -197,6 +218,7 @@ app.on('ready', () => {
  * Global escape-hatch hotkeys (work even when every screen is covered):
  *  - Ctrl/Cmd+Shift+R → reopen the screen picker (re-assign roles).
  *  - Ctrl/Cmd+Shift+Q → quit the whole app.
+ *  - Ctrl/Cmd+Shift+0 → clear the camera screen (reveal whatever is behind it).
  */
 function registerShortcuts() {
   globalShortcut.register('CommandOrControl+Shift+R', () => {
@@ -207,9 +229,19 @@ function registerShortcuts() {
     console.log('Global shortcut: quit');
     app.quit();
   });
+  // Panic button for a live show: clear the camera screen from anywhere, even
+  // when the controller isn't the focused window.
+  globalShortcut.register('CommandOrControl+Shift+0', () => {
+    console.log('Global shortcut: camera reset');
+    if (ipcHandler) ipcHandler.resetCameraScreens();
+  });
 }
 
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  // Flush a slider adjustment made in the last moments, and stop the OCR worker.
+  if (ipcHandler) ipcHandler.dispose();
+});
 
 app.on('window-all-closed', () => {
   console.log('All windows closed');

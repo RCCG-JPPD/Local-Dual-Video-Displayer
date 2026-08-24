@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Camera Display</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    /* TRANSPARENT, not black. This window is created with transparent:true so
+       that fading #stage out reveals whatever application is running behind it
+       (at a concert, the lyrics software). A solid background here would defeat
+       the entire point of the reset button. */
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+      cursor: none;
+    }
+
+    /* Everything that can be shown lives inside the stage, so a single opacity
+       fade takes the camera, the captions AND the logo away together. */
+    #stage {
+      position: fixed;
+      inset: 0;
+      opacity: 1;
+    }
+
+    #cam, #cam-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: transparent;
+    }
+
+    /* The compatibility renderer: only one of the two is ever live. */
+    #cam-canvas { display: none; }
+    body.canvas-mode #cam { visibility: hidden; }
+    body.canvas-mode #cam-canvas { display: block; }
+
+    #caption-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    /* Two caption elements, not one: a cross-fade needs the outgoing line to
+       still be on screen while the incoming one appears. The single-element
+       show/hide model used by the other display windows cannot do that. */
+    .caption {
+      position: absolute;
+      opacity: 0;
+      will-change: opacity, transform;
+    }
+
+    /* A full-screen blackout, distinct from RESET: this HIDES what is behind
+       the screen, where reset REVEALS it. */
+    #blank-overlay {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      display: none;
+      z-index: 100;
+    }
+
+    /* Shown only before a camera has been chosen, so an assigned-but-idle
+       screen isn't a mystery. Hidden the moment anything goes live. */
+    #hint {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      font: 400 2vh/1.4 system-ui, sans-serif;
+      color: rgba(255, 255, 255, 0.75);
+      text-align: center;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+      padding: 2vh 3vw;
+      background: rgba(0, 0, 0, 0.45);
+      border-radius: 1vh;
+    }
+    #hint.hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <video id="cam" autoplay muted playsinline></video>
+    <canvas id="cam-canvas"></canvas>
+
+    <div id="caption-layer">
+      <div class="caption" id="cap-a"></div>
+      <div class="caption" id="cap-b"></div>
+    </div>
+
+    <img id="logo" alt="">
+
+    <div id="hint">Camera screen ready<br>Choose a camera in the controller</div>
+  </div>
+
+  <div id="blank-overlay"></div>
+
+  <script>
+    // electronAPI is a preload global (contextBridge) — don't redeclare it.
+
+    /**
+     * Report to the main process as well as the local console.
+     *
+     * This screen is the one nobody is looking at during a show — it's on the
+     * projector, not the operator's laptop — so a failure here is invisible
+     * unless it's surfaced. Mirrors the helper in displaySelector.html.
+     */
+    function log(level, msg) {
+      try { electronAPI.log(level, '[camera] ' + msg); } catch (_) {}
+      (level === 'error' ? console.error : console.log)('[camera]', msg);
+    }
+
+    // Nothing on this screen should ever fail silently.
+    window.addEventListener('error', (e) => {
+      log('error', `uncaught: ${e.message} (${e.filename}:${e.lineno})`);
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      log('error', `unhandled rejection: ${(e.reason && e.reason.message) || e.reason}`);
+    });
+
+    const stage = document.getElementById('stage');
+    const cam = document.getElementById('cam');
+    const camCanvas = document.getElementById('cam-canvas');
+    const logoEl = document.getElementById('logo');
+    const hintEl = document.getElementById('hint');
+    const blankEl = document.getElementById('blank-overlay');
+    const capEls = [document.getElementById('cap-a'), document.getElementById('cap-b')];
+
+    // Settings are always read through the pure normalizers, never used raw:
+    // loadConfig() returns the config file verbatim, so an existing install has
+    // none of these keys and every one of them can legitimately be undefined.
+    let captionSettings = electronAPI.captions.normalize(null);
+    let transitionSettings = electronAPI.transition.normalize(null);
+    let zoomSettings = electronAPI.zoom.normalize(null);
+
+    let stream = null;       // the live MediaStream, if any
+    let deviceId = '';
+    let mirror = false;
+    let renderMode = 'video';
+    let visible = true;      // false = faded out (the RESET state)
+
+    let front = 0;           // which caption element is currently showing
+    let shownText = '';      // what that element says
+    let typeTimer = null;    // typewriter interval
+    let fadeTimer = null;    // delayed track-stop after a fade-out
+    let rafId = null;        // canvas-mode draw loop
+
+    // ════════════════════════════════════════════════════════════════
+    // STAGE / TRANSITIONS
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Show or hide everything. Hiding fades to fully transparent, which is the
+     * whole reason this window exists — the operator needs one action that gets
+     * our screen out of the way and shows the app behind it.
+     */
+    function setVisible(on) {
+      visible = !!on;
+      Object.assign(stage.style, electronAPI.transition.styles(transitionSettings, on));
+      clearTimeout(fadeTimer);
+      if (!visible) {
+        // Keep the camera running through the fade, then release it once the
+        // screen is genuinely empty — stopping the tracks immediately would
+        // freeze the last frame mid-fade.
+        const ms = electronAPI.transition.ms(transitionSettings);
+        fadeTimer = setTimeout(() => { if (!visible) stopStream(); }, ms + 50);
+      }
+    }
+
+    function applyTransition(t) {
+      transitionSettings = electronAPI.transition.normalize(t);
+      Object.assign(stage.style, electronAPI.transition.styles(transitionSettings, visible));
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // CAMERA
+    // ════════════════════════════════════════════════════════════════
+
+    function applyZoom(zoom) {
+      zoomSettings = electronAPI.zoom.normalize(zoom);
+      const styles = electronAPI.zoom.styles(zoomSettings);
+      Object.assign(cam.style, styles);
+      Object.assign(camCanvas.style, styles);
+      applyMirror();
+    }
+
+    /** Mirroring rides on top of the zoom's transform, so re-apply both together. */
+    function applyMirror() {
+      const base = electronAPI.zoom.styles(zoomSettings).transform || '';
+      const t = mirror ? `${base} scaleX(-1)` : base;
+      cam.style.transform = t;
+      camCanvas.style.transform = t;
+    }
+
+    function stopStream() {
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      if (stream) {
+        // Release the device explicitly: a leaked track keeps the camera light
+        // on and can lock the device out of the next start.
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
+      }
+      cam.srcObject = null;
+    }
+
+    async function startStream() {
+      stopStream();
+      try {
+        const video = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+        if (deviceId) video.deviceId = { exact: deviceId };
+        // audio is ALWAYS false. A live microphone next to the PA is an
+        // unrecoverable feedback loop, and this screen never needs sound.
+        stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+        cam.srcObject = stream;
+        await cam.play().catch(() => {});
+        hintEl.classList.add('hidden');
+        if (renderMode === 'canvas') startCanvasLoop();
+        reportDevices();
+        log('info', `feed live (${cam.videoWidth}x${cam.videoHeight})`);
+        electronAPI.sendCameraStatus({ streaming: true, error: '', deviceId });
+      } catch (err) {
+        stopStream();
+        hintEl.classList.remove('hidden');
+        hintEl.textContent = describeCameraError(err);
+        log('error', `getUserMedia failed: ${err && err.name} — ${describeCameraError(err)}`);
+        electronAPI.sendCameraStatus({ streaming: false, error: describeCameraError(err), deviceId });
+      }
+    }
+
+    /** Turn a DOMException into something an operator can act on mid-show. */
+    function describeCameraError(err) {
+      const name = err && err.name ? err.name : 'Error';
+      if (name === 'NotReadableError') {
+        return 'Camera is in use by another app. Close it and try again.';
+      }
+      if (name === 'NotAllowedError') {
+        return 'Camera permission denied. Allow camera access, then retry.';
+      }
+      if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+        return 'That camera is no longer connected. Pick another one.';
+      }
+      return `Camera error: ${(err && err.message) || name}`;
+    }
+
+    /**
+     * The compatibility renderer. On some Windows GPU drivers a hardware-
+     * promoted <video> surface composites as black inside a transparent window;
+     * drawing the frames through a canvas always composites correctly, at the
+     * cost of some CPU.
+     */
+    function startCanvasLoop() {
+      const ctx = camCanvas.getContext('2d');
+      const draw = () => {
+        if (renderMode !== 'canvas' || !stream) { rafId = null; return; }
+        if (cam.videoWidth) {
+          if (camCanvas.width !== cam.videoWidth || camCanvas.height !== cam.videoHeight) {
+            camCanvas.width = cam.videoWidth;
+            camCanvas.height = cam.videoHeight;
+          }
+          ctx.drawImage(cam, 0, 0);
+        }
+        rafId = requestAnimationFrame(draw);
+      };
+      if (!rafId) rafId = requestAnimationFrame(draw);
+    }
+
+    function setRenderMode(mode) {
+      renderMode = mode === 'canvas' ? 'canvas' : 'video';
+      document.body.classList.toggle('canvas-mode', renderMode === 'canvas');
+      if (renderMode === 'canvas' && stream) startCanvasLoop();
+      if (renderMode !== 'canvas' && rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    }
+
+    /** Report the available cameras so the controller can populate its picker. */
+    async function reportDevices() {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        electronAPI.sendCameraDevices(
+          devices
+            .filter(d => d.kind === 'videoinput')
+            .map(d => ({ deviceId: d.deviceId, label: d.label })),
+        );
+      } catch (err) {
+        log('error', `enumerateDevices failed: ${err && err.message}`);
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // CAPTIONS
+    // ════════════════════════════════════════════════════════════════
+
+    function applyCaptionSettings(settings) {
+      captionSettings = electronAPI.captions.normalize(settings);
+      const styles = electronAPI.captions.styles(captionSettings);
+      capEls.forEach(el => Object.assign(el.style, styles));
+      // Re-assert the resting/hidden states so a settings change mid-song
+      // doesn't leave the idle buffer stuck in a stale transform.
+      const anim = electronAPI.captions.animation(captionSettings);
+      Object.assign(capEls[front].style, anim.shown);
+      Object.assign(capEls[1 - front].style, anim.hidden);
+    }
+
+    /**
+     * Put a new line on screen, animating it in and the old one out.
+     *
+     * Guarded by shouldReplace so an unchanged line never re-animates — the
+     * OCR loop re-reads the same lyric many times a second, and re-triggering
+     * the animation on every read looks broken to an audience. The main process
+     * already filters with the same rule; this is the renderer refusing to
+     * trust the wire.
+     */
+    function setCaption(text) {
+      const next = typeof text === 'string' ? text : '';
+      if (!electronAPI.captions.shouldReplace(shownText, next)) return;
+
+      const anim = electronAPI.captions.animation(captionSettings);
+      const incoming = capEls[1 - front];
+      const outgoing = capEls[front];
+
+      clearInterval(typeTimer);
+      typeTimer = null;
+
+      // Park the incoming element at its start state, then let a frame pass so
+      // the browser has something to animate FROM.
+      incoming.textContent = anim.typewriter ? '' : next;
+      Object.assign(incoming.style, anim.hidden);
+      // Force a reflow so the transition below actually runs.
+      void incoming.offsetWidth;
+
+      Object.assign(incoming.style, anim.shown);
+      Object.assign(outgoing.style, anim.leaving);
+
+      if (anim.typewriter && next) {
+        const perChar = Math.max(8, Math.round((anim.durationMs || 300) / next.length));
+        let i = 0;
+        typeTimer = setInterval(() => {
+          i += 1;
+          incoming.textContent = next.slice(0, i);
+          if (i >= next.length) { clearInterval(typeTimer); typeTimer = null; }
+        }, perChar);
+      }
+
+      // Empty the buffer that just left, once its fade has finished. Without
+      // this the old lyric stays in the DOM indefinitely - invisible, but only
+      // an opacity away from reappearing.
+      clearTimeout(outgoing._clearTimer);
+      outgoing._clearTimer = setTimeout(() => {
+        outgoing.textContent = '';
+      }, (anim.durationMs || 0) + 60);
+
+      front = 1 - front;
+      shownText = next;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // LOGO
+    // ════════════════════════════════════════════════════════════════
+
+    function applyLogo(logo) {
+      const l = electronAPI.logo.normalize(logo);
+      Object.assign(logoEl.style, electronAPI.logo.styles(l));
+      // src="" makes the browser re-request the PAGE, so drop the attribute
+      // entirely when there is no logo.
+      const href = l.source ? electronAPI.toFileURL(l.source) : '';
+      if (!href) logoEl.removeAttribute('src');
+      else if (logoEl.getAttribute('src') !== href) logoEl.src = href;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // COMMANDS
+    // ════════════════════════════════════════════════════════════════
+
+    electronAPI.onCameraCommand((cmd, data) => {
+      switch (cmd) {
+        case 'live':
+          if (data) { setVisible(true); startStream(); } else { stopStream(); }
+          break;
+        case 'setDevice':
+          deviceId = typeof data === 'string' ? data : '';
+          if (stream) startStream(); // re-open on the new device
+          break;
+        case 'setZoom': applyZoom(data); break;
+        case 'mirror': mirror = !!data; applyMirror(); break;
+        case 'setRenderMode': setRenderMode(data); break;
+        case 'reset': setVisible(false); break;
+        case 'restore': setVisible(true); startStream(); break;
+        case 'blank': blankEl.style.display = data ? 'block' : 'none'; break;
+        case 'rescanDevices': reportDevices(); break;
+        default: log('error', `unknown camera command: ${cmd}`);
+      }
+    });
+
+    electronAPI.onCaptionSettings(applyCaptionSettings);
+    electronAPI.onCaptionText((payload) => {
+      setCaption(payload && typeof payload === 'object' ? payload.text : payload);
+    });
+    electronAPI.onLogoSettings(applyLogo);
+    electronAPI.onTransitionSettings(applyTransition);
+
+    // ════════════════════════════════════════════════════════════════
+    // STARTUP
+    // ════════════════════════════════════════════════════════════════
+
+    // Self-restore from config, the same way every other display window does,
+    // so content queued before this screen existed still shows up.
+    electronAPI.getConfig().then((cfg) => {
+      const c = (cfg && cfg.camera) || {};
+      deviceId = typeof c.deviceId === 'string' ? c.deviceId : '';
+      mirror = !!c.mirror;
+      setRenderMode(c.renderMode);
+      applyTransition(cfg && cfg.transition);
+      applyZoom(cfg && cfg.zoom && cfg.zoom.camera);
+      applyCaptionSettings(cfg && cfg.captions);
+      applyLogo(cfg && cfg.logo);
+      setVisible(c.visible !== false);
+      if (c.live) startStream(); else reportDevices();
+    }).catch((err) => {
+      log('error', `could not read config: ${err && err.message}`);
+      // Still usable: the normalizers already gave us a working default set.
+      applyCaptionSettings(null);
+      reportDevices();
+    });
+
+    window.addEventListener('beforeunload', () => {
+      stopStream();
+      clearInterval(typeTimer);
+      clearTimeout(fadeTimer);
+    });
+  </script>
+</body>
+</html>

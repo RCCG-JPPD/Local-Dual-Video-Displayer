@@ -1,0 +1,439 @@
+/**
+ * End-to-end checks for the camera screen, run inside a real Electron.
+ *
+ *   npm run test:e2e
+ *
+ * These assert on ACTUAL RENDERED PIXELS from `capturePage()`, which is the
+ * only way to prove the things that unit tests cannot reach: that the caption
+ * lands where the settings say, that RESET really fades to nothing, that the
+ * logo is drawn, and that a camera stream reaches the <video> element.
+ *
+ * The camera is Chromium's synthetic capture device
+ * (--use-fake-device-for-media-stream), a rolling colour pattern, so the
+ * getUserMedia path is exercised for real with no hardware and no permission
+ * prompt.
+ *
+ * Kept out of `test/` on purpose: `npm test` is `node --test`, which cannot
+ * load Electron. Kept out of build.files on purpose: it must not ship.
+ */
+'use strict';
+
+const { app, BrowserWindow, ipcMain } = require('electron');
+const path = require('path');
+
+const UI = path.join(__dirname, '..', 'src', 'ui', 'cameraDisplay.html');
+const PRELOAD = path.join(__dirname, '..', 'preload.js');
+const W = 800;
+const H = 450; // 16:9, matching the aspect the caption maths assumes
+
+// A synthetic camera, and no permission prompt for it.
+app.commandLine.appendSwitch('use-fake-device-for-media-stream');
+app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
+app.commandLine.appendSwitch('allow-file-access-from-files');
+app.disableHardwareAcceleration(); // deterministic pixels in a headless run
+
+// ── tiny test harness ─────────────────────────────────────────────────
+const results = [];
+let currentTest = null;
+
+function test(name, fn) { results.push({ name, fn }); }
+
+function check(ok, detail) {
+  if (!ok) throw new Error(detail);
+  currentTest.checks += 1;
+}
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// ── pixel helpers ─────────────────────────────────────────────────────
+
+/**
+ * capturePage → a BGRA bitmap plus helpers.
+ * Electron gives back premultiplied BGRA in the platform's byte order.
+ */
+async function grab(win) {
+  const image = await win.webContents.capturePage();
+  const size = image.getSize();
+  const buf = image.toBitmap();
+  const at = (x, y) => {
+    const i = (Math.floor(y) * size.width + Math.floor(x)) * 4;
+    return { b: buf[i], g: buf[i + 1], r: buf[i + 2], a: buf[i + 3] };
+  };
+  return {
+    size,
+    at,
+    /** Mean luminance over a fractional rect of the image, 0..255. */
+    brightness(fx, fy, fw, fh) {
+      const x0 = Math.floor(fx * size.width);
+      const y0 = Math.floor(fy * size.height);
+      const x1 = Math.min(size.width, Math.ceil((fx + fw) * size.width));
+      const y1 = Math.min(size.height, Math.ceil((fy + fh) * size.height));
+      let sum = 0;
+      let n = 0;
+      for (let y = y0; y < y1; y += 1) {
+        for (let x = x0; x < x1; x += 1) {
+          const p = at(x, y);
+          sum += 0.299 * p.r + 0.587 * p.g + 0.114 * p.b;
+          n += 1;
+        }
+      }
+      return n ? sum / n : 0;
+    },
+    /** How many pixels in a fractional rect are brighter than `threshold`. */
+    brightPixels(fx, fy, fw, fh, threshold = 200) {
+      const x0 = Math.floor(fx * size.width);
+      const y0 = Math.floor(fy * size.height);
+      const x1 = Math.min(size.width, Math.ceil((fx + fw) * size.width));
+      const y1 = Math.min(size.height, Math.ceil((fy + fh) * size.height));
+      let n = 0;
+      for (let y = y0; y < y1; y += 1) {
+        for (let x = x0; x < x1; x += 1) {
+          const p = at(x, y);
+          if (0.299 * p.r + 0.587 * p.g + 0.114 * p.b > threshold) n += 1;
+        }
+      }
+      return n;
+    },
+  };
+}
+
+// ── the window under test ─────────────────────────────────────────────
+
+let win = null;
+const rendererLog = [];
+
+/** Config handed to the screen, standing in for the real config file. */
+let testConfig = {};
+
+function makeConfig(over = {}) {
+  return {
+    camera: { deviceId: '', live: false, visible: true, mirror: false, renderMode: 'video' },
+    zoom: { camera: { mode: 'cover', scale: 1 } },
+    captions: {},
+    logo: {},
+    transition: { type: 'fade', durationMs: 80, easing: 'linear' },
+    ...over,
+  };
+}
+
+async function openWindow(config) {
+  testConfig = config;
+  win = new BrowserWindow({
+    width: W,
+    height: H,
+    show: false,
+    frame: false,
+    // The real camera window is transparent; a black backdrop is painted
+    // underneath in the tests that need to measure the feed.
+    transparent: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: PRELOAD,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      offscreen: false,
+    },
+  });
+  await win.loadFile(UI);
+  await sleep(250); // let the self-restore from config settle
+  return win;
+}
+
+/** Drive the screen exactly as IPCHandler.broadcastToRole would. */
+function send(channel, ...args) {
+  win.webContents.send(channel, ...args);
+}
+
+/** Read a value out of the page. */
+function evaluate(js) {
+  return win.webContents.executeJavaScript(js, true);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// TESTS
+// ══════════════════════════════════════════════════════════════════════
+
+test('the camera screen loads and reports no errors', async () => {
+  await openWindow(makeConfig());
+  const errors = rendererLog.filter(l => l.level === 'error');
+  check(errors.length === 0, `renderer errors on load: ${JSON.stringify(errors)}`);
+  const title = await evaluate('document.title');
+  check(title === 'Camera Display', `unexpected title: ${title}`);
+});
+
+test('getUserMedia delivers a live camera stream to the <video>', async () => {
+  send('camera-command', 'live', true);
+  await sleep(1200); // the fake device takes a moment to produce frames
+
+  const state = await evaluate(`(() => {
+    const v = document.getElementById('cam');
+    return JSON.stringify({
+      w: v.videoWidth, h: v.videoHeight,
+      hasStream: !!v.srcObject,
+      tracks: v.srcObject ? v.srcObject.getVideoTracks().length : 0,
+      live: v.srcObject ? v.srcObject.getVideoTracks()[0].readyState : 'none',
+      paused: v.paused,
+    });
+  })()`);
+  const s = JSON.parse(state);
+  check(s.hasStream, 'no MediaStream attached to the <video>');
+  check(s.tracks === 1, `expected 1 video track, got ${s.tracks}`);
+  check(s.live === 'live', `track readyState is "${s.live}"`);
+  check(s.w > 0 && s.h > 0, `video has no dimensions (${s.w}x${s.h})`);
+  check(!s.paused, 'the video element is paused');
+
+  // And it is genuinely painting: the fake device is a bright colour pattern.
+  const shot = await grab(win);
+  const lit = shot.brightness(0.2, 0.2, 0.6, 0.6);
+  check(lit > 12, `frame looks blank (mean luminance ${lit.toFixed(1)})`);
+});
+
+test('audio is never captured (feedback safety)', async () => {
+  const audio = await evaluate(`(() => {
+    const v = document.getElementById('cam');
+    return v.srcObject ? v.srcObject.getAudioTracks().length : -1;
+  })()`);
+  check(audio === 0, `expected 0 audio tracks, got ${audio}`);
+});
+
+test('a caption renders where the settings say, and moves when they change', async () => {
+  const style = {
+    fontSize: 9, width: 90, color: '#ffffff', outline: 'none',
+    animation: 'none', uppercase: true, margin: 4,
+  };
+
+  // Bottom-centre: ink in the bottom third, none in the top third.
+  send('caption-settings', { ...style, position: 'bottom-center' });
+  send('caption-text', { text: 'AMAZING GRACE', source: 'manual' });
+  await sleep(350);
+  let shot = await grab(win);
+  const bottom = shot.brightPixels(0, 0.66, 1, 0.34);
+  const top = shot.brightPixels(0, 0, 1, 0.34);
+  check(bottom > 150, `expected caption ink in the bottom third, found ${bottom}px`);
+  check(bottom > top * 3, `caption is not bottom-weighted (bottom ${bottom}px vs top ${top}px)`);
+
+  // Same text, top-centre: the weighting must invert.
+  send('caption-settings', { ...style, position: 'top-center' });
+  send('caption-text', { text: 'HOLY IS THE LORD', source: 'manual' });
+  await sleep(350);
+  shot = await grab(win);
+  const top2 = shot.brightPixels(0, 0, 1, 0.34);
+  const bottom2 = shot.brightPixels(0, 0.66, 1, 0.34);
+  check(top2 > 150, `expected caption ink in the top third, found ${top2}px`);
+  check(top2 > bottom2 * 3, `caption did not move to the top (top ${top2}px vs bottom ${bottom2}px)`);
+});
+
+test('the caption clears when asked', async () => {
+  send('caption-text', { text: '', source: 'manual' });
+  await sleep(350);
+  const shown = await evaluate(
+    `[...document.querySelectorAll('.caption')].map(e => e.textContent.trim()).join('|')`,
+  );
+  check(shown === '|' || shown === '', `captions still read "${shown}"`);
+});
+
+test('an unchanged lyric does not re-animate (the anti-flicker guarantee)', async () => {
+  send('caption-settings', { animation: 'fade', animationMs: 200, position: 'bottom-center' });
+  send('caption-text', { text: 'THAT SAVED A WRETCH LIKE ME', source: 'ocr' });
+  await sleep(400);
+
+  // Which buffer is showing, and what it says, must not change when the same
+  // line arrives again - that is what stops the caption strobing on stage.
+  const before = await evaluate(`(() => {
+    const a = document.getElementById('cap-a'), b = document.getElementById('cap-b');
+    return JSON.stringify({ a: a.textContent, b: b.textContent,
+      ao: getComputedStyle(a).opacity, bo: getComputedStyle(b).opacity });
+  })()`);
+
+  for (let i = 0; i < 4; i += 1) {
+    send('caption-text', { text: 'THAT SAVED A WRETCH LIKE ME', source: 'ocr' });
+    await sleep(60);
+  }
+  await sleep(300);
+
+  const after = await evaluate(`(() => {
+    const a = document.getElementById('cap-a'), b = document.getElementById('cap-b');
+    return JSON.stringify({ a: a.textContent, b: b.textContent,
+      ao: getComputedStyle(a).opacity, bo: getComputedStyle(b).opacity });
+  })()`);
+  check(before === after, `the caption re-animated on an identical line:\n  ${before}\n  ${after}`);
+
+  // A one-character OCR wobble must also be absorbed.
+  send('caption-text', { text: 'THAT SAVED A WRETCH L1KE ME', source: 'ocr' });
+  await sleep(300);
+  const wobbled = await evaluate(
+    `document.getElementById('cap-a').textContent + '|' + document.getElementById('cap-b').textContent`,
+  );
+  check(wobbled.includes('THAT SAVED A WRETCH LIKE ME'),
+    `an OCR wobble replaced the caption: "${wobbled}"`);
+});
+
+test('a genuinely new line DOES replace the caption', async () => {
+  send('caption-text', { text: 'I ONCE WAS LOST BUT NOW AM FOUND', source: 'ocr' });
+  await sleep(400);
+  const shown = await evaluate(
+    `[...document.querySelectorAll('.caption')].map(e => e.textContent).join('|')`,
+  );
+  check(shown.includes('I ONCE WAS LOST BUT NOW AM FOUND'),
+    `the new line was not shown: "${shown}"`);
+});
+
+test('RESET fades the screen to fully transparent', async () => {
+  // Something must be on screen first, or the test proves nothing.
+  send('camera-command', 'live', true);
+  send('caption-text', { text: 'BEFORE RESET', source: 'manual' });
+  await sleep(600);
+  const before = await grab(win);
+  const litBefore = before.brightness(0, 0, 1, 1);
+  check(litBefore > 8, `nothing visible before RESET (luminance ${litBefore.toFixed(1)})`);
+
+  send('camera-command', 'reset', null);
+  await sleep(500); // fade is 80ms in the test config
+
+  const opacity = await evaluate("getComputedStyle(document.getElementById('stage')).opacity");
+  check(Number(opacity) === 0, `stage opacity is ${opacity}, expected 0`);
+
+  // The window is transparent, so a faded stage must leave zero alpha - this
+  // is what lets the app behind (the lyrics software) show through.
+  const after = await grab(win);
+  const centre = after.at(after.size.width / 2, after.size.height / 2);
+  check(centre.a === 0, `pixel alpha after RESET is ${centre.a}, expected 0 (fully see-through)`);
+  const litAfter = after.brightness(0, 0, 1, 1);
+  check(litAfter < 1, `screen is not blank after RESET (luminance ${litAfter.toFixed(1)})`);
+});
+
+test('the camera stream is released after a reset', async () => {
+  // The fade deliberately outlives the stop, so give it room.
+  await sleep(400);
+  const tracks = await evaluate(`(() => {
+    const v = document.getElementById('cam');
+    return v.srcObject ? v.srcObject.getVideoTracks().filter(t => t.readyState === 'live').length : 0;
+  })()`);
+  check(tracks === 0, `${tracks} camera track(s) still live after RESET — the camera light stays on`);
+});
+
+test('restore brings the screen back', async () => {
+  send('camera-command', 'restore', null);
+  await sleep(900);
+  const opacity = await evaluate("getComputedStyle(document.getElementById('stage')).opacity");
+  check(Number(opacity) === 1, `stage opacity is ${opacity}, expected 1`);
+  const shot = await grab(win);
+  const lit = shot.brightness(0.2, 0.2, 0.6, 0.6);
+  check(lit > 8, `screen still blank after restore (luminance ${lit.toFixed(1)})`);
+});
+
+test('the logo is drawn in the corner it is given', async () => {
+  // An 8x8 solid red PNG, inlined so the test needs no fixture on disk.
+  const RED_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR42mP4z8CAFTEMLQkAKP8/wc53yE8AAAAASUVORK5CYII=';
+
+  // logoStyles() drives the geometry; point the <img> straight at the data URI
+  // so this test covers placement without depending on the file dialog.
+  await evaluate(`(() => {
+    const l = document.getElementById('logo');
+    Object.assign(l.style, electronAPI.logo.styles(
+      { enabled: true, source: 'x.png', position: 'top-right', size: 20, opacity: 1, margin: 4 }));
+    l.src = ${JSON.stringify(RED_PNG)};
+    return true;
+  })()`);
+  // Wait for the decode instead of guessing - a broken data URI would
+  // otherwise look identical to a placement bug.
+  const loaded = await evaluate(`(() => {
+    const l = document.getElementById('logo');
+    return new Promise(res => {
+      if (l.complete && l.naturalWidth) return res(l.naturalWidth);
+      l.onload = () => res(l.naturalWidth);
+      l.onerror = () => res(-1);
+      setTimeout(() => res(l.naturalWidth || 0), 2000);
+    });
+  })()`);
+  check(loaded > 0, `the logo image failed to decode (naturalWidth ${loaded})`);
+  await sleep(250);
+
+  const shot = await grab(win);
+  const redness = (fx, fy) => {
+    let n = 0;
+    const x0 = Math.floor(fx * shot.size.width);
+    const y0 = Math.floor(fy * shot.size.height);
+    for (let y = y0; y < y0 + Math.floor(0.15 * shot.size.height); y += 1) {
+      for (let x = x0; x < x0 + Math.floor(0.2 * shot.size.width); x += 1) {
+        const p = shot.at(x, y);
+        if (p.r > 120 && p.r > p.g * 2 && p.r > p.b * 2) n += 1;
+      }
+    }
+    return n;
+  };
+  const topRight = redness(0.78, 0.02);
+  const topLeft = redness(0.02, 0.02);
+  check(topRight > 50, `no logo found in the top-right (${topRight} red px)`);
+  check(topRight > topLeft * 3, `logo is not in the right corner (right ${topRight} vs left ${topLeft})`);
+});
+
+test('blackout covers the screen (and is not the same as RESET)', async () => {
+  send('camera-command', 'blank', true);
+  await sleep(250);
+  const shot = await grab(win);
+  const centre = shot.at(shot.size.width / 2, shot.size.height / 2);
+  check(centre.a > 250, `blackout should be OPAQUE, alpha was ${centre.a}`);
+  check(centre.r < 12 && centre.g < 12 && centre.b < 12,
+    `blackout is not black: rgb(${centre.r},${centre.g},${centre.b})`);
+  send('camera-command', 'blank', false);
+  await sleep(200);
+});
+
+test('the compatibility (canvas) renderer paints frames too', async () => {
+  send('camera-command', 'setRenderMode', 'canvas');
+  send('camera-command', 'live', true);
+  await sleep(1400);
+
+  const mode = await evaluate("document.body.classList.contains('canvas-mode')");
+  check(mode === true, 'canvas-mode class was not applied');
+
+  const painted = await evaluate(`(() => {
+    const c = document.getElementById('cam-canvas');
+    return JSON.stringify({ w: c.width, h: c.height });
+  })()`);
+  const p = JSON.parse(painted);
+  check(p.w > 0 && p.h > 0, `canvas was never sized (${p.w}x${p.h})`);
+
+  const shot = await grab(win);
+  const lit = shot.brightness(0.2, 0.2, 0.6, 0.6);
+  check(lit > 12, `canvas renderer produced a blank screen (luminance ${lit.toFixed(1)})`);
+
+  send('camera-command', 'setRenderMode', 'video');
+  await sleep(200);
+});
+
+// ══════════════════════════════════════════════════════════════════════
+
+app.whenReady().then(async () => {
+  // Stand in for the parts of IPCHandler the screen talks to.
+  ipcMain.handle('get-config', () => testConfig);
+  ipcMain.on('renderer-log', (_e, level, msg) => rendererLog.push({ level, msg }));
+  ipcMain.on('camera-status', () => {});
+  ipcMain.on('camera-devices', () => {});
+
+  let failed = 0;
+  for (const t of results) {
+    currentTest = { checks: 0 };
+    const started = Date.now();
+    try {
+      await t.fn();
+      console.log(`  ok   ${t.name}  (${currentTest.checks} checks, ${Date.now() - started}ms)`);
+    } catch (err) {
+      failed += 1;
+      console.log(`  FAIL ${t.name}`);
+      console.log(`       ${err.message}`);
+    }
+  }
+
+  const errs = rendererLog.filter(l => l.level === 'error');
+  if (errs.length) {
+    console.log('\n  renderer errors reported during the run:');
+    errs.forEach(e => console.log(`    ${e.msg}`));
+  }
+
+  console.log(`\n  ${results.length - failed}/${results.length} passed`);
+  if (win && !win.isDestroyed()) win.destroy();
+  app.exit(failed ? 1 : 0);
+});
