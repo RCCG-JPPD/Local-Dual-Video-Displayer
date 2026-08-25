@@ -279,6 +279,121 @@ test('a genuinely new line DOES replace the caption', async () => {
     `the new line was not shown: "${shown}"`);
 });
 
+test('caption text is never interpreted as markup', async () => {
+  // Caption text is OCR of ANOTHER application's screen. It is machine-read
+  // from content this app does not control, so it must reach the DOM as text
+  // and never as markup.
+  const nasty = '<img src=x onerror="window.__pwned=1"><script>window.__pwned=1</script>';
+  send('caption-settings', { animation: 'none', position: 'bottom-center' });
+  send('caption-text', { text: nasty, source: 'ocr' });
+  await sleep(400);
+
+  const result = JSON.parse(await evaluate(`(() => {
+    const els = [...document.querySelectorAll('.caption')];
+    return JSON.stringify({
+      pwned: !!window.__pwned,
+      imgs: document.querySelectorAll('.caption img').length,
+      scripts: document.querySelectorAll('.caption script').length,
+      text: els.map(e => e.textContent).join(''),
+    });
+  })()`));
+
+  check(result.pwned === false, 'injected script executed');
+  check(result.imgs === 0, `${result.imgs} <img> element(s) were created from caption text`);
+  check(result.scripts === 0, `${result.scripts} <script> element(s) were created`);
+  check(result.text.includes('<img'), 'the text was not shown verbatim');
+
+  send('caption-text', { text: '', source: 'manual' });
+  await sleep(300);
+});
+
+test('the typewriter animation actually types', async () => {
+  send('caption-settings', {
+    animation: 'typewriter', animationMs: 900, position: 'bottom-center', fontSize: 7,
+  });
+  send('caption-text', { text: 'AMAZING GRACE HOW SWEET THE SOUND', source: 'manual' });
+  await sleep(250);
+
+  const partial = await evaluate(
+    "[...document.querySelectorAll('.caption')].map(e => e.textContent).join('|')");
+  await sleep(1100);
+  const full = await evaluate(
+    "[...document.querySelectorAll('.caption')].map(e => e.textContent).join('|')");
+
+  const target = 'AMAZING GRACE HOW SWEET THE SOUND';
+  check(full.includes(target), `the line never completed: "${full}"`);
+  // Mid-flight it must be a strict prefix, not the whole line at once.
+  const shown = partial.replace(/\|/g, '');
+  check(shown.length < target.length, `typewriter showed everything at once: "${partial}"`);
+  check(target.startsWith(shown.trim()) || shown.trim() === '',
+    `typewriter output is not a prefix of the line: "${shown}"`);
+
+  send('caption-settings', { animation: 'none' });
+  send('caption-text', { text: '', source: 'manual' });
+  await sleep(300);
+});
+
+test('every caption position and animation renders without error', async () => {
+  // A cheap sweep: any combination that threw would leave the screen blank
+  // mid-song, and there are 63 of them.
+  const positions = await evaluate('JSON.stringify(electronAPI.captions.POSITIONS)');
+  const animations = await evaluate('JSON.stringify(electronAPI.captions.ANIMATIONS)');
+  const before = rendererLog.filter(l => l.level === 'error').length;
+
+  for (const position of JSON.parse(positions)) {
+    for (const animation of JSON.parse(animations)) {
+      send('caption-settings', { position, animation, animationMs: 0, fontSize: 6 });
+      send('caption-text', { text: `${position} / ${animation}`, source: 'manual' });
+    }
+  }
+  await sleep(900);
+
+  const errs = rendererLog.filter(l => l.level === 'error').slice(before);
+  check(errs.length === 0, `errors while sweeping caption styles: ${JSON.stringify(errs)}`);
+
+  // And the caption layer still works afterwards - the failure this guards
+  // against is a bad combination leaving a buffer stuck invisible.
+  send('caption-settings', {
+    position: 'bottom-center', animation: 'none', fontSize: 9, width: 90,
+    color: '#ffffff', outline: 'none', uppercase: true,
+  });
+  send('caption-text', { text: 'STILL WORKING', source: 'manual' });
+  await sleep(500);
+  const shot = await grab(win);
+  check(shot.brightPixels(0, 0.66, 1, 0.34) > 100,
+    'the caption layer stopped drawing after sweeping every style');
+
+  send('caption-text', { text: '', source: 'manual' });
+  await sleep(300);
+});
+
+test('zoom and mirror reach the camera element', async () => {
+  send('camera-command', 'live', true);
+  await sleep(900);
+  send('camera-command', 'setZoom', { mode: 'cover', scale: 1.4 });
+  await sleep(250);
+  let st = JSON.parse(await evaluate(`(() => {
+    const v = document.getElementById('cam');
+    return JSON.stringify({ fit: v.style.objectFit, tf: v.style.transform });
+  })()`));
+  check(st.fit === 'cover', `objectFit is "${st.fit}"`);
+  check(st.tf.includes('1.4'), `transform is "${st.tf}"`);
+  check(!st.tf.includes('scaleX(-1)'), 'mirrored before being asked to');
+
+  send('camera-command', 'mirror', true);
+  await sleep(250);
+  st = JSON.parse(await evaluate(`(() => {
+    const v = document.getElementById('cam');
+    return JSON.stringify({ tf: v.style.transform });
+  })()`));
+  check(st.tf.includes('scaleX(-1)'), `mirror did not apply: "${st.tf}"`);
+  // Mirroring rides on top of the zoom, so both must survive together.
+  check(st.tf.includes('1.4'), `mirror clobbered the zoom: "${st.tf}"`);
+
+  send('camera-command', 'mirror', false);
+  await sleep(200);
+});
+
 test('RESET fades the screen to fully transparent', async () => {
   // Something must be on screen first, or the test proves nothing.
   send('camera-command', 'live', true);

@@ -243,3 +243,7 @@ function describeOcrError(err) {
 }
 
 module.exports = OcrEngine;
+// Exported for unit tests: both are pure, and `unpacked` in particular only
+// ever misbehaves inside a packaged app, where it is hardest to notice.
+module.exports.unpacked = unpacked;
+module.exports.describeOcrError = describeOcrError;
