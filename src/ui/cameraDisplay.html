@@ -56,9 +56,23 @@
       opacity: 0;
       pointer-events: none;
     }
-    #vdo-layer iframe.on-air { opacity: 1; }
+    /* Visibility is driven by inline opacity from takeSource(), so a cut can
+       carry the configured transition. */
     body:not(.vdo-mode) #vdo-layer { display: none; }
     body.vdo-mode #cam, body.vdo-mode #cam-canvas { display: none; }
+
+    /* Built-in test pattern — see drawPattern(). */
+    #pattern-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: none;
+    }
+    body.pattern-mode #pattern-canvas { display: block; }
+    body.pattern-mode #cam,
+    body.pattern-mode #cam-canvas,
+    body.pattern-mode #vdo-layer { display: none; }
 
     /* The compatibility renderer: only one of the two is ever live. */
     #cam-canvas { display: none; }
@@ -113,6 +127,7 @@
     <video id="cam" autoplay muted playsinline></video>
     <canvas id="cam-canvas"></canvas>
     <div id="vdo-layer"></div>
+    <canvas id="pattern-canvas"></canvas>
 
     <div id="caption-layer">
       <div class="caption" id="cap-a"></div>
@@ -165,6 +180,7 @@
     let zoomSettings = electronAPI.zoom.normalize(null);
 
     const vdoLayer = document.getElementById('vdo-layer');
+    const patternCanvas = document.getElementById('pattern-canvas');
 
     let sourceKind = 'device'; // 'device' (local camera) | 'vdo' (remote stream)
     let vdoSettings = { sources: [], activeId: null, preloadAll: true };
@@ -180,6 +196,10 @@
     let typeTimer = null;    // typewriter interval
     let fadeTimer = null;    // delayed track-stop after a fade-out
     let rafId = null;        // canvas-mode draw loop
+    let patternRaf = null;   // test-pattern draw loop
+    let patternFrame = 0;
+    let takeTimer = null;    // delayed half of a dip-through-nothing cut
+    let hueStrip = null;     // cached 1px-tall rainbow
 
     // ════════════════════════════════════════════════════════════════
     // STAGE / TRANSITIONS
@@ -211,6 +231,12 @@
     function applyTransition(t) {
       transitionSettings = electronAPI.transition.normalize(t);
       Object.assign(stage.style, electronAPI.transition.styles(transitionSettings, visible));
+      // Camera-to-camera cuts use the same setting, so re-arm those frames too.
+      const ms = electronAPI.transition.ms(transitionSettings);
+      const ease = transitionSettings.easing;
+      Array.from(vdoLayer.children).forEach((frame) => {
+        frame.style.transition = ms > 0 ? `opacity ${ms}ms ${ease}` : 'none';
+      });
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -327,6 +353,120 @@
     }
 
     // ════════════════════════════════════════════════════════════════
+    // BUILT-IN TEST PATTERN
+    // ════════════════════════════════════════════════════════════════
+
+    // Ported from ../virtualcam-helper (pattern_source.py). It exists to cut a
+    // diagnosis in half: when the picture is wrong, the question is always
+    // "is it this screen, or is it the camera/stream?". The pattern needs no
+    // camera, no network and nobody publishing — so if the rainbow appears
+    // with the captions and logo over it, the whole screen path is proven and
+    // anything still broken is upstream.
+    //
+    // Every element earns its place:
+    //   scrolling rainbow  - colour and motion
+    //   vertical shade     - reveals a flipped or squashed picture
+    //   sweeping white bar - proves motion, makes tearing visible
+    //   corner ticks       - if one is missing, something is cropping
+    //   text overlay       - resolution, frame count and a clock, readable
+    //                        from across a room: live, frozen or stretched?
+
+    const PATTERN_FPS = 30;
+
+    /** A one-pixel-tall canvas spanning the full hue circle, built once. */
+    function buildHueStrip(width) {
+      if (hueStrip && hueStrip.width === width) return hueStrip;
+      const strip = document.createElement('canvas');
+      strip.width = width;
+      strip.height = 1;
+      const sctx = strip.getContext('2d');
+      const grad = sctx.createLinearGradient(0, 0, width, 0);
+      for (let i = 0; i <= 12; i += 1) {
+        grad.addColorStop(i / 12, `hsl(${(i / 12) * 360}, 92%, 55%)`);
+      }
+      sctx.fillStyle = grad;
+      sctx.fillRect(0, 0, width, 1);
+      hueStrip = strip;
+      return strip;
+    }
+
+    function drawPattern() {
+      if (sourceKind !== 'pattern') { patternRaf = null; return; }
+
+      const w = Math.max(2, Math.floor(window.innerWidth));
+      const h = Math.max(2, Math.floor(window.innerHeight));
+      if (patternCanvas.width !== w || patternCanvas.height !== h) {
+        patternCanvas.width = w;
+        patternCanvas.height = h;
+        hueStrip = null;
+      }
+      const ctx = patternCanvas.getContext('2d');
+      const strip = buildHueStrip(w);
+      const seconds = patternFrame / PATTERN_FPS;
+
+      // Scroll one full cycle every four seconds, drawn twice so it wraps.
+      const offset = Math.floor((seconds * (w / 4)) % w);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(strip, offset, 0, w, 1, 0, 0, w, h);
+      ctx.drawImage(strip, offset - w, 0, w, 1, 0, 0, w, h);
+
+      // A gentle vertical shade: enough to reveal a flipped or squashed
+      // picture without muddying the colours a format problem shows up in.
+      const shade = ctx.createLinearGradient(0, 0, 0, h);
+      shade.addColorStop(0, 'rgba(0,0,0,0)');
+      shade.addColorStop(1, 'rgba(0,0,0,0.28)');
+      ctx.fillStyle = shade;
+      ctx.fillRect(0, 0, w, h);
+
+      // A bar sweeping left to right.
+      const barW = Math.max(2, Math.floor(w / 120));
+      const barX = Math.floor((seconds * (w / 2)) % w);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(barX, 0, barW, h);
+
+      // Corner ticks: if any is missing, the picture is being cropped.
+      const tick = Math.max(6, Math.floor(Math.min(w, h) / 40));
+      [[0, 0], [w - tick, 0], [0, h - tick], [w - tick, h - tick]]
+        .forEach(([x, y]) => ctx.fillRect(x, y, tick, tick));
+
+      // Readable from across a room.
+      const scale = Math.max(0.45, (Math.min(w, h) / 720));
+      const lines = [
+        'TEST PATTERN',
+        `${w}x${h}  ${PATTERN_FPS}fps`,
+        `frame ${patternFrame}   ${String(Math.floor(seconds / 60)).padStart(2, '0')}`
+          + `:${String(Math.floor(seconds % 60)).padStart(2, '0')}`,
+      ];
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      let y = h * 0.34;
+      lines.forEach((text, i) => {
+        const size = Math.round(scale * (i === 0 ? 46 : 30));
+        ctx.font = `${i === 0 ? '700' : '500'} ${size}px system-ui, sans-serif`;
+        // Drawn twice: black underneath so the text stays readable wherever
+        // the rainbow happens to be light.
+        ctx.lineWidth = Math.max(3, size * 0.16);
+        ctx.strokeStyle = '#000000';
+        ctx.strokeText(text, w / 2, y);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(text, w / 2, y);
+        y += size + h * 0.04;
+      });
+
+      patternFrame += 1;
+      patternRaf = requestAnimationFrame(drawPattern);
+    }
+
+    function startPattern() {
+      hintEl.classList.add('hidden');
+      if (!patternRaf) patternRaf = requestAnimationFrame(drawPattern);
+    }
+
+    function stopPattern() {
+      if (patternRaf) { cancelAnimationFrame(patternRaf); patternRaf = null; }
+    }
+
+    // ════════════════════════════════════════════════════════════════
     // VDO.NINJA SOURCES
     // ════════════════════════════════════════════════════════════════
 
@@ -372,7 +512,6 @@
           return;
         }
         if (frame.getAttribute('src') !== safe) frame.src = safe;
-        frame.classList.toggle('on-air', src.id === vdoSettings.activeId);
       });
 
       const active = vdoSettings.sources.find(src => src.id === vdoSettings.activeId);
@@ -380,17 +519,64 @@
         hintEl.classList.toggle('hidden', !!active);
         if (!active) hintEl.textContent = 'No camera on air — pick one in the controller.';
       }
+
+      takeSource(vdoSettings.activeId);
     }
 
-    /** Switch between a local camera and the remote streams. */
+    /**
+     * Put one source on air, using the configured transition.
+     *
+     * Because every source stays mounted and connected, this is a real
+     * cross-fade between two live pictures rather than a reload:
+     *   cut       - instant swap
+     *   crossfade - both visible at once, the outgoing fading as the incoming rises
+     *   fade      - dip through nothing first, then bring the new one up
+     */
+    function takeSource(id) {
+      const frames = Array.from(vdoLayer.children);
+      const ms = electronAPI.transition.ms(transitionSettings);
+      const type = electronAPI.transition.normalize(transitionSettings).type;
+      const ease = electronAPI.transition.normalize(transitionSettings).easing;
+
+      clearTimeout(takeTimer);
+
+      frames.forEach((frame) => {
+        frame.style.transition = ms > 0 ? `opacity ${ms}ms ${ease}` : 'none';
+      });
+
+      const incoming = frames.find(f => f.dataset.sourceId === id);
+      const outgoing = frames.filter(f => f !== incoming && f.style.opacity !== '0');
+
+      if (type === 'fade' && ms > 0 && outgoing.length && incoming) {
+        // Dip through nothing: the old picture leaves before the new arrives,
+        // so the two never overlap on screen.
+        outgoing.forEach((f) => { f.style.opacity = '0'; });
+        takeTimer = setTimeout(() => {
+          incoming.style.opacity = '1';
+        }, ms);
+      } else {
+        // Cut, or cross-fade: everything moves at once.
+        frames.forEach((frame) => {
+          frame.style.opacity = frame === incoming ? '1' : '0';
+        });
+      }
+    }
+
+    /** Switch between a local camera, the remote streams, and the test pattern. */
     function setSourceKind(kind) {
-      sourceKind = kind === 'vdo' ? 'vdo' : 'device';
+      sourceKind = ['vdo', 'pattern'].includes(kind) ? kind : 'device';
       document.body.classList.toggle('vdo-mode', sourceKind === 'vdo');
+      document.body.classList.toggle('pattern-mode', sourceKind === 'pattern');
+
+      if (sourceKind !== 'pattern') stopPattern();
+      // Nothing should hold the local camera while another source is on air.
+      if (sourceKind !== 'device') stopStream();
+
       if (sourceKind === 'vdo') {
-        // Release the local camera: nothing should hold the device while a
-        // remote stream is on air.
-        stopStream();
         applyVdo(vdoSettings);
+      } else if (sourceKind === 'pattern') {
+        patternFrame = 0;
+        startPattern();
       } else {
         hintEl.textContent = 'Camera screen ready';
         hintEl.classList.toggle('hidden', !!stream);
@@ -553,8 +739,10 @@
 
     window.addEventListener('beforeunload', () => {
       stopStream();
+      stopPattern();
       clearInterval(typeTimer);
       clearTimeout(fadeTimer);
+      clearTimeout(takeTimer);
     });
   </script>
 </body>

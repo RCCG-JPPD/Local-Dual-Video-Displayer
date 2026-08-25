@@ -412,13 +412,15 @@ test('VDO.Ninja sources mount as visible, fadeable iframes', async () => {
       f.dataset.sourceId = id; f.src = src;
       layer.appendChild(f);
     }
-    layer.querySelector('[data-source-id="a"]').classList.add('on-air');
     // applyVdo() hides the hint when a source is on air; this test injects the
     // frames directly, so do it by hand or the hint's 45%-black panel sits
     // over the sample point.
     document.getElementById('hint').classList.add('hidden');
     return true;
   })()`);
+  // Drive the real cut function rather than poking the DOM, so the transition
+  // logic is under test too.
+  await evaluate("takeSource('a'); true");
   await sleep(700);
 
   const isRed = (p) => p.r > 120 && p.r > p.g * 2 && p.r > p.b * 2;
@@ -426,15 +428,28 @@ test('VDO.Ninja sources mount as visible, fadeable iframes', async () => {
 
   let shot = await grab(win);
   let mid = shot.at(shot.size.width / 2, shot.size.height / 2);
-  check(isRed(mid), `source A is not on screen: rgb(${mid.r},${mid.g},${mid.b})`);
+  if (!isRed(mid)) {
+    // Say WHY rather than just "not red": the usual causes are the hint panel
+    // sitting over the sample point, or the frame never coming up.
+    const why = await evaluate(`(() => {
+      const cs = getComputedStyle;
+      const f = document.querySelector('[data-source-id="a"]');
+      return JSON.stringify({
+        hint: cs(document.getElementById('hint')).display,
+        stage: cs(document.getElementById('stage')).opacity,
+        frameOpacity: f ? cs(f).opacity : 'no frame',
+        frames: document.getElementById('vdo-layer').children.length,
+        body: document.body.className,
+      });
+    })()`);
+    check(false, `source A is not on screen: rgb(${mid.r},${mid.g},${mid.b}) — ${why}`);
+  }
+  check(isRed(mid), 'source A is on screen');
 
-  // Cutting to another camera is an opacity swap, so it should be immediate.
-  await evaluate(`(() => {
-    const l = document.getElementById('vdo-layer');
-    l.querySelector('[data-source-id="a"]').classList.remove('on-air');
-    l.querySelector('[data-source-id="b"]').classList.add('on-air');
-    return true;
-  })()`);
+  // Cut to the other camera.
+  send('transition-settings', { type: 'cut', durationMs: 0 });
+  await sleep(150);
+  await evaluate("takeSource('b'); true");
   await sleep(300);
   shot = await grab(win);
   mid = shot.at(shot.size.width / 2, shot.size.height / 2);
@@ -455,6 +470,89 @@ test('VDO.Ninja sources mount as visible, fadeable iframes', async () => {
   [red, blue].forEach(f => { try { fs.unlinkSync(f); } catch (_) { /* best effort */ } });
 });
 
+test('cutting between cameras honours the chosen transition', async () => {
+  const fs = require('fs');
+  const os = require('os');
+  const guest = (name, css) => {
+    const f = path.join(os.tmpdir(), `ldvd-tr-${name}-${process.pid}.html`);
+    fs.writeFileSync(f, '<!DOCTYPE html><meta charset="utf-8">'
+      + `<body style="margin:0;background:${css}"></body>`);
+    return f;
+  };
+  const red = guest('red', 'rgb(255,0,0)');
+  const blue = guest('blue', 'rgb(0,0,255)');
+
+  send('camera-command', 'setSource', 'vdo');
+  await sleep(200);
+  await evaluate(`(() => {
+    const layer = document.getElementById('vdo-layer');
+    layer.innerHTML = '';
+    for (const [id, src] of [['a', ${JSON.stringify('file://' + red)}],
+                             ['b', ${JSON.stringify('file://' + blue)}]]) {
+      const f = document.createElement('iframe');
+      f.dataset.sourceId = id; f.src = src;
+      layer.appendChild(f);
+    }
+    document.getElementById('hint').classList.add('hidden');
+    return true;
+  })()`);
+  await sleep(600);
+
+  // A cut is instant: no CSS transition at all.
+  send('transition-settings', { type: 'cut', durationMs: 800 });
+  await sleep(200);
+  await evaluate("takeSource('a'); true");
+  await sleep(150);
+  const cutCss = await evaluate(
+    "getComputedStyle(document.querySelector('[data-source-id=\"a\"]')).transitionDuration");
+  check(cutCss === '0s' || cutCss === '', `a cut should not animate, got "${cutCss}"`);
+
+  // A cross-fade overlaps: mid-transition BOTH frames are partly visible.
+  send('transition-settings', { type: 'crossfade', durationMs: 900, easing: 'linear' });
+  await sleep(200);
+  await evaluate("takeSource('b'); true");
+  await sleep(400); // roughly mid-fade
+  const mid = JSON.parse(await evaluate(`(() => {
+    const o = (id) => Number(getComputedStyle(
+      document.querySelector('[data-source-id="' + id + '"]')).opacity);
+    return JSON.stringify({ a: o('a'), b: o('b') });
+  })()`));
+  check(mid.a > 0.05 && mid.b > 0.05,
+    `a cross-fade should overlap, saw a=${mid.a} b=${mid.b}`);
+
+  await sleep(800);
+  const done = JSON.parse(await evaluate(`(() => {
+    const o = (id) => Number(getComputedStyle(
+      document.querySelector('[data-source-id="' + id + '"]')).opacity);
+    return JSON.stringify({ a: o('a'), b: o('b') });
+  })()`));
+  check(done.b > 0.95 && done.a < 0.05,
+    `the cross-fade did not finish cleanly: a=${done.a} b=${done.b}`);
+
+  // A fade dips through nothing: mid-transition NEITHER is fully up, and the
+  // incoming one has not started yet.
+  send('transition-settings', { type: 'fade', durationMs: 900, easing: 'linear' });
+  await sleep(200);
+  await evaluate("takeSource('a'); true");
+  await sleep(400);
+  const dip = JSON.parse(await evaluate(`(() => {
+    const o = (id) => Number(getComputedStyle(
+      document.querySelector('[data-source-id="' + id + '"]')).opacity);
+    return JSON.stringify({ a: o('a'), b: o('b') });
+  })()`));
+  check(dip.a < 0.2, `a fade should not raise the incoming camera yet, a=${dip.a}`);
+
+  await sleep(1400);
+  const settled = Number(await evaluate(
+    "getComputedStyle(document.querySelector('[data-source-id=\"a\"]')).opacity"));
+  check(settled > 0.95, `the fade never brought the new camera up (${settled})`);
+
+  send('transition-settings', { type: 'fade', durationMs: 80, easing: 'linear' });
+  send('camera-command', 'setSource', 'device');
+  await sleep(300);
+  [red, blue].forEach(f => { try { fs.unlinkSync(f); } catch (_) { /* best effort */ } });
+});
+
 test('a source with a bad URL is refused, not mounted', async () => {
   send('camera-command', 'setSource', 'vdo');
   send('camera-command', 'setVdo', {
@@ -466,6 +564,58 @@ test('a source with a bad URL is refused, not mounted', async () => {
   check(frames === 0, `${frames} frame(s) mounted for a disallowed host`);
   send('camera-command', 'setSource', 'device');
   await sleep(200);
+});
+
+test('the test pattern proves the screen path with no camera and no stream', async () => {
+  send('camera-command', 'setSource', 'pattern');
+  await sleep(700);
+
+  const mode = await evaluate("document.body.classList.contains('pattern-mode')");
+  check(mode === true, 'pattern-mode was not applied');
+
+  const shot = await grab(win);
+
+  // Colour: a rainbow means several distinct hues across the width, which a
+  // blank or single-colour screen would not produce.
+  const hues = new Set();
+  for (let i = 1; i < 20; i += 1) {
+    const p = shot.at((i / 20) * shot.size.width, shot.size.height * 0.75);
+    const max = Math.max(p.r, p.g, p.b);
+    const min = Math.min(p.r, p.g, p.b);
+    if (max - min > 40) hues.add(`${p.r > p.g}${p.g > p.b}${p.b > p.r}`);
+  }
+  check(hues.size >= 2, `expected a rainbow, found ${hues.size} distinct hue relation(s)`);
+
+  // Corner ticks: their whole job is to reveal cropping, so they must be there.
+  const corner = (fx, fy) => shot.brightPixels(fx, fy, 0.03, 0.05, 190);
+  for (const [fx, fy, name] of [
+    [0, 0, 'top-left'], [0.97, 0, 'top-right'],
+    [0, 0.95, 'bottom-left'], [0.97, 0.95, 'bottom-right'],
+  ]) {
+    check(corner(fx, fy) > 3, `no corner tick at ${name}`);
+  }
+
+  // Motion: the pattern must actually animate, or a frozen screen would pass
+  // every check above.
+  const frameA = await evaluate('patternFrame');
+  await sleep(400);
+  const frameB = await evaluate('patternFrame');
+  check(frameB > frameA, `the pattern is frozen (frame stuck at ${frameA})`);
+
+  // And it must composite with everything else the screen draws.
+  send('caption-settings', { position: 'bottom-center', fontSize: 9, outline: 'shadow' });
+  send('caption-text', { text: 'PATTERN CHECK', source: 'manual' });
+  await sleep(400);
+  const withCaption = await grab(win);
+  check(withCaption.brightPixels(0, 0.66, 1, 0.34) > 150,
+    'captions do not draw over the test pattern');
+});
+
+test('leaving the test pattern stops its draw loop', async () => {
+  send('camera-command', 'setSource', 'device');
+  await sleep(400);
+  const running = await evaluate('patternRaf !== null');
+  check(running === false, 'the pattern kept animating after switching away');
 });
 
 test('the compatibility (canvas) renderer paints frames too', async () => {

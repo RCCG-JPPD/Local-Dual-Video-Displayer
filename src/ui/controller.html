@@ -816,7 +816,10 @@
       <div class="src-tabs">
         <button id="srcDeviceBtn" data-source="device">🎥 Local camera</button>
         <button id="srcVdoBtn" data-source="vdo">🌐 VDO.Ninja (phones / remote)</button>
+        <button id="srcPatternBtn" data-source="pattern"
+                title="Prove the screen works without a camera or a stream">🌈 Test pattern</button>
       </div>
+      <div class="section-hint" id="srcHint"></div>
 
       <!-- ── VDO.NINJA SOURCES ──────────────────────────────────────── -->
       <div id="vdoPanel" style="display:none;">
@@ -886,9 +889,13 @@
           </label>
         </div>
         <div class="section-hint">
-          RESET fades the screen to fully transparent, so the app running behind it
-          shows through. Works anywhere with <b>Ctrl/Cmd+Shift+0</b>, even when this
-          window isn't focused.
+          Used in three places: turning the camera <b>on and off</b>, <b>RESET</b>, and
+          <b>cutting between cameras</b>.<br>
+          <b>Fade</b> dips through nothing — the old picture leaves before the new one
+          arrives. <b>Cross-fade</b> overlaps them. <b>Cut</b> is instant.<br>
+          RESET fades the screen to fully transparent, so the app running behind it shows
+          through. Works anywhere with <b>Ctrl/Cmd+Shift+0</b>, even when this window
+          isn't focused.
         </div>
       </div>
 
@@ -1953,25 +1960,38 @@
     }
 
     function setSourceKind(kind) {
-      camState.source = kind === 'vdo' ? 'vdo' : 'device';
+      camState.source = ['vdo', 'pattern'].includes(kind) ? kind : 'device';
       electronAPI.sendCameraCommand('setSource', camState.source);
       renderSourceTabs();
     }
 
     function renderSourceTabs() {
-      const isVdo = camState.source === 'vdo';
-      const d = $('srcDeviceBtn');
-      const v = $('srcVdoBtn');
-      if (d) d.classList.toggle('active', !isVdo);
-      if (v) v.classList.toggle('active', isVdo);
+      const kind = camState.source;
+      [['srcDeviceBtn', 'device'], ['srcVdoBtn', 'vdo'], ['srcPatternBtn', 'pattern']]
+        .forEach(([id, k]) => {
+          const el = $(id);
+          if (el) el.classList.toggle('active', kind === k);
+        });
+
       const panel = $('vdoPanel');
-      if (panel) panel.style.display = isVdo ? 'block' : 'none';
+      if (panel) panel.style.display = kind === 'vdo' ? 'block' : 'none';
       const grid = $('camDeviceGrid');
-      if (grid) grid.style.display = isVdo ? 'none' : '';
+      if (grid) grid.style.display = kind === 'device' ? '' : 'none';
+
       // Going live means something different per source, so relabel the button.
       const live = $('camLiveBtn');
       if (live && live.firstChild) {
-        live.firstChild.nodeValue = isVdo ? 'Show on screen' : 'Camera';
+        live.firstChild.nodeValue = kind === 'device' ? 'Camera' : 'Show on screen';
+      }
+
+      const hint = $('srcHint');
+      if (hint) {
+        hint.textContent = kind === 'pattern'
+          ? 'A moving rainbow with corner markers, drawn by this app — no camera, '
+            + 'no network, nobody publishing. If it looks right on the screen (with your '
+            + 'captions and logo over it), everything here works and any remaining problem '
+            + 'is the camera or the stream. Missing corner markers mean something is cropping.'
+          : '';
       }
     }
 
@@ -2111,6 +2131,7 @@
       // Source switcher
       $('srcDeviceBtn').onclick = () => setSourceKind('device');
       $('srcVdoBtn').onclick = () => setSourceKind('vdo');
+      $('srcPatternBtn').onclick = () => setSourceKind('pattern');
       $('vdoAddBtn').onclick = addVdoSource;
       $('vdoUrl').onkeydown = (e) => { if (e.key === 'Enter') addVdoSource(); };
       $('vdoPreload').onchange = (e) => { vdoState.preloadAll = e.target.checked; pushVdo(); };
@@ -2231,7 +2252,7 @@
       initCameraControls();
       const c = (cfg && cfg.camera) || {};
       camState = {
-        source: c.source === 'vdo' ? 'vdo' : 'device',
+        source: ['vdo', 'pattern'].includes(c.source) ? c.source : 'device',
         deviceId: typeof c.deviceId === 'string' ? c.deviceId : '',
         live: !!c.live,
         mirror: !!c.mirror,

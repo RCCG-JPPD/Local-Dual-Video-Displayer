@@ -93,11 +93,18 @@ software you already run, without that software needing to cooperate.
    then **drag a box** around where the words appear.
 4. Leave **Send lyrics to the screen** switched **off** while you aim the box. Watch the **Last read** panel until
    it reads the words cleanly, then switch it on and press **Start reading lyrics**.
-5. Set the look under **Caption style** — a 9-point position grid, size, colour, backing, and how each line enters
+5. Use **🌈 Test pattern** to prove the screen itself: it draws a moving rainbow with corner markers,
+   needing no camera, no network and nobody publishing. If that looks right (with your captions and logo over
+   it), everything here works and any remaining problem is the camera or the stream. Missing corner markers
+   mean something is cropping the picture.
+6. Set the look under **Caption style** — a 9-point position grid, size, colour, backing, and how each line enters
    (fade, slide, zoom, cross-fade, typewriter or none). The preview box matches what the audience sees.
 
 **VDO.Ninja notes**
 
+- Cuts between cameras use the **Transition** setting, the same one that fades the camera on and off:
+  **Fade** dips through nothing, **Cross-fade** overlaps the two pictures, **Cut** is instant. Because every
+  camera stays connected, a cross-fade is a real dissolve between two live pictures.
 - Every camera stays **connected in the background** so cutting between them is instant. If your connection is
   poor, untick **Keep every camera connected** and accept a few seconds per cut.
 - Links are checked before they are used: **https only**, and only `vdo.ninja`, `backup.vdo.ninja` or

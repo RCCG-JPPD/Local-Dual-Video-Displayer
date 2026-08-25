@@ -512,7 +512,7 @@ class IPCHandler {
           this._persistLater('camera', { mirror: payload });
           break;
         case 'setSource':
-          payload = data === 'vdo' ? 'vdo' : 'device';
+          payload = ['vdo', 'pattern'].includes(data) ? data : 'device';
           this._persistLater('camera', { source: payload });
           break;
         case 'setVdo': {

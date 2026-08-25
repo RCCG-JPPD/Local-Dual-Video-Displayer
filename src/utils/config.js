@@ -117,7 +117,8 @@ module.exports = {
   // `transparentWindow` is read only at window-creation time — Electron cannot
   // toggle transparency on a live window — so changing it needs a screen restart.
   camera: {
-    source: 'device',        // 'device' = a local camera, 'vdo' = a VDO.Ninja stream
+    source: 'device',        // 'device' = local camera, 'vdo' = VDO.Ninja stream,
+                             // 'pattern' = the built-in test pattern (diagnostics)
     deviceId: '',            // MediaDeviceInfo.deviceId; '' = system default
     deviceLabel: '',         // remembered so the picker still reads right after a restart
     live: false,             // is the feed running
