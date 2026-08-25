@@ -12,6 +12,10 @@ Each connected screen can be assigned a role — and the **same role can go on s
   exactly like PowerPoint — then advances with the slide's own transition. Needs a free
   [LibreOffice](https://www.libreoffice.org) install (used for conversion + its animated presentation engine);
   without it, export the deck to PDF and slides show statically.
+- **Camera** — a live webcam or capture-card feed, fullscreen, for showing the room, the crowd or the musicians.
+  Can read the **song lyrics off another screen** (your lyrics software) and re-draw them as **captions** over the
+  feed in your own font, position and animation, with an optional **logo** in a corner. Its screen is
+  **see-through**, so one **RESET** press fades it away and reveals whatever app is running behind it.
 - **YouTube** — plays a YouTube link fullscreen.
 - **Web Page** — shows any website fullscreen (rendered in a real embedded Chromium view).
 - **Clock** — a clock on a solid light/dark background, shown in a chosen **corner** at **tiny/very small/small/medium/large** size.
@@ -47,20 +51,58 @@ Press **Esc** on any fullscreen content window to close just that window (handy 
 1. **Launch** with `npm start` (or the installed app).
 2. On the **Display Configuration** screen, click **🔦 Identify screens** if you're unsure which screen is which —
    each screen briefly shows its number.
-3. **Assign roles.** Click a role under each screen: **Video**, **YouTube**, **Web Page**, or **Clock**. Leave the
-   screen you're operating from as **Unassigned**. You can give **Video** to several screens to mirror it.
+3. **Assign roles.** Click a role under each screen: **Video**, **Camera**, **YouTube**, **Web Page**,
+   **Presentation**, **Slideshow**, **Spreadsheet** or **Clock**. Leave the screen you're operating from as
+   **Unassigned**. You can give the same role to several screens to mirror it.
 4. Click **Confirm & Continue**. The control panel opens on your main screen.
 5. **Local video:** in *Local Video*, click **+ Add Video…**, then use Play/Pause, Next/Previous, the scrub bar, and
    **Master Volume**. It plays on every Video screen.
 6. **YouTube:** paste a link in the *YouTube* box and press Enter — it plays on every YouTube screen.
 7. **Web page:** type an address in the *Web Page* box and press Enter — it loads on every Web screen.
-8. **Remote control (phone):** open the **📱 Remote** tab, click **📡 Enable Remote Mode**, then scan the QR code
+8. **Camera + live lyrics:** open the **📷 Camera** tab, pick your camera and press the big **ON AIR** button.
+   To caption lyrics from another screen, see [Camera & live lyrics](#camera--live-lyrics) below.
+9. **Remote control (phone):** open the **📱 Remote** tab, click **📡 Enable Remote Mode**, then scan the QR code
    with your phone (or enter the 6-character code at [multi-displayer.web.app](https://multi-displayer.web.app)) —
    see [Remote Control](#remote-control-phone--web) below.
-9. **Change setup:** click **Reconfigure Displays** any time. Press **Esc** on a fullscreen screen to close just that
+10. **Change setup:** click **Reconfigure Displays** any time. Press **Esc** on a fullscreen screen to close just that
    one. Closing the control panel quits everything.
 
 The same tutorial is available in-app via the **❓ Help** button (on both the selector and the control panel).
+
+---
+
+## Camera & live lyrics
+
+The **Camera** role puts a live webcam or capture-card feed on a screen — the crowd, the band, a roving camera —
+and can caption song lyrics over it by **reading them off another screen**. That means it works with lyrics
+software you already run, without that software needing to cooperate.
+
+**Setting it up**
+
+1. Give a screen the **Camera** role, then open the **📷 Camera** tab and choose your camera.
+2. Press the big **ON AIR** button. **🚨 RESET** clears the screen again — see below.
+3. Under **Lyrics**, pick the screen your lyrics software is on and press **📸 Grab a picture of that screen**,
+   then **drag a box** around where the words appear.
+4. Leave **Send lyrics to the screen** switched **off** while you aim the box. Watch the **Last read** panel until
+   it reads the words cleanly, then switch it on and press **Start reading lyrics**.
+5. Set the look under **Caption style** — a 9-point position grid, size, colour, backing, and how each line enters
+   (fade, slide, zoom, cross-fade, typewriter or none). The preview box matches what the audience sees.
+
+**Things worth knowing**
+
+- **RESET fades the screen to fully see-through**, revealing whatever app is behind it — not to black.
+  <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>0</kbd> does the same from anywhere, even when the control panel is not
+  the focused window. (**Blackout**, separately, covers the screen in black.)
+- **Your lyrics software must run windowed or borderless-fullscreen**, not true (exclusive) fullscreen — a
+  true-fullscreen app takes over the display and nothing can be drawn on top of it.
+- Lyrics arrive roughly **1–2 seconds behind** the other screen; that is the cost of reading them off a picture.
+  Shrink the box to just the words and lower **Confirm reads** to 1 once it is aimed well.
+- Reading lyrics works **with no internet** — the language data ships inside the app.
+- The camera **never captures audio**, so it cannot cause feedback.
+- If the feed shows as **black** on the big screen, tick **Compatibility renderer**. If **RESET shows black**
+  instead of the app behind it, check **See-through screen** is on and press **Restart camera screen**.
+- On macOS, allow **Camera** and **Screen Recording** for the app in System Settings → Privacy & Security.
+  Windows needs neither.
 
 ---
 
@@ -68,8 +110,9 @@ The same tutorial is available in-app via the **❓ Help** button (on both the s
 
 <img src="docs/remote-qr.png" width="150" align="right" alt="QR code linking to multi-displayer.web.app">
 
-Remote Mode lets a phone (or any browser) drive **slides**, the **slideshow**, and **video playback** over the
-internet — nothing to install on the phone:
+Remote Mode lets a phone (or any browser) drive **slides**, the **slideshow**, **video playback** and the
+**camera screen** (on air / clear the screen / lyrics on and off) over the internet — nothing to install on the
+phone:
 
 1. In the control panel, open the **📱 Remote** tab and click **📡 Enable Remote Mode**.
 2. Scan the **QR code shown in the Remote tab** with the phone's camera — it opens the remote controller with the
@@ -131,22 +174,40 @@ from macOS/Linux needs Wine and isn't recommended). Other scripts: `npm run buil
 
 ```
 src/
-├── main.js                 # Main process: app lifecycle, startup, single-instance
+├── main.js                 # Main process: app lifecycle, startup, single-instance, shortcuts
 ├── modules/
 │   ├── displayManager.js   # Detect displays; create selector / controller / content windows
 │   ├── configManager.js    # Load/save config (Electron userData)
-│   ├── ipcHandler.js        # All IPC routing between controller and content windows
+│   ├── ipcHandler.js       # All IPC routing between controller and content windows
+│   ├── ocrEngine.js        # Reads lyrics off a screen (desktopCapturer + Tesseract)
+│   ├── officeConvert.js    # LibreOffice conversion for PowerPoint decks
 │   └── windowLifecycle.js  # Parent/child window lifecycle (closing controller quits the app)
-├── utils/
-│   └── config.js           # Default config schema
-└── ui/
-    ├── displaySelector.html # First-run screen role picker
-    ├── controller.html      # Control panel (previews, local video, YouTube, web, displays)
-    ├── videoDisplay.html    # Local video window (public/private)
-    ├── youtubePlayer.html   # YouTube window
-    ├── webBrowser.html      # Web page window (<webview>)
-    └── clockDisplay.html    # Clock window
+├── utils/                  # Pure, DOM-free helpers — the unit-tested core
+│   ├── config.js           # Default config schema
+│   ├── captions.js         # Caption placement, styling and animation; anti-flicker guard
+│   ├── ocr.js              # Screen-region maths, text cleanup, OCR stabilizer
+│   ├── logo.js             # Logo overlay placement
+│   ├── transition.js       # Fade timing for the camera stage
+│   ├── zoom.js             # How media is scaled onto a screen
+│   ├── slideshow.js  youtube.js  weburl.js  remote.js
+│   └── clockformat.js  clockThemes.js  holidays.js
+├── ui/                     # One HTML file per window
+│   ├── displaySelector.html   # First-run screen role picker
+│   ├── controller.html        # Control panel
+│   ├── help.html              # In-app tutorial
+│   ├── videoDisplay.html      # Local video window
+│   ├── cameraDisplay.html     # Camera window (transparent; captions + logo)
+│   ├── youtubePlayer.html     # YouTube window
+│   ├── webBrowser.html        # Web page window (<webview>)
+│   ├── presentationDisplay.html  slideshowDisplay.html
+│   └── excelDisplay.html      clockDisplay.html
+└── vendor/                 # Bundled libraries and data (no CDN at runtime)
+    ├── pdfjs/  firebase/  qrcode/
+    └── tessdata/           # English OCR model, so lyrics work offline
 preload.js                  # Secure contextBridge IPC API exposed to the renderers
+scripts/                    # Dev tools (not shipped)
+test/                       # Unit tests for src/utils  (npm test)
+test-e2e/                   # Pixel-level Electron tests  (npm run test:e2e)
 ```
 
 ## How it works
@@ -154,8 +215,13 @@ preload.js                  # Secure contextBridge IPC API exposed to the render
 1. **Startup** ([src/main.js](src/main.js)) loads saved config. If none is valid, it shows the **display selector**.
 2. The selector assigns a **role** to each screen and saves it via `ConfigManager`.
 3. `DisplayManager.createAllDisplayWindows()` opens one fullscreen window per assigned role, plus the controller.
-4. The **controller** sends commands over IPC (via `preload.js`'s `electronAPI`) to the content windows, and each
-   content window streams a small JPEG **preview** back to the controller.
+4. The **controller** sends commands over IPC (via `preload.js`'s `electronAPI`) to the content windows. It never
+   talks to a screen directly: everything fans out through the main process, so a role assigned to several screens
+   stays in step.
+5. The controller's **preview thumbnails** come from Electron's `desktopCapturer`, which grabs each physical
+   screen — the content windows do no work for them.
+6. **Lyric OCR** runs in the main process, not in a window: it crops the chosen screen region there, so only a
+   small image reaches Tesseract, and recognition cannot stutter the camera screen.
 
 Config and cache live in Electron's standard per-user location (`app.getPath('userData')`), so it works the same in
 development and in an installed build.
@@ -165,6 +231,13 @@ development and in an installed build.
 - **Web Page** uses a Chromium `<webview>`, which loads sites that block plain `<iframe>` embedding. Some sites with
   strict policies may still refuse to load.
 - **YouTube** uses the standard embed player; videos that disable embedding won't play.
+- **Camera lyrics** are read optically from another screen, so they lag it by about **1–2 seconds** and can
+  occasionally misread a word. The lyrics software must not be in exclusive fullscreen, or nothing can be drawn
+  over it. English only.
+- **The camera screen is a transparent window.** Electron fixes transparency when a window is created, so the
+  **See-through screen** setting only takes effect after **Restart camera screen**. On some GPUs a hardware-
+  accelerated video surface composites as black inside a transparent window — the **Compatibility renderer**
+  checkbox draws through a canvas instead.
 - **Presentation animations** are played by LibreOffice's presentation engine (animated SVG export), so fidelity
   matches what LibreOffice Impress shows for the deck — the vast majority of PowerPoint transitions and entrance
   effects work; a few exotic effects may render simplified. Without LibreOffice, decks fall back to static PDF pages.
