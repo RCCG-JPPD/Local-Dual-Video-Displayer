@@ -381,6 +381,93 @@ test('blackout covers the screen (and is not the same as RESET)', async () => {
   await sleep(200);
 });
 
+test('VDO.Ninja sources mount as visible, fadeable iframes', async () => {
+  // A local stand-in for vdo.ninja: this proves the mounting, switching and
+  // compositing, which is what could break. The real service needs a network
+  // and a phone, so it cannot live in an automated suite.
+  const fs = require('fs');
+  const os = require('os');
+  // Name and colour kept separate: a '#' in the filename gets decoded back
+  // out of the file:// URL and the load fails.
+  const guest = (name, css) => {
+    const f = path.join(os.tmpdir(), `ldvd-vdo-${name}-${process.pid}.html`);
+    fs.writeFileSync(f, '<!DOCTYPE html><meta charset="utf-8">'
+      + `<body style="margin:0;background:${css}"></body>`);
+    return f;
+  };
+  const red = guest('red', 'rgb(255,0,0)');
+  const blue = guest('blue', 'rgb(0,0,255)');
+
+  send('camera-command', 'setSource', 'vdo');
+  await sleep(200);
+
+  // Inject the frames directly: the production path validates against the
+  // vdo.ninja allowlist, which a file:// stand-in cannot satisfy.
+  await evaluate(`(() => {
+    const layer = document.getElementById('vdo-layer');
+    layer.innerHTML = '';
+    for (const [id, src] of [['a', ${JSON.stringify('file://' + red)}],
+                             ['b', ${JSON.stringify('file://' + blue)}]]) {
+      const f = document.createElement('iframe');
+      f.dataset.sourceId = id; f.src = src;
+      layer.appendChild(f);
+    }
+    layer.querySelector('[data-source-id="a"]').classList.add('on-air');
+    // applyVdo() hides the hint when a source is on air; this test injects the
+    // frames directly, so do it by hand or the hint's 45%-black panel sits
+    // over the sample point.
+    document.getElementById('hint').classList.add('hidden');
+    return true;
+  })()`);
+  await sleep(700);
+
+  const isRed = (p) => p.r > 120 && p.r > p.g * 2 && p.r > p.b * 2;
+  const isBlue = (p) => p.b > 120 && p.b > p.r * 2 && p.b > p.g * 2;
+
+  let shot = await grab(win);
+  let mid = shot.at(shot.size.width / 2, shot.size.height / 2);
+  check(isRed(mid), `source A is not on screen: rgb(${mid.r},${mid.g},${mid.b})`);
+
+  // Cutting to another camera is an opacity swap, so it should be immediate.
+  await evaluate(`(() => {
+    const l = document.getElementById('vdo-layer');
+    l.querySelector('[data-source-id="a"]').classList.remove('on-air');
+    l.querySelector('[data-source-id="b"]').classList.add('on-air');
+    return true;
+  })()`);
+  await sleep(300);
+  shot = await grab(win);
+  mid = shot.at(shot.size.width / 2, shot.size.height / 2);
+  check(isBlue(mid), `cut to source B did not take: rgb(${mid.r},${mid.g},${mid.b})`);
+
+  // And RESET must still fade an embedded page to fully see-through - the
+  // reason this is an <iframe> and not a <webview>.
+  send('camera-command', 'reset', null);
+  await sleep(500);
+  shot = await grab(win);
+  mid = shot.at(shot.size.width / 2, shot.size.height / 2);
+  check(mid.a === 0, `RESET left alpha ${mid.a} over a VDO.Ninja frame, expected 0`);
+
+  send('camera-command', 'restore', null);
+  await sleep(600);
+  send('camera-command', 'setSource', 'device');
+  await sleep(300);
+  [red, blue].forEach(f => { try { fs.unlinkSync(f); } catch (_) { /* best effort */ } });
+});
+
+test('a source with a bad URL is refused, not mounted', async () => {
+  send('camera-command', 'setSource', 'vdo');
+  send('camera-command', 'setVdo', {
+    sources: [{ id: 'evil', label: 'evil', url: 'https://evil.example.com/?view=x' }],
+    activeId: 'evil',
+  });
+  await sleep(400);
+  const frames = await evaluate("document.getElementById('vdo-layer').children.length");
+  check(frames === 0, `${frames} frame(s) mounted for a disallowed host`);
+  send('camera-command', 'setSource', 'device');
+  await sleep(200);
+});
+
 test('the compatibility (canvas) renderer paints frames too', async () => {
   send('camera-command', 'setRenderMode', 'canvas');
   send('camera-command', 'live', true);

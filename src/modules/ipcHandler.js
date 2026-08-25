@@ -10,6 +10,7 @@ const { normalizeCaptions } = require('../utils/captions');
 const { normalizeLogo } = require('../utils/logo');
 const { normalizeTransition } = require('../utils/transition');
 const { normalizeOcr, normalizeRegion } = require('../utils/ocr');
+const vdoninja = require('../utils/vdoninja');
 const OcrEngine = require('./ocrEngine');
 
 class IPCHandler {
@@ -510,6 +511,27 @@ class IPCHandler {
           payload = !!data;
           this._persistLater('camera', { mirror: payload });
           break;
+        case 'setSource':
+          payload = data === 'vdo' ? 'vdo' : 'device';
+          this._persistLater('camera', { source: payload });
+          break;
+        case 'setVdo': {
+          // Validate every URL here, and strip room passwords before anything
+          // reaches the config file on disk.
+          const incoming = vdoninja.normalizeVdo(data);
+          const sources = [];
+          for (const src of incoming.sources) {
+            try {
+              vdoninja.validateAndNormalizeUrl(src.url);
+              sources.push({ ...src, url: vdoninja.sanitizeUrlForStorage(src.url) });
+            } catch (err) {
+              console.warn(`Rejecting VDO.Ninja source "${src.label}": ${err.message}`);
+            }
+          }
+          payload = vdoninja.normalizeVdo({ ...incoming, sources });
+          this._persistLater('camera', { vdo: payload });
+          break;
+        }
         case 'setRenderMode':
           payload = data === 'canvas' ? 'canvas' : 'video';
           this._persistLater('camera', { renderMode: payload });

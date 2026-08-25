@@ -73,6 +73,32 @@
     }
     .cam-reset-btn:hover { background: #d32f2f; color: #fff; }
 
+    /* Source switcher: which kind of camera feeds the screen. */
+    .src-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+    .src-tabs button {
+      flex: 1; padding: 10px; font-size: 14px; font-weight: 600;
+      border: 2px solid #3a4250; background: transparent; color: #cfd6e0;
+      border-radius: 6px; cursor: pointer;
+    }
+    .src-tabs button.active { background: #667eea; border-color: #667eea; color: #fff; }
+
+    /* One row per VDO.Ninja stream, red-bordered when it is on air —
+       the same at-a-glance switcher layout virtualcam-helper uses. */
+    .vdo-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+    .vdo-row {
+      display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+      border: 2px solid #3a4250; border-radius: 6px; background: #232936;
+    }
+    .vdo-row.on-air { border-color: #d32f2f; background: #2a2023; }
+    .vdo-row .vdo-name { flex: 1; font-weight: 600; }
+    .vdo-row .vdo-url {
+      flex: 2; font-size: 11px; opacity: .6; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+    .vdo-row .on-air-tag { color: #ff6b6b; font-size: 12px; font-weight: 700; }
+    .vdo-error { color: #ff8a80; font-size: 13px; min-height: 18px; margin-top: 4px; }
+    .vdo-hint { font-size: 12px; opacity: .7; }
+
     .cam-grid {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
       gap: 10px 14px; margin-bottom: 12px;
@@ -787,7 +813,31 @@
         </button>
       </div>
 
-      <div class="cam-grid">
+      <div class="src-tabs">
+        <button id="srcDeviceBtn" data-source="device">🎥 Local camera</button>
+        <button id="srcVdoBtn" data-source="vdo">🌐 VDO.Ninja (phones / remote)</button>
+      </div>
+
+      <!-- ── VDO.NINJA SOURCES ──────────────────────────────────────── -->
+      <div id="vdoPanel" style="display:none;">
+        <div class="url-row">
+          <input id="vdoUrl" type="text" style="flex:1;min-width:240px;"
+                 placeholder="https://vdo.ninja/?view=abc123">
+          <button id="vdoAddBtn" class="btn-primary">+ Add camera</button>
+        </div>
+        <div class="vdo-error" id="vdoError"></div>
+        <div class="vdo-list" id="vdoList"></div>
+        <label class="cam-check" style="display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" id="vdoPreload" checked> Keep every camera connected (instant cuts)
+        </label>
+        <div class="section-hint vdo-hint">
+          On the phone, open <b>vdo.ninja</b>, press <b>Share your camera</b>, and paste the
+          <b>view link</b> it gives you here. Only <span id="vdoHosts"></span> links are accepted,
+          and any room password is stripped before the link is saved.
+        </div>
+      </div>
+
+      <div class="cam-grid" id="camDeviceGrid">
         <label>Camera
           <select id="camDevice"><option value="">System default</option></select>
         </label>
@@ -1590,6 +1640,7 @@
     let logoState = electronAPI.logo.normalize(null);
     let transState = electronAPI.transition.normalize(null);
     let ocrState = electronAPI.ocr.normalize(null);
+    let vdoState = { sources: [], activeId: null, preloadAll: true };
     let ocrRunning = false;
     let ocrShotSize = null; // the still's pixel size, for the region maths
 
@@ -1893,6 +1944,137 @@
       });
     }
 
+    // ── VDO.Ninja sources ─────────────────────────────────────────────
+
+    function pushVdo() {
+      vdoState = electronAPI.vdoninja.normalize(vdoState);
+      electronAPI.sendCameraCommand('setVdo', vdoState);
+      renderVdo();
+    }
+
+    function setSourceKind(kind) {
+      camState.source = kind === 'vdo' ? 'vdo' : 'device';
+      electronAPI.sendCameraCommand('setSource', camState.source);
+      renderSourceTabs();
+    }
+
+    function renderSourceTabs() {
+      const isVdo = camState.source === 'vdo';
+      const d = $('srcDeviceBtn');
+      const v = $('srcVdoBtn');
+      if (d) d.classList.toggle('active', !isVdo);
+      if (v) v.classList.toggle('active', isVdo);
+      const panel = $('vdoPanel');
+      if (panel) panel.style.display = isVdo ? 'block' : 'none';
+      const grid = $('camDeviceGrid');
+      if (grid) grid.style.display = isVdo ? 'none' : '';
+      // Going live means something different per source, so relabel the button.
+      const live = $('camLiveBtn');
+      if (live && live.firstChild) {
+        live.firstChild.nodeValue = isVdo ? 'Show on screen' : 'Camera';
+      }
+    }
+
+    function renderVdo() {
+      const host = $('vdoList');
+      if (!host) return;
+      const v = electronAPI.vdoninja.normalize(vdoState);
+      host.innerHTML = '';
+
+      if (!v.sources.length) {
+        host.innerHTML = '<div class="section-hint">No cameras yet — paste a VDO.Ninja '
+          + 'view link above and press “Add camera”.</div>';
+      }
+
+      v.sources.forEach((src) => {
+        const row = document.createElement('div');
+        row.className = 'vdo-row' + (src.id === v.activeId ? ' on-air' : '');
+
+        const name = document.createElement('span');
+        name.className = 'vdo-name';
+        name.textContent = src.label;
+
+        const url = document.createElement('span');
+        url.className = 'vdo-url';
+        url.textContent = src.url;
+
+        row.appendChild(name);
+        row.appendChild(url);
+
+        if (src.id === v.activeId) {
+          const tag = document.createElement('span');
+          tag.className = 'on-air-tag';
+          tag.textContent = '● ON AIR';
+          row.appendChild(tag);
+        } else {
+          const take = document.createElement('button');
+          take.textContent = 'Put on air';
+          take.onclick = () => { vdoState.activeId = src.id; pushVdo(); };
+          row.appendChild(take);
+        }
+
+        const remove = document.createElement('button');
+        remove.className = 'btn-danger';
+        remove.textContent = 'Remove';
+        remove.onclick = () => {
+          vdoState.sources = v.sources.filter(x => x.id !== src.id);
+          if (vdoState.activeId === src.id) vdoState.activeId = null;
+          pushVdo();
+        };
+        row.appendChild(remove);
+
+        host.appendChild(row);
+      });
+
+      const pre = $('vdoPreload');
+      if (pre) pre.checked = v.preloadAll !== false;
+      const add = $('vdoAddBtn');
+      if (add) {
+        const full = v.sources.length >= electronAPI.vdoninja.MAX_SOURCES;
+        add.disabled = full;
+        add.textContent = full
+          ? `Limit is ${electronAPI.vdoninja.MAX_SOURCES} cameras`
+          : '+ Add camera';
+      }
+    }
+
+    function addVdoSource() {
+      const input = $('vdoUrl');
+      const err = $('vdoError');
+      if (!input) return;
+      const raw = input.value.trim();
+      if (err) err.textContent = '';
+
+      let normalized;
+      try {
+        // The validator's messages are written for an operator, so show them.
+        normalized = electronAPI.vdoninja.validate(raw);
+      } catch (e) {
+        if (err) err.textContent = e.hint ? `${e.message} ${e.hint}` : e.message;
+        return;
+      }
+
+      const v = electronAPI.vdoninja.normalize(vdoState);
+      if (v.sources.length >= electronAPI.vdoninja.MAX_SOURCES) {
+        if (err) err.textContent = `You can have at most ${electronAPI.vdoninja.MAX_SOURCES} cameras.`;
+        return;
+      }
+      if (v.sources.some(x => x.url === normalized)) {
+        if (err) err.textContent = 'That camera is already in the list.';
+        return;
+      }
+
+      const id = `src${Date.now().toString(36)}`;
+      vdoState.sources = [...v.sources, {
+        id, label: electronAPI.vdoninja.label(normalized), url: normalized,
+      }];
+      // The first one added goes straight on air — almost always what the
+      // operator wants, and it makes the feature work in one click.
+      if (!vdoState.activeId) vdoState.activeId = id;
+      input.value = '';
+      pushVdo();
+    }
+
     // ── wiring ────────────────────────────────────────────────────────
 
     let cameraControlsReady = false;
@@ -1925,6 +2107,15 @@
           outSel.appendChild(opt);
         });
       }
+
+      // Source switcher
+      $('srcDeviceBtn').onclick = () => setSourceKind('device');
+      $('srcVdoBtn').onclick = () => setSourceKind('vdo');
+      $('vdoAddBtn').onclick = addVdoSource;
+      $('vdoUrl').onkeydown = (e) => { if (e.key === 'Enter') addVdoSource(); };
+      $('vdoPreload').onchange = (e) => { vdoState.preloadAll = e.target.checked; pushVdo(); };
+      const hosts = $('vdoHosts');
+      if (hosts) hosts.textContent = electronAPI.vdoninja.ALLOWED_HOSTS.join(', ');
 
       // Camera
       $('camLiveBtn').onclick = () => setCameraLive(!camState.live);
@@ -2040,6 +2231,7 @@
       initCameraControls();
       const c = (cfg && cfg.camera) || {};
       camState = {
+        source: c.source === 'vdo' ? 'vdo' : 'device',
         deviceId: typeof c.deviceId === 'string' ? c.deviceId : '',
         live: !!c.live,
         mirror: !!c.mirror,
@@ -2051,6 +2243,9 @@
       transState = electronAPI.transition.normalize(cfg && cfg.transition);
       ocrState = electronAPI.ocr.normalize(cfg && cfg.ocr);
 
+      vdoState = electronAPI.vdoninja.normalize(c.vdo);
+      renderSourceTabs();
+      renderVdo();
       renderCameraUi();
       renderCaptionUi();
       renderLogoUi();
@@ -2697,7 +2892,7 @@
     const TOUR_STEPS = [
       { sel: '[data-tab="previews"]', title: '🔴 Live previews', text: 'Each active screen shows a live thumbnail here — click one to enlarge it.' },
       { sel: '[data-tab="localvideo"]', title: '🎛️ Pick a tool', text: 'Choose a feature from this sidebar — Video, Camera, YouTube, Web, Presentation, Slideshow or Spreadsheet. Only the panel you pick is shown.' },
-      { sel: '[data-tab="camera"]', title: '📷 Camera + lyrics', text: 'Put a live camera feed on a screen, and read lyrics off another screen to caption over it. RESET (or Ctrl/Cmd+Shift+0) clears it instantly and shows whatever is behind.' },
+      { sel: '[data-tab="camera"]', title: '📷 Camera + lyrics', text: 'Show a live camera — either a local webcam or phones streaming in over VDO.Ninja, with instant cuts between them — and read lyrics off another screen to caption over it. RESET (or Ctrl/Cmd+Shift+0) clears it instantly and shows whatever is behind.' },
       { sel: '[data-tab="clock"]', title: '🕐 Clock + overlay', text: 'Show a clock, and use the per-screen toggles to float it over another screen — e.g. YouTube + Clock together.' },
       { sel: '[data-tab="displays"]', title: '🖥️ Displays', text: 'Reconfigure which screen shows what, identify screens, or replay this tutorial. You’re ready to go!' },
     ];
@@ -2887,6 +3082,14 @@
             if (el) { el.checked = !el.checked; el.onchange({ target: el }); }
             break;
           }
+          case 'cam.take': {
+            // Cut to camera N. Drives the same state the on-screen list does.
+            const list = (typeof vdoState !== 'undefined')
+              ? electronAPI.vdoninja.normalize(vdoState).sources : [];
+            const target = list[value];
+            if (target) { vdoState.activeId = target.id; pushVdo(); }
+            break;
+          }
           case 'cam.zoom':
             if (typeof cameraZoom !== 'undefined') cameraZoom.set(value);
             electronAPI.sendCameraCommand('setZoom', value);
@@ -2987,11 +3190,21 @@
         const snapshot = electronAPI.remote.buildStateSnapshot({
           activePanel,
           roles,
-          camera: (typeof camState !== 'undefined') ? {
-            live: camState.live,
-            visible: true, // reset is a transient action, not a tracked mode
-            zoom: zoomOf(() => cameraZoom),
-          } : {},
+          camera: (typeof camState !== 'undefined') ? (() => {
+            const v = (typeof vdoState !== 'undefined')
+              ? electronAPI.vdoninja.normalize(vdoState)
+              : { sources: [], activeId: null };
+            return {
+              live: camState.live,
+              visible: true, // reset is a transient action, not a tracked mode
+              zoom: zoomOf(() => cameraZoom),
+              source: camState.source,
+              // Labels only — a VDO.Ninja URL can carry a room password and
+              // must not be published to the phone.
+              cameras: v.sources.map(src => src.label),
+              activeCamera: v.sources.findIndex(src => src.id === v.activeId),
+            };
+          })() : {},
           ocr: {
             running: (typeof ocrRunning !== 'undefined') ? ocrRunning : false,
             lastText: (document.getElementById('ocrReadout') || {}).textContent || '',

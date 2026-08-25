@@ -43,6 +43,7 @@ export const ACTIONS = {
   camRestore: 'cam.restore',
   camBlank: 'cam.blank',
   camZoom: 'cam.zoom',
+  camTake: 'cam.take',
   ocrOn: 'ocr.on',
   ocrOff: 'ocr.off',
   captionText: 'caption.text',

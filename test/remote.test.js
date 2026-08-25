@@ -92,6 +92,7 @@ const SAMPLE_VALUES = {
   'video.zoom': [ZOOM_IN, ZOOM_IN], 'slide.zoom': [ZOOM_IN, ZOOM_IN], 'yt.zoom': [ZOOM_IN, ZOOM_IN],
   'caption.text': ['Holy is the Lord', 'Holy is the Lord'],
   'cam.zoom': [ZOOM_IN, ZOOM_IN],
+  'cam.take': [1, 1],
 };
 
 test('every REMOTE_ACTION is namespaced and sanitizes cleanly', () => {
@@ -160,7 +161,8 @@ test('buildStateSnapshot normalizes types and fills defaults', () => {
     youtube: { url: '', muted: false, volume: 1, zoom: FIT },
     web: { url: '' },
     excel: { sheets: [], active: 0 },
-    camera: { live: false, visible: true, zoom: FIT },
+    camera: { live: false, visible: true, zoom: FIT, source: 'device',
+              cameras: [], activeCamera: -1 },
     ocr: { running: false, lastText: '' },
     updatedAt: 1000,
   });
@@ -194,11 +196,15 @@ test('buildStateSnapshot carries full-remote state (volume, playlist, yt, web, e
 
 test('buildStateSnapshot carries camera and OCR state', () => {
   const snap = buildStateSnapshot({
-    camera: { live: 1, visible: false, zoom: { mode: 'cover', scale: '1.2' } },
+    camera: {
+      live: 1, visible: false, zoom: { mode: 'cover', scale: '1.2' },
+      source: 'vdo', cameras: ['Stage left', 'Drums'], activeCamera: '1',
+    },
     ocr: { running: 1, lastText: 'Holy is the Lord' },
   }, 0);
   assert.deepEqual(snap.camera, {
     live: true, visible: false, zoom: { mode: 'cover', scale: 1.2 },
+    source: 'vdo', cameras: ['Stage left', 'Drums'], activeCamera: 1,
   });
   assert.deepEqual(snap.ocr, { running: true, lastText: 'Holy is the Lord' });
 });
@@ -208,6 +214,16 @@ test('buildStateSnapshot defaults the camera to visible and caps the lyric line'
   assert.equal(buildStateSnapshot({}, 0).camera.visible, true);
   const long = buildStateSnapshot({ ocr: { lastText: 'x'.repeat(500) } }, 0);
   assert.equal(long.ocr.lastText.length, 240);
+});
+
+test('the snapshot carries camera LABELS only, never their URLs', () => {
+  // A VDO.Ninja link can contain a room password; it must not be published to
+  // the phone, which reaches it over the internet.
+  const snap = buildStateSnapshot({
+    camera: { cameras: ['Stage left'], activeCamera: 0 },
+  }, 0);
+  assert.deepEqual(snap.camera.cameras, ['Stage left']);
+  assert.ok(!JSON.stringify(snap).includes('vdo.ninja'));
 });
 
 test('buildStateSnapshot normalizes zoom for every screen', () => {

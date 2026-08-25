@@ -31,6 +31,8 @@ const REMOTE_ACTIONS = [
   // Camera screen. `cam.reset` is the one a phone most needs at a concert:
   // it clears our screen and reveals whatever is running behind it.
   'cam.live', 'cam.off', 'cam.reset', 'cam.restore', 'cam.blank', 'cam.zoom',
+  // Cut to camera N — the reason to have a phone remote at a concert.
+  'cam.take',
   'ocr.on', 'ocr.off', 'caption.text',
 ];
 
@@ -53,6 +55,7 @@ const VALUE_SPECS = {
   'slide.zoom': 'zoom',
   'yt.zoom': 'zoom',
   'cam.zoom': 'zoom',
+  'cam.take': 'index',
   'caption.text': 'string',
 };
 const STRING_MAX = { 'yt.load': 300, 'web.load': 1024, 'caption.text': 240 };
@@ -213,7 +216,14 @@ function buildStateSnapshot(input = {}, now = Date.now()) {
     },
     web: { url: str(w.url, 1024) },
     excel: { sheets: list(x.sheets, 50, 80), active: num(x.active) },
-    camera: { live: !!c.live, visible: c.visible !== false, zoom: normalizeZoom(c.zoom) },
+    camera: {
+      live: !!c.live, visible: c.visible !== false, zoom: normalizeZoom(c.zoom),
+      source: c.source === 'vdo' ? 'vdo' : 'device',
+      // Labels only: the phone shows a button per camera, and the URLs (which
+      // can carry a room password) never leave the desktop.
+      cameras: list(c.cameras, 6, 40),
+      activeCamera: num(c.activeCamera, -1),
+    },
     ocr: { running: !!o.running, lastText: str(o.lastText, 240) },
     updatedAt: num(now),
   };

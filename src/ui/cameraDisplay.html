@@ -39,6 +39,27 @@
       background: transparent;
     }
 
+    /* VDO.Ninja sources. Every configured stream gets its own iframe so a cut
+       between cameras is instant; only the one on air is visible.
+
+       An <iframe>, not a <webview>: a webview is a separate compositing layer
+       and renders NOTHING inside a transparent window (measured), which would
+       break both the feed and the fade-to-see-through reset. */
+    #vdo-layer { position: absolute; inset: 0; }
+    #vdo-layer iframe {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: transparent;
+      opacity: 0;
+      pointer-events: none;
+    }
+    #vdo-layer iframe.on-air { opacity: 1; }
+    body:not(.vdo-mode) #vdo-layer { display: none; }
+    body.vdo-mode #cam, body.vdo-mode #cam-canvas { display: none; }
+
     /* The compatibility renderer: only one of the two is ever live. */
     #cam-canvas { display: none; }
     body.canvas-mode #cam { visibility: hidden; }
@@ -91,6 +112,7 @@
   <div id="stage">
     <video id="cam" autoplay muted playsinline></video>
     <canvas id="cam-canvas"></canvas>
+    <div id="vdo-layer"></div>
 
     <div id="caption-layer">
       <div class="caption" id="cap-a"></div>
@@ -142,6 +164,11 @@
     let transitionSettings = electronAPI.transition.normalize(null);
     let zoomSettings = electronAPI.zoom.normalize(null);
 
+    const vdoLayer = document.getElementById('vdo-layer');
+
+    let sourceKind = 'device'; // 'device' (local camera) | 'vdo' (remote stream)
+    let vdoSettings = { sources: [], activeId: null, preloadAll: true };
+
     let stream = null;       // the live MediaStream, if any
     let deviceId = '';
     let mirror = false;
@@ -172,7 +199,12 @@
         // screen is genuinely empty — stopping the tracks immediately would
         // freeze the last frame mid-fade.
         const ms = electronAPI.transition.ms(transitionSettings);
-        fadeTimer = setTimeout(() => { if (!visible) stopStream(); }, ms + 50);
+        fadeTimer = setTimeout(() => {
+          if (visible) return;
+          if (sourceKind === 'device') stopStream();
+          // Remote frames stay mounted and connected: the operator expects
+          // RESTORE to be instant, and the stage is invisible anyway.
+        }, ms + 50);
       }
     }
 
@@ -295,6 +327,77 @@
     }
 
     // ════════════════════════════════════════════════════════════════
+    // VDO.NINJA SOURCES
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Rebuild the frames for the configured sources.
+     *
+     * With `preloadAll` every source stays mounted and connected, so putting a
+     * different camera on air is an instant opacity swap rather than a fresh
+     * WebRTC handshake — the live-production behaviour that matters at a show.
+     * Frames are reused across updates so a settings change never drops a
+     * stream that is already connected.
+     */
+    function applyVdo(settings) {
+      vdoSettings = electronAPI.vdoninja.normalize(settings);
+      const wanted = vdoSettings.preloadAll
+        ? vdoSettings.sources
+        : vdoSettings.sources.filter(src => src.id === vdoSettings.activeId);
+
+      const keep = new Set(wanted.map(src => src.id));
+      Array.from(vdoLayer.children).forEach((frame) => {
+        if (!keep.has(frame.dataset.sourceId)) frame.remove();
+      });
+
+      wanted.forEach((src) => {
+        let frame = vdoLayer.querySelector(`[data-source-id="${CSS.escape(src.id)}"]`);
+        if (!frame) {
+          frame = document.createElement('iframe');
+          frame.dataset.sourceId = src.id;
+          // Receive-only, but VDO.Ninja starts playback itself and needs to be
+          // allowed to autoplay with sound muted.
+          frame.setAttribute('allow', 'autoplay; fullscreen');
+          frame.setAttribute('referrerpolicy', 'no-referrer');
+          vdoLayer.appendChild(frame);
+        }
+        // The URL was validated in the main process; re-validate here so a
+        // malformed one can never reach an iframe src even if it were injected.
+        let safe = '';
+        try {
+          safe = electronAPI.vdoninja.validate(src.url);
+        } catch (err) {
+          log('error', `refusing source "${src.label}": ${err.message}`);
+          frame.remove();
+          return;
+        }
+        if (frame.getAttribute('src') !== safe) frame.src = safe;
+        frame.classList.toggle('on-air', src.id === vdoSettings.activeId);
+      });
+
+      const active = vdoSettings.sources.find(src => src.id === vdoSettings.activeId);
+      if (sourceKind === 'vdo') {
+        hintEl.classList.toggle('hidden', !!active);
+        if (!active) hintEl.textContent = 'No camera on air — pick one in the controller.';
+      }
+    }
+
+    /** Switch between a local camera and the remote streams. */
+    function setSourceKind(kind) {
+      sourceKind = kind === 'vdo' ? 'vdo' : 'device';
+      document.body.classList.toggle('vdo-mode', sourceKind === 'vdo');
+      if (sourceKind === 'vdo') {
+        // Release the local camera: nothing should hold the device while a
+        // remote stream is on air.
+        stopStream();
+        applyVdo(vdoSettings);
+      } else {
+        hintEl.textContent = 'Camera screen ready';
+        hintEl.classList.toggle('hidden', !!stream);
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════
     // CAPTIONS
     // ════════════════════════════════════════════════════════════════
 
@@ -382,8 +485,17 @@
     electronAPI.onCameraCommand((cmd, data) => {
       switch (cmd) {
         case 'live':
-          if (data) { setVisible(true); startStream(); } else { stopStream(); }
+          if (data) {
+            setVisible(true);
+            // A remote stream is already connected in its frame; only a local
+            // camera has to be opened.
+            if (sourceKind === 'device') startStream();
+          } else if (sourceKind === 'device') {
+            stopStream();
+          }
           break;
+        case 'setSource': setSourceKind(data); break;
+        case 'setVdo': applyVdo(data); break;
         case 'setDevice':
           deviceId = typeof data === 'string' ? data : '';
           if (stream) startStream(); // re-open on the new device
@@ -392,7 +504,10 @@
         case 'mirror': mirror = !!data; applyMirror(); break;
         case 'setRenderMode': setRenderMode(data); break;
         case 'reset': setVisible(false); break;
-        case 'restore': setVisible(true); startStream(); break;
+        case 'restore':
+          setVisible(true);
+          if (sourceKind === 'device') startStream();
+          break;
         case 'blank': blankEl.style.display = data ? 'block' : 'none'; break;
         case 'rescanDevices': reportDevices(); break;
         default: log('error', `unknown camera command: ${cmd}`);
@@ -417,12 +532,18 @@
       deviceId = typeof c.deviceId === 'string' ? c.deviceId : '';
       mirror = !!c.mirror;
       setRenderMode(c.renderMode);
+      vdoSettings = electronAPI.vdoninja.normalize(c.vdo);
       applyTransition(cfg && cfg.transition);
       applyZoom(cfg && cfg.zoom && cfg.zoom.camera);
       applyCaptionSettings(cfg && cfg.captions);
       applyLogo(cfg && cfg.logo);
       setVisible(c.visible !== false);
-      if (c.live) startStream(); else reportDevices();
+      setSourceKind(c.source);
+      if (sourceKind === 'device') {
+        if (c.live) startStream(); else reportDevices();
+      } else {
+        reportDevices(); // still populate the picker for when they switch back
+      }
     }).catch((err) => {
       log('error', `could not read config: ${err && err.message}`);
       // Still usable: the normalizers already gave us a working default set.

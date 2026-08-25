@@ -229,6 +229,7 @@ export default function App() {
   const web = s.web || { url: '' };
   const excel = s.excel || { sheets: [], active: 0 };
   const camera = s.camera || { live: false, visible: true, zoom: DEFAULT_ZOOM };
+  const cameras = Array.isArray(camera.cameras) ? camera.cameras : [];
   const ocr = s.ocr || { running: false, lastText: '' };
   const playlist = Array.isArray(video.playlist) ? video.playlist : [];
   const sheets = Array.isArray(excel.sheets) ? excel.sheets : [];
@@ -298,6 +299,19 @@ export default function App() {
               ⏹ Lyrics off
             </button>
           </div>
+          {cameras.length > 0 && (
+            <div className="row" style={{ flexWrap: 'wrap' }}>
+              {cameras.map((name, i) => (
+                <button
+                  key={name + i}
+                  className={`btn ${i === camera.activeCamera ? 'btn-primary' : ''}`}
+                  onClick={() => send(ACTIONS.camTake, i)}
+                >
+                  {i === camera.activeCamera ? '● ' : ''}{name}
+                </button>
+              ))}
+            </div>
+          )}
           {ocr.lastText && <div className="statusline">🎤 {ocr.lastText}</div>}
           <ZoomControls zoom={camera.zoom} onChange={(z) => send(ACTIONS.camZoom, z)} />
         </section>

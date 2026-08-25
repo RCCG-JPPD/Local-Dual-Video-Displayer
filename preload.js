@@ -17,6 +17,7 @@ const captionsUtil = require('./src/utils/captions');
 const transitionUtil = require('./src/utils/transition');
 const logoUtil = require('./src/utils/logo');
 const ocrUtil = require('./src/utils/ocr');
+const vdoUtil = require('./src/utils/vdoninja');
 
 // Expose safe IPC APIs to renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -114,6 +115,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     pixelsToRegion: (rect, bounds) => ocrUtil.pixelsToRegion(rect, bounds),
     cleanText: (raw, max) => ocrUtil.cleanOcrText(raw, max),
     DEFAULTS: ocrUtil.DEFAULT_OCR,
+  },
+
+  // VDO.Ninja pure helpers (src/utils/vdoninja.js). `validate` throws an
+  // InvalidUrlError whose .message/.hint are written for an operator, so the
+  // controller can show them directly.
+  vdoninja: {
+    validate: (url, hosts) => vdoUtil.validateAndNormalizeUrl(url, hosts),
+    isValid: (url, hosts) => vdoUtil.isValidUrl(url, hosts),
+    sanitize: (url) => vdoUtil.sanitizeUrlForStorage(url),
+    label: (url) => vdoUtil.labelForUrl(url),
+    normalize: (v) => vdoUtil.normalizeVdo(v),
+    activeSource: (v) => vdoUtil.activeSource(v),
+    MAX_SOURCES: vdoUtil.MAX_SOURCES,
+    ALLOWED_HOSTS: vdoUtil.DEFAULT_ALLOWED_HOSTS,
   },
 
   // ════════════════════════════════════════════════════════════════

@@ -12,7 +12,9 @@ Each connected screen can be assigned a role — and the **same role can go on s
   exactly like PowerPoint — then advances with the slide's own transition. Needs a free
   [LibreOffice](https://www.libreoffice.org) install (used for conversion + its animated presentation engine);
   without it, export the deck to PDF and slides show statically.
-- **Camera** — a live webcam or capture-card feed, fullscreen, for showing the room, the crowd or the musicians.
+- **Camera** — a live feed, fullscreen, for showing the room, the crowd or the musicians. The feed can be a
+  **local webcam / capture card**, or one or more **[VDO.Ninja](https://vdo.ninja) streams** — phones and other
+  machines sending video in over the internet, with **instant cuts** between them.
   Can read the **song lyrics off another screen** (your lyrics software) and re-draw them as **captions** over the
   feed in your own font, position and animation, with an optional **logo** in a corner. Its screen is
   **see-through**, so one **RESET** press fades it away and reveals whatever app is running behind it.
@@ -79,7 +81,13 @@ software you already run, without that software needing to cooperate.
 
 **Setting it up**
 
-1. Give a screen the **Camera** role, then open the **📷 Camera** tab and choose your camera.
+1. Give a screen the **Camera** role, then open the **📷 Camera** tab and pick a source:
+
+   - **🎥 Local camera** — a webcam or capture card plugged into this machine. Choose it from the dropdown.
+   - **🌐 VDO.Ninja** — phones and remote cameras. On the phone, open **[vdo.ninja](https://vdo.ninja)**, press
+     **Share your camera**, and paste the **view link** it gives you into **+ Add camera**. Add up to **6**;
+     each gets a row with a **Put on air** button, and the one on air is outlined in red.
+
 2. Press the big **ON AIR** button. **🚨 RESET** clears the screen again — see below.
 3. Under **Lyrics**, pick the screen your lyrics software is on and press **📸 Grab a picture of that screen**,
    then **drag a box** around where the words appear.
@@ -87,6 +95,16 @@ software you already run, without that software needing to cooperate.
    it reads the words cleanly, then switch it on and press **Start reading lyrics**.
 5. Set the look under **Caption style** — a 9-point position grid, size, colour, backing, and how each line enters
    (fade, slide, zoom, cross-fade, typewriter or none). The preview box matches what the audience sees.
+
+**VDO.Ninja notes**
+
+- Every camera stays **connected in the background** so cutting between them is instant. If your connection is
+  poor, untick **Keep every camera connected** and accept a few seconds per cut.
+- Links are checked before they are used: **https only**, and only `vdo.ninja`, `backup.vdo.ninja` or
+  `insecure.cam`. `&cleanoutput` is added automatically so VDO.Ninja's own buttons don't appear on the screen.
+- **Any room password in a link is stripped before the link is saved**, so it never lands in the config file.
+- From a phone, the **Remote** app shows a button per camera and cuts between them — handy from the floor.
+  It receives the camera **names only**, never the links.
 
 **Things worth knowing**
 
@@ -98,7 +116,8 @@ software you already run, without that software needing to cooperate.
 - Lyrics arrive roughly **1–2 seconds behind** the other screen; that is the cost of reading them off a picture.
   Shrink the box to just the words and lower **Confirm reads** to 1 once it is aimed well.
 - Reading lyrics works **with no internet** — the language data ships inside the app.
-- The camera **never captures audio**, so it cannot cause feedback.
+- The camera **never captures audio**, so it cannot cause feedback. (VDO.Ninja streams carry whatever the sender
+  sends; the screen is muted.)
 - If the feed shows as **black** on the big screen, tick **Compatibility renderer**. If **RESET shows black**
   instead of the app behind it, check **See-through screen** is on and press **Restart camera screen**.
 - On macOS, allow **Camera** and **Screen Recording** for the app in System Settings → Privacy & Security.
@@ -188,6 +207,7 @@ src/
 │   ├── ocr.js              # Screen-region maths, text cleanup, OCR stabilizer
 │   ├── logo.js             # Logo overlay placement
 │   ├── transition.js       # Fade timing for the camera stage
+│   ├── vdoninja.js         # VDO.Ninja link validation (the security boundary)
 │   ├── zoom.js             # How media is scaled onto a screen
 │   ├── slideshow.js  youtube.js  weburl.js  remote.js
 │   └── clockformat.js  clockThemes.js  holidays.js
@@ -231,6 +251,10 @@ development and in an installed build.
 - **Web Page** uses a Chromium `<webview>`, which loads sites that block plain `<iframe>` embedding. Some sites with
   strict policies may still refuse to load.
 - **YouTube** uses the standard embed player; videos that disable embedding won't play.
+- **VDO.Ninja streams are embedded in an `<iframe>`, not a `<webview>`** — a webview renders nothing at all
+  inside a transparent window, which would break both the feed and the see-through reset. The trade-off is that
+  the app cannot inspect the stream's page, so it cannot tell "connected, but nobody is publishing" from
+  "connected and sending"; the screen simply shows whatever the stream does.
 - **Camera lyrics** are read optically from another screen, so they lag it by about **1–2 seconds** and can
   occasionally misread a word. The lyrics software must not be in exclusive fullscreen, or nothing can be drawn
   over it. English only.

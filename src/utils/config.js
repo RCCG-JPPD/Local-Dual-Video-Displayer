@@ -117,6 +117,7 @@ module.exports = {
   // `transparentWindow` is read only at window-creation time — Electron cannot
   // toggle transparency on a live window — so changing it needs a screen restart.
   camera: {
+    source: 'device',        // 'device' = a local camera, 'vdo' = a VDO.Ninja stream
     deviceId: '',            // MediaDeviceInfo.deviceId; '' = system default
     deviceLabel: '',         // remembered so the picker still reads right after a restart
     live: false,             // is the feed running
@@ -124,6 +125,19 @@ module.exports = {
     mirror: false,           // flip horizontally (front-facing cameras)
     transparentWindow: true, // see above — needs a screen restart to change
     renderMode: 'video',     // 'video' | 'canvas' (compatibility fallback, see cameraDisplay.html)
+
+    // VDO.Ninja sources: phones and other machines streaming in over WebRTC,
+    // the way ../virtualcam-helper works. Up to MAX_SOURCES of them, with one
+    // on air at a time. See src/utils/vdoninja.js — URLs are validated there
+    // and stored with any room password stripped out.
+    vdo: {
+      sources: [],           // [{ id, label, url }]
+      activeId: null,        // which one is on air (null = none)
+      // Keep every source connected in a hidden frame so cutting between
+      // cameras is instant. Costs bandwidth for streams nobody is watching;
+      // turn it off on a poor connection and accept a few seconds per cut.
+      preloadAll: true,
+    },
   },
 
   // Lyric captions drawn over the camera feed (src/utils/captions.js).
