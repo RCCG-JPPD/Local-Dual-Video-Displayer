@@ -338,22 +338,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // ════════════════════════════════════════════════════════════════
-  // PREVIEW / CANVAS
-  // ════════════════════════════════════════════════════════════════
-
-  // Send canvas preview data
-  sendPreviewData: (data) => {
-    ipcRenderer.send('canvas-preview-data', data);
-  },
-
-  // Listen for preview updates
-  onPreviewUpdate: (callback) => {
-    ipcRenderer.on('preview-updated', (event, data) => {
-      callback(data);
-    });
-  },
-
-  // ════════════════════════════════════════════════════════════════
   // WINDOW INFO
   // ════════════════════════════════════════════════════════════════
 
