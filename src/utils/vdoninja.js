@@ -32,6 +32,21 @@ const MAX_SOURCES = 6;
 // before a URL is written to disk.
 const SECRET_PARAMS = ['password', 'pass', 'pw', 'hash', 'token', 'key', 'secret'];
 
+// Forced onto EVERY link, on air and in preview alike.
+//
+//   cleanoutput  strips VDO.Ninja's own UI chrome, leaving just the video.
+//   noaudio      never negotiate an audio track at all.
+//   muted        mute the element too, in case one is negotiated anyway.
+//
+// The audio pair is not optional and not a preference. Sources are kept
+// mounted and connected so cuts are instant (see normalizeVdo), which means
+// every camera in the list is receiving at once — without this, a six-camera
+// setup plays six rooms' audio simultaneously, and the operator's own preview
+// adds a seventh. Both machines sit beside the PA, so that is the same
+// feedback loop the camera screen refuses a microphone to avoid. This screen
+// never needs sound, so no link is allowed to carry any.
+const FORCED_PARAMS = ['cleanoutput', 'noaudio', 'muted'];
+
 /** Raised for an unusable URL, with something an operator can act on. */
 class InvalidUrlError extends Error {
   constructor(message, hint) {
@@ -58,10 +73,8 @@ function rawPairs(query) {
 }
 
 /**
- * Validate a VDO.Ninja link and return it with `&cleanoutput` applied.
- *
- * `cleanoutput` is what strips VDO.Ninja's own UI chrome, so the screen shows
- * the video and nothing else.
+ * Validate a VDO.Ninja link and return it with FORCED_PARAMS applied — clean
+ * output, and silent. See that constant for why the audio flags are forced.
  *
  * @param {string} raw
  * @param {string[]} [allowedHosts]
@@ -126,10 +139,10 @@ function validateAndNormalizeUrl(raw, allowedHosts) {
     }
   }
 
-  // Append without re-encoding the rest of the query.
-  const nextQuery = keys.has('cleanoutput')
-    ? query
-    : (query ? `${query}&cleanoutput` : 'cleanoutput');
+  // Append without re-encoding the rest of the query, and without repeating a
+  // flag the operator's own link already carries.
+  const missing = FORCED_PARAMS.filter(p => !keys.has(p));
+  const nextQuery = [query, ...missing].filter(Boolean).join('&');
 
   return `${parts.protocol}//${parts.host}${parts.pathname || '/'}`
     + (nextQuery ? `?${nextQuery}` : '')
@@ -240,6 +253,7 @@ module.exports = {
   DEFAULT_ALLOWED_HOSTS,
   STREAM_PARAMS,
   SECRET_PARAMS,
+  FORCED_PARAMS,
   MAX_SOURCES,
   InvalidUrlError,
   validateAndNormalizeUrl,

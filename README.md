@@ -58,7 +58,9 @@ Press **Esc** on any fullscreen content window to close just that window (handy 
    **Unassigned**. You can give the same role to several screens to mirror it.
 4. Click **Confirm & Continue**. The control panel opens on your main screen.
 5. **Local video:** in *Local Video*, click **+ Add Video…**, then use Play/Pause, Next/Previous, the scrub bar, and
-   **Master Volume**. It plays on every Video screen.
+   **Master Volume**. It plays on every Video screen. The big **Video** button at the top takes the picture off
+   the screen and back — the clip keeps playing behind the black, so it returns wherever it has got to. (Use
+   **Stop** to actually halt it.)
 6. **YouTube:** paste a link in the *YouTube* box and press Enter — it plays on every YouTube screen.
 7. **Web page:** type an address in the *Web Page* box and press Enter — it loads on every Web screen.
 8. **Camera + live lyrics:** open the **📷 Camera** tab, pick your camera and press the big **ON AIR** button.
@@ -86,9 +88,11 @@ software you already run, without that software needing to cooperate.
    - **🎥 Local camera** — a webcam or capture card plugged into this machine. Choose it from the dropdown.
    - **🌐 VDO.Ninja** — phones and remote cameras. On the phone, open **[vdo.ninja](https://vdo.ninja)**, press
      **Share your camera**, and paste the **view link** it gives you into **+ Add camera**. Add up to **6**;
-     each gets a row with a **Put on air** button, and the one on air is outlined in red.
+     each gets a **tile showing what that camera is pointing at right now**. Click a tile (or its
+     **Put on air** button) to cut to it; the one on air is outlined in red and badged **● ON AIR**.
 
 2. Press the big **ON AIR** button. **🚨 RESET** clears the screen again — see below.
+   The local camera gets a preview in the control panel too, so you can see the shot before it goes out.
 3. Under **Lyrics**, pick the screen your lyrics software is on and press **📸 Grab a picture of that screen**,
    then **drag a box** around where the words appear.
 4. Leave **Send lyrics to the screen** switched **off** while you aim the box. Watch the **Last read** panel until
@@ -102,13 +106,17 @@ software you already run, without that software needing to cooperate.
 
 **VDO.Ninja notes**
 
-- Cuts between cameras use the **Transition** setting, the same one that fades the camera on and off:
+- Cuts between cameras use the **Transition** setting, the same one that fades the camera on and off
+  and draws the video screen's curtain:
   **Fade** dips through nothing, **Cross-fade** overlaps the two pictures, **Cut** is instant. Because every
   camera stays connected, a cross-fade is a real dissolve between two live pictures.
 - Every camera stays **connected in the background** so cutting between them is instant. If your connection is
   poor, untick **Keep every camera connected** and accept a few seconds per cut.
+- The preview tiles are a **second connection per camera**, on top of the ones feeding the screen. On a weak
+  machine or a poor connection, untick **Show previews here** — nothing the audience sees depends on them.
 - Links are checked before they are used: **https only**, and only `vdo.ninja`, `backup.vdo.ninja` or
-  `insecure.cam`. `&cleanoutput` is added automatically so VDO.Ninja's own buttons don't appear on the screen.
+  `insecure.cam`. Three flags are added automatically: `&cleanoutput` so VDO.Ninja's own buttons don't appear
+  on the screen, and `&noaudio&muted` so the stream is silent (see below).
 - **Any room password in a link is stripped before the link is saved**, so it never lands in the config file.
 - From a phone, the **Remote** app shows a button per camera and cuts between them — handy from the floor.
   It receives the camera **names only**, never the links.
@@ -123,8 +131,17 @@ software you already run, without that software needing to cooperate.
 - Lyrics arrive roughly **1–2 seconds behind** the other screen; that is the cost of reading them off a picture.
   Shrink the box to just the words and lower **Confirm reads** to 1 once it is aimed well.
 - Reading lyrics works **with no internet** — the language data ships inside the app.
-- The camera **never captures audio**, so it cannot cause feedback. (VDO.Ninja streams carry whatever the sender
-  sends; the screen is muted.)
+- **Virtual cameras are left alone.** OBS Virtual Camera, OBS-Camera, VDO.Ninja Camera and the like are not
+  offered in the camera picker and are never opened — not even as the "system default", which is how an app
+  grabs one without meaning to. A virtual camera can normally be read by one program at a time, so anything
+  this app holds is taken away from Zoom or Teams, and the symptom ("Zoom can't find my virtual camera") never
+  points back here. The Camera tab names any it has hidden, so nothing goes missing silently.
+- **No camera ever brings audio in** — not the webcam, not a VDO.Ninja stream, on air or in preview. Every
+  camera stays connected at once, so anything else would mean several rooms sounding together beside the PA.
+  There is no setting for it: the audio flags are forced onto every link, and the webcam is opened video-only.
+- **The local camera can only be held by one thing at a time on many machines.** The screen always wins: the
+  preview lets go before the feed goes on air, then quietly tries again. If your camera refuses the second
+  open, the preview says so while it is on air — the screen is unaffected.
 - If the feed shows as **black** on the big screen, tick **Compatibility renderer**. If **RESET shows black**
   instead of the app behind it, check **See-through screen** is on and press **Restart camera screen**.
 - On macOS, allow **Camera** and **Screen Recording** for the app in System Settings → Privacy & Security.
@@ -215,6 +232,7 @@ src/
 │   ├── logo.js             # Logo overlay placement
 │   ├── transition.js       # Fade timing for the camera stage
 │   ├── vdoninja.js         # VDO.Ninja link validation (the security boundary)
+│   ├── cameras.js          # Real vs virtual cameras, and which one to open
 │   ├── zoom.js             # How media is scaled onto a screen
 │   ├── slideshow.js  youtube.js  weburl.js  remote.js
 │   └── clockformat.js  clockThemes.js  holidays.js

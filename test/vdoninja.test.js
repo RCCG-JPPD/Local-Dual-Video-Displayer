@@ -3,20 +3,21 @@ const assert = require('node:assert/strict');
 const {
   DEFAULT_ALLOWED_HOSTS, STREAM_PARAMS, MAX_SOURCES, InvalidUrlError,
   validateAndNormalizeUrl, isValidUrl, sanitizeUrlForStorage, labelForUrl,
-  normalizeSource, normalizeVdo, activeSource,
+  normalizeSource, normalizeVdo, activeSource, FORCED_PARAMS,
 } = require('../src/utils/vdoninja');
 
 const OK = 'https://vdo.ninja/?view=abc123';
 
 // ── the security boundary ─────────────────────────────────────────────
 
-test('a plain view link is accepted and gets cleanoutput', () => {
-  // cleanoutput is what removes VDO.Ninja's own UI, leaving just the video.
-  assert.equal(validateAndNormalizeUrl(OK), 'https://vdo.ninja/?view=abc123&cleanoutput');
+test('a plain view link is accepted and gets the forced flags', () => {
+  // cleanoutput removes VDO.Ninja's own UI; noaudio/muted keep the link silent.
+  assert.equal(validateAndNormalizeUrl(OK),
+    'https://vdo.ninja/?view=abc123&cleanoutput&noaudio&muted');
 });
 
-test('cleanoutput is not added twice', () => {
-  const once = 'https://vdo.ninja/?view=abc123&cleanoutput';
+test('the forced flags are not added twice', () => {
+  const once = validateAndNormalizeUrl(OK);
   assert.equal(validateAndNormalizeUrl(once), once);
 });
 
@@ -80,12 +81,13 @@ test('the rest of the query is preserved exactly, not re-encoded', () => {
   const url = 'https://vdo.ninja/?view=abc&bitrate=2500&codec=h264&noaudio';
   const out = validateAndNormalizeUrl(url);
   assert.ok(out.startsWith(url), out);
-  assert.equal(out, `${url}&cleanoutput`);
+  // noaudio was already there, so only the two it was missing get appended.
+  assert.equal(out, `${url}&cleanoutput&muted`);
 });
 
 test('a fragment survives normalization', () => {
   assert.equal(validateAndNormalizeUrl('https://vdo.ninja/?view=a#x'),
-    'https://vdo.ninja/?view=a&cleanoutput#x');
+    'https://vdo.ninja/?view=a&cleanoutput&noaudio&muted#x');
 });
 
 test('isValidUrl never throws', () => {
@@ -184,4 +186,28 @@ test('activeSource returns the live entry or null', () => {
   assert.equal(activeSource(vdo).id, 'b');
   assert.equal(activeSource({ sources: [], activeId: null }), null);
   assert.equal(activeSource(null), null);
+});
+
+// ── silence ───────────────────────────────────────────────────────────
+
+test('every accepted link comes back silent', () => {
+  // Sources stay mounted so cuts are instant, so ALL of them receive at once.
+  // Audio on any of them is a feedback loop next to the PA — on air just as
+  // much as in the operator's preview. No camera ever needs to be heard.
+  for (const raw of [OK, 'https://vdo.ninja/?view=a&bitrate=800',
+    'https://vdo.ninja/?room=r&scene=1', 'https://backup.vdo.ninja/?view=z']) {
+    const url = validateAndNormalizeUrl(raw);
+    FORCED_PARAMS.forEach(p => assert.ok(url.includes(p), `${p} missing from ${url}`));
+  }
+});
+
+test('a flag the operator already set is not duplicated', () => {
+  const url = validateAndNormalizeUrl('https://vdo.ninja/?view=a&muted');
+  assert.equal(url.match(/muted/g).length, 1, url);
+});
+
+test('the forced flags keep the rest of the query and the fragment intact', () => {
+  const url = validateAndNormalizeUrl('https://vdo.ninja/?view=abc123&bitrate=800#x');
+  assert.ok(url.includes('bitrate=800'), url);
+  assert.ok(url.endsWith('#x'), url);
 });

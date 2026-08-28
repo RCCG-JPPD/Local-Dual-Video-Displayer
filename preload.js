@@ -18,6 +18,7 @@ const transitionUtil = require('./src/utils/transition');
 const logoUtil = require('./src/utils/logo');
 const ocrUtil = require('./src/utils/ocr');
 const vdoUtil = require('./src/utils/vdoninja');
+const cameraUtil = require('./src/utils/cameras');
 
 // Expose safe IPC APIs to renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -117,10 +118,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     DEFAULTS: ocrUtil.DEFAULT_OCR,
   },
 
+  // Camera-device helpers (src/utils/cameras.js). A virtual camera is another
+  // program's output, and holding one takes it away from the program that
+  // needs it — so the screens pick a real device by id and never open the
+  // system default.
+  cameras: {
+    isVirtual: (label) => cameraUtil.isVirtualCamera(label),
+    tag: (devices) => cameraUtil.tagDevices(devices),
+    real: (devices) => cameraUtil.realCameras(devices),
+    virtual: (devices) => cameraUtil.virtualCameras(devices),
+    resolveDeviceId: (devices, preferred) => cameraUtil.resolveDeviceId(devices, preferred),
+    noCameraReason: (devices) => cameraUtil.noCameraReason(devices),
+  },
+
   // VDO.Ninja pure helpers (src/utils/vdoninja.js). `validate` throws an
   // InvalidUrlError whose .message/.hint are written for an operator, so the
   // controller can show them directly.
   vdoninja: {
+    // Returns the link with cleanoutput and the audio flags forced on — every
+    // consumer of a VDO.Ninja URL goes through here, so none of them can sound.
     validate: (url, hosts) => vdoUtil.validateAndNormalizeUrl(url, hosts),
     isValid: (url, hosts) => vdoUtil.isValidUrl(url, hosts),
     sanitize: (url) => vdoUtil.sanitizeUrlForStorage(url),

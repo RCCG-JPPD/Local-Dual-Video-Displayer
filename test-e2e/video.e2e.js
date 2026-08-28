@@ -34,6 +34,27 @@ function check(ok, detail) {
 }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+/**
+ * Mean luminance of the whole rendered window, 0..255.
+ *
+ * Captured twice, discarding the first: on a window created with show:false
+ * the compositor hands back the previously painted frame, so a single grab
+ * reports the state BEFORE the change under test and every reading here would
+ * be one step behind.
+ */
+async function meanLuminance(w) {
+  await w.webContents.capturePage();
+  await sleep(120);
+  const image = await w.webContents.capturePage();
+  const { width, height } = image.getSize();
+  const buf = image.toBitmap(); // premultiplied BGRA
+  let sum = 0;
+  for (let i = 0; i < buf.length; i += 4) {
+    sum += 0.299 * buf[i + 2] + 0.587 * buf[i + 1] + 0.114 * buf[i];
+  }
+  return sum / (width * height);
+}
+
 let win = null;
 const rendererLog = [];
 const previewTraffic = []; // must stay empty: the channel is gone
@@ -162,6 +183,56 @@ test('the dead preview channel is really gone', async () => {
   check(gone === true, 'preview capture machinery is still present in the page');
 });
 
+test('the curtain blacks the screen without touching playback', async () => {
+  // The whole contract of the video on/off button: the audience sees nothing,
+  // the clip carries on. Turning it back on must therefore show wherever the
+  // clip has reached, not a frozen frame from when it was hidden.
+  send('playback-command', 'play');
+  await sleep(300);
+  const litBefore = await meanLuminance(win);
+  check(litBefore > 8, `no picture to hide (luminance ${litBefore.toFixed(1)})`);
+
+  send('playback-command', 'setVisible', false);
+  await sleep(700); // the fade has to finish before the pixels settle
+
+  const dark = await meanLuminance(win);
+  check(dark < 2, `the screen is not black behind the curtain (luminance ${dark.toFixed(1)})`);
+
+  const hidden = JSON.parse(await evaluate(`(() => {
+    const v = document.getElementById('vid');
+    return JSON.stringify({ paused: v.paused, t: v.currentTime, flag: isPlaying,
+                            visible });
+  })()`));
+  check(hidden.paused === false, 'the curtain paused the clip; it should play on');
+  check(hidden.flag === true, `isPlaying went ${hidden.flag} behind the curtain`);
+  check(hidden.visible === false, 'the screen did not record itself as hidden');
+
+  await sleep(500);
+  const later = Number(await evaluate("document.getElementById('vid').currentTime"));
+  check(later > hidden.t, `the clip stopped advancing behind the curtain (${hidden.t} -> ${later})`);
+});
+
+test('raising the curtain brings the picture back', async () => {
+  send('playback-command', 'setVisible', true);
+  await sleep(700);
+  const lit = await meanLuminance(win);
+  check(lit > 8, `the picture did not come back (luminance ${lit.toFixed(1)})`);
+  const shown = await evaluate('visible');
+  check(shown === true, 'the screen did not record itself as visible');
+});
+
+test('the curtain fades with the shared transition setting', async () => {
+  // One setting drives the camera and the video, so a show does not have two
+  // different fades in it.
+  send('transition-settings', { type: 'fade', durationMs: 900, easing: 'linear' });
+  await sleep(100);
+  const css = await evaluate(
+    "getComputedStyle(document.getElementById('video-container')).transitionDuration");
+  check(/0\.9s|900ms/.test(css), `the fade did not follow the setting (${css})`);
+  send('transition-settings', { type: 'fade', durationMs: 80, easing: 'linear' });
+  await sleep(100);
+});
+
 test('stop pauses and rewinds, keeping the clip loaded', async () => {
   send('playback-command', 'stop');
   await sleep(400);
@@ -188,7 +259,24 @@ test('clear unloads the clip and blacks the screen', async () => {
   check(s.flag === false, `isPlaying is ${s.flag} after clear`);
 });
 
+test('a screen created later comes back curtained if that is how it was left', async () => {
+  // A video screen assigned mid-service must not blurt out a clip the operator
+  // had deliberately taken off the air.
+  curtainedConfig = true;
+  await win.loadFile(UI);
+  send('window-role', 'video');
+  await sleep(400);
+  const state = JSON.parse(await evaluate(
+    "JSON.stringify({ visible, op: document.getElementById('video-container').style.opacity })"));
+  check(state.visible === false, 'the screen ignored the saved curtain');
+  check(state.op === '0', `the screen restored visible (opacity ${state.op})`);
+  curtainedConfig = false;
+});
+
 test('a missing file is reported, not swallowed', async () => {
+  await win.loadFile(UI);
+  send('window-role', 'video');
+  await sleep(300);
   rendererLog.length = 0;
   send('playback-command', 'load', path.join(os.tmpdir(), 'ldvd-does-not-exist.mp4'));
   await sleep(1200);
@@ -198,8 +286,12 @@ test('a missing file is reported, not swallowed', async () => {
 
 // ══════════════════════════════════════════════════════════════════════
 
+let curtainedConfig = false;
+
 app.whenReady().then(async () => {
-  ipcMain.handle('get-config', () => ({}));
+  ipcMain.handle('get-config', () => (curtainedConfig
+    ? { playback: { visible: false }, transition: { type: 'fade', durationMs: 80, easing: 'linear' } }
+    : {}));
   ipcMain.on('renderer-log', (_e, level, msg) => rendererLog.push({ level, msg }));
   ipcMain.on('video-time', () => {});
   // If anything still sends on the removed channel, this catches it.

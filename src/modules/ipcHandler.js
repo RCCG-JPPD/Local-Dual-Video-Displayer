@@ -197,6 +197,13 @@ class IPCHandler {
         payload = normalizeZoom(data);
         this._persistZoom('video', payload);
       }
+      if (cmd === 'setVisible') {
+        // Like zoom, this is a screen setting rather than a transport action:
+        // a screen created later, or the next run, comes back the way the
+        // operator left it instead of showing a video they had curtained off.
+        payload = !!data;
+        this._persistLater('playback', { visible: payload });
+      }
       this.broadcastToRole('video', 'playback-command', cmd, payload);
     });
 
@@ -536,6 +543,12 @@ class IPCHandler {
           payload = data === 'canvas' ? 'canvas' : 'video';
           this._persistLater('camera', { renderMode: payload });
           break;
+        case 'setPreview':
+          // Controller-only: the multiview thumbnails live in the operator's
+          // window. Remember the choice, but return before the broadcast — the
+          // camera screens have no use for it and would log it as unknown.
+          this._persistLater('camera', { preview: !!data });
+          return;
         case 'reset':
           this._persistLater('camera', { visible: false });
           break;
@@ -593,6 +606,9 @@ class IPCHandler {
       const payload = normalizeTransition(settings);
       this._persistLater('transition', payload);
       this.broadcastToRole('camera', 'transition-settings', payload);
+      // The video screen's curtain uses the same fade, so one setting keeps
+      // every screen in the show moving the same way.
+      this.broadcastToRole('video', 'transition-settings', payload);
     });
 
     ipcMain.handle('select-logo-file', async () => {

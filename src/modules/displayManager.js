@@ -335,6 +335,37 @@ class DisplayManager {
       window.setIgnoreMouseEvents(true, { forward: false });
       // Without this the overlay never covers a fullscreen app on a macOS Space.
       window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+      // KEEP IT ON TOP, the way the clock overlay does.
+      //
+      // _createContentWindow pins this once, at load. That is not enough for a
+      // window whose whole job is to sit over somebody else's application: the
+      // lyrics software raises its own output window whenever the operator
+      // changes song, and Windows puts it above an always-on-top window that
+      // has not re-asserted itself. From then on the camera is behind it —
+      // still running, still "visible" as far as every bit of state here is
+      // concerned, and completely invisible to the audience. Nothing reports
+      // it, and no amount of pressing the on-air button brings it back,
+      // because the button was never the problem.
+      //
+      // The clock overlay has always re-asserted this every second, which is
+      // why it never suffered from this. Same treatment.
+      const enforce = setInterval(() => {
+        if (window.isDestroyed()) { clearInterval(enforce); return; }
+        window.setAlwaysOnTop(true, 'screen-saver');
+        window.moveTop();
+        // A clock overlay on this same screen re-asserts itself on its own
+        // 1s timer, so without this the two would trade places every second
+        // and the clock would flicker behind an opaque camera picture. The
+        // clock belongs on top of the camera, so put it back immediately.
+        this.contentWindows
+          .filter(e => e.role === 'clock' && e.overlay && e.displayIndex === displayIndex)
+          .forEach((e) => {
+            if (e.window && !e.window.isDestroyed()) e.window.moveTop();
+          });
+      }, 1000);
+      window.on('closed', () => clearInterval(enforce));
+
       window.webContents.send('window-role', 'camera');
     }, windowOpts);
   }

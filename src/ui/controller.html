@@ -53,19 +53,21 @@
     }
 
     /* Only the active tab panel is shown */
-    /* ── Camera panel ─────────────────────────────────────────────── */
-    /* The live toggle is the primary control of this whole screen, so it is
-       deliberately oversized and colour-coded: at a concert the operator has
-       to hit it without reading. */
-    .cam-live-row { display: flex; gap: 12px; align-items: stretch; margin-bottom: 14px; }
-    .cam-live-btn {
+    /* ── The big on-air toggle ─────────────────────────────────────── */
+    /* Shared by the camera and the video panels: whichever screen an operator
+       is running, the control that decides whether the audience can see it is
+       the same shape, the same colour and in the same place. Deliberately
+       oversized — at a concert it has to be hit without reading. */
+    .live-row { display: flex; gap: 12px; align-items: stretch; margin-bottom: 14px; }
+    .live-btn {
       flex: 1; min-height: 64px; font-size: 20px; font-weight: 700;
       border: none; border-radius: 8px; cursor: pointer; color: #fff;
       background: #3d4450; transition: background .15s;
     }
-    .cam-live-btn.live { background: #d32f2f; }
-    .cam-live-btn.live::after { content: ' ● ON AIR'; }
-    .cam-live-btn:not(.live)::after { content: ' — OFF'; }
+    .live-btn.live { background: #d32f2f; }
+    .live-btn.live::after { content: ' ● ON AIR'; }
+    .live-btn:not(.live)::after { content: ' — OFF'; }
+    /* Camera only: this one reveals the app running behind the screen. */
     .cam-reset-btn {
       flex: 0 0 200px; min-height: 64px; font-size: 15px; font-weight: 700;
       border: 2px solid #d32f2f; border-radius: 8px; cursor: pointer;
@@ -82,22 +84,78 @@
     }
     .src-tabs button.active { background: #667eea; border-color: #667eea; color: #fff; }
 
-    /* One row per VDO.Ninja stream, red-bordered when it is on air —
-       the same at-a-glance switcher layout virtualcam-helper uses. */
-    .vdo-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+    /* MULTIVIEW: one tile per VDO.Ninja stream, each showing what that camera
+       is actually pointing at, red-bordered when it is the one on air. The
+       whole point is that the operator can look before cutting — so the
+       picture is the biggest thing in the tile, and clicking it takes. */
+    .vdo-list {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 10px; margin: 10px 0;
+    }
     .vdo-row {
-      display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+      display: flex; flex-direction: column; overflow: hidden;
       border: 2px solid #3a4250; border-radius: 6px; background: #232936;
     }
     .vdo-row.on-air { border-color: #d32f2f; background: #2a2023; }
-    .vdo-row .vdo-name { flex: 1; font-weight: 600; }
+    .vdo-row .vdo-name { font-weight: 600; font-size: 13px; }
     .vdo-row .vdo-url {
-      flex: 2; font-size: 11px; opacity: .6; overflow: hidden;
+      font-size: 11px; opacity: .6; overflow: hidden;
       text-overflow: ellipsis; white-space: nowrap;
     }
-    .vdo-row .on-air-tag { color: #ff6b6b; font-size: 12px; font-weight: 700; }
     .vdo-error { color: #ff8a80; font-size: 13px; min-height: 18px; margin-top: 4px; }
     .vdo-hint { font-size: 12px; opacity: .7; }
+
+    /* The thumbnail itself. 16:9 because that is what the screen is, so a
+       badly framed shot looks just as wrong here as it will out there. */
+    .vdo-thumb {
+      position: relative; aspect-ratio: 16 / 9; background: #11141b;
+      cursor: pointer; overflow: hidden;
+    }
+    .vdo-thumb iframe {
+      position: absolute; inset: 0; width: 100%; height: 100%; border: 0;
+      /* The tile is a button. Swallowing clicks here keeps them from reaching
+         VDO.Ninja's own page, which would otherwise take a stray click as its
+         own (mute, fullscreen) and never tell us. */
+      pointer-events: none;
+    }
+    /* Sits above the frame, so it is legible over any picture. */
+    .vdo-thumb .thumb-tag {
+      position: absolute; top: 6px; left: 6px; z-index: 1;
+      padding: 2px 7px; border-radius: 3px; font-size: 11px; font-weight: 700;
+      letter-spacing: .04em; background: rgba(0,0,0,.65); color: #cfd6e0;
+    }
+    .vdo-row.on-air .thumb-tag { background: #d32f2f; color: #fff; }
+    /* Shown instead of a frame when previews are off or the link is bad. */
+    .vdo-thumb .thumb-msg {
+      position: absolute; inset: 0; display: flex; align-items: center;
+      justify-content: center; text-align: center; padding: 10px;
+      font-size: 12px; opacity: .55; line-height: 1.35;
+    }
+    .vdo-meta { padding: 7px 9px 0; display: flex; flex-direction: column; gap: 2px; }
+    .vdo-actions { display: flex; gap: 6px; padding: 7px 9px 9px; }
+    .vdo-actions .vdo-take { flex: 1; font-weight: 600; }
+    .vdo-actions .vdo-take:disabled { opacity: .5; cursor: default; }
+
+    /* Preview of the LOCAL camera, same idea: see the webcam before it goes
+       on air. Kept small — this is a confidence check, not a monitor. */
+    .cam-preview {
+      position: relative; width: 100%; max-width: 380px; aspect-ratio: 16 / 9;
+      background: #11141b; border: 2px solid #3a4250; border-radius: 6px;
+      overflow: hidden; margin-bottom: 12px;
+    }
+    .cam-preview.on-air { border-color: #d32f2f; }
+    .cam-preview video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .cam-preview .thumb-tag {
+      position: absolute; top: 6px; left: 6px; z-index: 1;
+      padding: 2px 7px; border-radius: 3px; font-size: 11px; font-weight: 700;
+      background: rgba(0,0,0,.65); color: #cfd6e0;
+    }
+    .cam-preview.on-air .thumb-tag { background: #d32f2f; color: #fff; }
+    .cam-preview .thumb-msg {
+      position: absolute; inset: 0; display: flex; align-items: center;
+      justify-content: center; text-align: center; padding: 12px;
+      font-size: 12px; opacity: .6; line-height: 1.4;
+    }
 
     .cam-grid {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
@@ -651,6 +709,13 @@
     <div class="controls-section tab-panel" id="section-localvideo" data-panel="localvideo">
       <h2>🎬 Local Video</h2>
 
+      <!-- The one control that matters mid-service, first and largest, exactly
+           where the camera panel puts its own. -->
+      <div class="live-row">
+        <button id="vidLiveBtn" class="live-btn">Video</button>
+      </div>
+      <div class="section-hint" id="vidLiveHint"></div>
+
       <!-- Playlist -->
       <div class="playlist-container">
         <h3>Playlist</h3>
@@ -806,8 +871,8 @@
       <h2>📷 Camera</h2>
 
       <!-- The two controls that matter during a show, first and largest. -->
-      <div class="cam-live-row">
-        <button id="camLiveBtn" class="cam-live-btn">Camera</button>
+      <div class="live-row">
+        <button id="camLiveBtn" class="live-btn">Camera</button>
         <button id="camResetBtn" class="cam-reset-btn">
           🚨 RESET<br><span style="font-weight:400;font-size:12px">show what's behind</span>
         </button>
@@ -836,13 +901,22 @@
         <div class="section-hint vdo-hint">
           On the phone, open <b>vdo.ninja</b>, press <b>Share your camera</b>, and paste the
           <b>view link</b> it gives you here. Only <span id="vdoHosts"></span> links are accepted,
-          and any room password is stripped before the link is saved.
+          and any room password is stripped before the link is saved.<br>
+          Each tile shows what that camera is pointing at right now. <b>Click a tile</b>
+          (or its button) to put that camera on air.
         </div>
+      </div>
+
+      <!-- The local webcam, previewed here before it reaches the screen. -->
+      <div class="cam-preview" id="camPreviewBox">
+        <video id="camPreview" autoplay muted playsinline></video>
+        <span class="thumb-tag" id="camPreviewTag">PREVIEW</span>
+        <div class="thumb-msg" id="camPreviewMsg"></div>
       </div>
 
       <div class="cam-grid" id="camDeviceGrid">
         <label>Camera
-          <select id="camDevice"><option value="">System default</option></select>
+          <select id="camDevice"><option value="">Looking for cameras…</option></select>
         </label>
         <label>&nbsp;
           <button id="camRescanBtn">🔄 Rescan cameras</button>
@@ -850,6 +924,11 @@
         <label class="cam-check"><input type="checkbox" id="camMirror"> Mirror horizontally</label>
         <label class="cam-check"><input type="checkbox" id="camBlank"> Blackout screen</label>
       </div>
+
+      <label class="cam-check" style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+        <input type="checkbox" id="camPreviewOn" checked>
+        Show previews here (see a camera before putting it on air)
+      </label>
 
       <div class="zoom-container" style="margin-bottom:15px;">
         <label for="camZoom">🔍 Zoom</label>
@@ -889,8 +968,8 @@
           </label>
         </div>
         <div class="section-hint">
-          Used in three places: turning the camera <b>on and off</b>, <b>RESET</b>, and
-          <b>cutting between cameras</b>.<br>
+          Used in four places: turning the camera <b>on and off</b>, <b>RESET</b>,
+          <b>cutting between cameras</b>, and the <b>video screen's on/off</b> button.<br>
           <b>Fade</b> dips through nothing — the old picture leaves before the new one
           arrives. <b>Cross-fade</b> overlaps them. <b>Cut</b> is instant.<br>
           RESET fades the screen to fully transparent, so the app running behind it shows
@@ -1242,6 +1321,10 @@
     function showTab(name) {
       navItems.forEach(n => n.classList.toggle('active', n.dataset.tab === name));
       tabPanels.forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+      // The camera preview holds a physical device. Nothing the operator is not
+      // looking at should hold one, so let go on the way out of the tab and
+      // look again on the way back in.
+      if (name === 'camera') refreshCameraDevices(); else stopDevicePreview();
     }
     navItems.forEach(n => n.addEventListener('click', () => {
       // Action items (e.g. Clear All Content) have no data-tab.
@@ -1255,6 +1338,7 @@
     let playlist = [];
     let currentIndex = -1;
     let isPlaying = false;
+    let videoVisible = true;   // false = the video screen is black, clip playing on
     let duration = 0;
     let config = {};
 
@@ -1273,6 +1357,11 @@
           playlist = config.playback.playlist;
           renderPlaylist();
         }
+
+        // The curtain is remembered like zoom is, so the button matches what
+        // the screen is actually doing rather than assuming it is showing.
+        videoVisible = !config.playback || config.playback.visible !== false;
+        renderVideoLive();
 
         // Apply role availability + clock controls for the current config
         refreshControllerForConfig(config);
@@ -1439,6 +1528,9 @@
     // Clear the playlist AND blank the video screen(s).
     function clearVideo() {
       send('clear');
+      // Raise the curtain too. The screen is black either way once the clip is
+      // unloaded, and leaving it down would swallow the next video silently.
+      setVideoVisible(true);
       playlist = [];
       currentIndex = -1;
       isPlaying = false;
@@ -1487,7 +1579,8 @@
       send('load', playlist[currentIndex]);
       isPlaying = true;
       playBtn.textContent = '⏸ Pause';
-      statusBar.textContent = `Now playing: ${pathBasename(playlist[currentIndex])}`;
+      statusBar.textContent = `Now playing: ${pathBasename(playlist[currentIndex])}`
+        + (videoVisible ? '' : ' — but the video screen is OFF, press Video to show it');
     }
 
     playBtn.onclick = () => {
@@ -1501,7 +1594,9 @@
         send('play');
         isPlaying = true;
         playBtn.textContent = '⏸ Pause';
-        statusBar.textContent = 'Playing...';
+        statusBar.textContent = videoVisible
+          ? 'Playing...'
+          : 'Playing — but the video screen is OFF, press Video to show it';
       }
     };
 
@@ -1513,6 +1608,44 @@
       playBtn.textContent = '▶ Play';
       statusBar.textContent = 'Stopped';
     };
+
+    // ════════════════════════════════════════════════════════════════
+    // VIDEO SCREEN ON / OFF (the curtain)
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Take the video off the screen, or put it back.
+     *
+     * A curtain, not a transport control: the clip keeps playing (and keeps its
+     * sound) behind the black, so turning it back on shows wherever it has got
+     * to. Stop and Clear are still the way to actually halt it. Deliberately
+     * the same control, in the same place, as the camera panel's — mid-service
+     * nobody should have to remember which screen needs which button.
+     */
+    function setVideoVisible(on) {
+      videoVisible = !!on;
+      send('setVisible', videoVisible);
+      renderVideoLive();
+      statusBar.textContent = videoVisible
+        ? '🎬 Video is ON AIR'
+        : '🎬 Video screen is black — the clip is still playing';
+    }
+
+    function renderVideoLive() {
+      const btn = document.getElementById('vidLiveBtn');
+      // The ON AIR / OFF half of the label comes from CSS ::after, keyed off .live.
+      if (btn) btn.classList.toggle('live', videoVisible);
+      const hint = document.getElementById('vidLiveHint');
+      if (hint) {
+        hint.textContent = videoVisible
+          ? 'The video screen is showing. Press to take it off the screen — the clip '
+            + 'keeps playing behind the black, so it comes back where it got to.'
+          : 'The video screen is black. The clip is still playing behind it — press '
+            + 'to bring it back, or use Stop to halt it.';
+      }
+    }
+
+    document.getElementById('vidLiveBtn').onclick = () => setVideoVisible(!videoVisible);
 
     // ════════════════════════════════════════════════════════════════
     // SCRUB BAR
@@ -1642,12 +1775,24 @@
     // Every one of these starts from a normalizer rather than from the config,
     // because loadConfig() returns the saved file verbatim — an install that
     // predates this feature simply has no camera/captions/ocr/logo keys.
-    let camState = { deviceId: '', live: false, mirror: false, transparentWindow: true, renderMode: 'video' };
+    // `live`    — is the source running (camera open / stream on air)
+    // `visible` — is the camera screen actually showing anything
+    // These are NOT the same thing, and conflating them is what made the big
+    // button need pressing twice after a RESET. RESET hides the stage without
+    // stopping the source, so `live` stays true while nothing is on screen.
+    let camState = { deviceId: '', live: false, visible: true, mirror: false,
+      transparentWindow: true, renderMode: 'video' };
     let capState = electronAPI.captions.normalize(null);
     let logoState = electronAPI.logo.normalize(null);
     let transState = electronAPI.transition.normalize(null);
     let ocrState = electronAPI.ocr.normalize(null);
     let vdoState = { sources: [], activeId: null, preloadAll: true };
+    // Multiview state, all local to this window — none of it reaches a screen.
+    let previewOn = true;             // show live previews in the controller
+    const vdoTiles = new Map();       // source id -> tile element, reused forever
+    let cameraDevices = [];           // last reported list, tagged real/virtual
+    let devicePreviewStream = null;   // the local webcam preview's MediaStream
+    let devicePreviewTimer = null;    // best-effort re-open after the screen takes over
     let ocrRunning = false;
     let ocrShotSize = null; // the still's pixel size, for the region maths
 
@@ -1766,21 +1911,73 @@
     function renderCameraUi() {
       // The label's ON AIR / OFF half comes from CSS ::after, keyed off .live.
       const btn = $('camLiveBtn');
-      if (btn) btn.classList.toggle('live', !!camState.live);
+      // On air means ON THE SCREEN. After a RESET the source is still running
+      // but the audience sees nothing, so the button must not claim ON AIR.
+      const onScreen = !!camState.live && camState.visible !== false;
+      if (btn) btn.classList.toggle('live', onScreen);
       const m = $('camMirror'); if (m) m.checked = !!camState.mirror;
       const t = $('camTransparent'); if (t) t.checked = camState.transparentWindow !== false;
       const c = $('camCanvasMode'); if (c) c.checked = camState.renderMode === 'canvas';
+      const pv = $('camPreviewOn'); if (pv) pv.checked = previewOn;
+      const box = $('camPreviewBox');
+      if (box) {
+        box.classList.toggle('on-air', onScreen);
+        const tag = $('camPreviewTag');
+        if (tag) tag.textContent = onScreen ? '● ON AIR' : 'PREVIEW';
+      }
     }
 
     function setCameraLive(on) {
       camState.live = !!on;
+      // Turning the source on always puts the stage back up — the main process
+      // persists it the same way, and an operator who presses this expects to
+      // see a picture, not a running camera behind a hidden stage.
+      if (camState.live) camState.visible = true;
+      // Release the local camera BEFORE telling the screen to open it: on a
+      // device that only allows one holder, whoever asks first wins, and that
+      // must never be the preview.
+      if (camState.source === 'device') stopDevicePreview();
       electronAPI.sendCameraCommand('live', camState.live);
       renderCameraUi();
+      if (camState.source === 'device') reclaimDevicePreview();
       statusBar.textContent = camState.live ? '📷 Camera is ON AIR' : '📷 Camera off';
+    }
+
+    /**
+     * Put the camera back on the screen after a RESET.
+     *
+     * THE BUG THIS FIXES: RESET hides the stage but deliberately leaves the
+     * source running, so `live` stayed true. The big button toggled from
+     * `live`, so the next press sent live:FALSE — which for a VDO.Ninja source
+     * does nothing at all and for a local camera stops it. Either way the
+     * camera did not come back, and it took a second press to work. Between
+     * songs, when RESET is exactly what an operator has just used, that reads
+     * as "the camera is gone".
+     *
+     * `restore` is the screen's own command for this: it shows the stage and
+     * re-opens a local camera if that is the source.
+     */
+    function showCamera() {
+      camState.visible = true;
+      camState.live = true;
+      if (camState.source === 'device') stopDevicePreview();
+      // Blackout would leave the screen black even with the stage back up, and
+      // someone pressing SHOW wants a picture. This only ever un-blanks.
+      const blank = $('camBlank');
+      if (blank && blank.checked) {
+        blank.checked = false;
+        electronAPI.sendCameraCommand('blank', false);
+      }
+      electronAPI.sendCameraCommand('restore', null);
+      renderCameraUi();
+      if (camState.source === 'device') reclaimDevicePreview();
+      statusBar.textContent = '📷 Camera is back on the screen';
     }
 
     function clearCamera() {
       camState.live = false;
+      camState.visible = false;
+      stopDevicePreview();
       electronAPI.sendCameraCommand('live', false);
       electronAPI.sendCameraCommand('reset', null);
       electronAPI.sendCaptionText('');
@@ -1791,20 +1988,39 @@
     function renderCameraDevices(devices) {
       const sel = $('camDevice');
       if (!sel || !Array.isArray(devices)) return;
-      const chosen = camState.deviceId;
-      sel.innerHTML = '<option value="">System default</option>';
-      devices.forEach((d, i) => {
+      cameraDevices = devices;
+      const real = electronAPI.cameras.real(devices);
+      const virtual = electronAPI.cameras.virtual(devices);
+
+      // No "System default" entry any more: the default is exactly what grabs
+      // OBS Virtual Camera out from under Zoom, so there is no way to ask for
+      // it. An empty choice resolves to the first real camera instead.
+      sel.innerHTML = '';
+      real.forEach((d, i) => {
         const o = document.createElement('option');
         o.value = d.deviceId;
         // Labels are blank until the media permission is granted at least once.
         o.textContent = d.label || `Camera ${i + 1}`;
         sel.appendChild(o);
       });
-      sel.value = chosen || '';
+      sel.value = electronAPI.cameras.resolveDeviceId(devices, camState.deviceId);
+
       const hint = $('camHint');
-      if (hint && !devices.length) {
-        hint.textContent = 'No cameras found. Plug one in, then press Rescan.';
+      if (hint) {
+        if (!real.length) {
+          hint.textContent = electronAPI.cameras.noCameraReason(devices);
+        } else if (virtual.length) {
+          // Named, not silently absent: an operator hunting for "OBS Virtual
+          // Camera" in this list needs to know why it is not there.
+          hint.textContent = 'Pick a camera, then press the big button to go on air. '
+            + `Not listed: ${virtual.map(d => d.label).join(', ')} — those belong to `
+            + 'other programs, and this app leaves them alone so Zoom and Teams can use them.';
+        } else {
+          hint.textContent = 'Pick a camera, then press the big button to go on air.';
+        }
       }
+      // The preview may have been waiting for a device list to choose from.
+      syncDevicePreview();
     }
 
     // ── lyric OCR ─────────────────────────────────────────────────────
@@ -1977,6 +2193,9 @@
       if (panel) panel.style.display = kind === 'vdo' ? 'block' : 'none';
       const grid = $('camDeviceGrid');
       if (grid) grid.style.display = kind === 'device' ? '' : 'none';
+      // Only one kind of preview is meaningful at a time, and the local one
+      // holds a device — so switching away from it must let go.
+      syncDevicePreview();
 
       // Going live means something different per source, so relabel the button.
       const live = $('camLiveBtn');
@@ -1995,55 +2214,51 @@
       }
     }
 
+    /**
+     * Draw the multiview: one tile per source, each with a live thumbnail.
+     *
+     * Tiles are created ONCE and thereafter updated in place — never rebuilt,
+     * never re-parented. Moving an <iframe> in the DOM (which includes wiping
+     * the list with innerHTML and re-appending) makes Chromium tear its
+     * document down and reload it, which here means dropping and re-doing a
+     * WebRTC handshake. Every preview would flicker black whenever anything
+     * else on this panel changed. Sources are only ever appended or removed,
+     * so keeping insertion order needs no reordering.
+     */
     function renderVdo() {
       const host = $('vdoList');
       if (!host) return;
       const v = electronAPI.vdoninja.normalize(vdoState);
-      host.innerHTML = '';
 
-      if (!v.sources.length) {
-        host.innerHTML = '<div class="section-hint">No cameras yet — paste a VDO.Ninja '
-          + 'view link above and press “Add camera”.</div>';
+      const empty = $('vdoEmpty');
+      if (!v.sources.length && !empty) {
+        const msg = document.createElement('div');
+        msg.id = 'vdoEmpty';
+        msg.className = 'section-hint';
+        msg.textContent = 'No cameras yet — paste a VDO.Ninja view link above and '
+          + 'press “Add camera”.';
+        host.appendChild(msg);
+      } else if (v.sources.length && empty) {
+        empty.remove();
       }
 
+      // Drop tiles for sources that are gone. Removing the tile removes its
+      // frame, which is the one time we DO want the connection torn down.
+      const alive = new Set(v.sources.map(src => src.id));
+      Array.from(vdoTiles.keys()).forEach((id) => {
+        if (alive.has(id)) return;
+        vdoTiles.get(id).remove();
+        vdoTiles.delete(id);
+      });
+
       v.sources.forEach((src) => {
-        const row = document.createElement('div');
-        row.className = 'vdo-row' + (src.id === v.activeId ? ' on-air' : '');
-
-        const name = document.createElement('span');
-        name.className = 'vdo-name';
-        name.textContent = src.label;
-
-        const url = document.createElement('span');
-        url.className = 'vdo-url';
-        url.textContent = src.url;
-
-        row.appendChild(name);
-        row.appendChild(url);
-
-        if (src.id === v.activeId) {
-          const tag = document.createElement('span');
-          tag.className = 'on-air-tag';
-          tag.textContent = '● ON AIR';
-          row.appendChild(tag);
-        } else {
-          const take = document.createElement('button');
-          take.textContent = 'Put on air';
-          take.onclick = () => { vdoState.activeId = src.id; pushVdo(); };
-          row.appendChild(take);
+        let tile = vdoTiles.get(src.id);
+        if (!tile) {
+          tile = buildVdoTile(src.id);
+          vdoTiles.set(src.id, tile);
+          host.appendChild(tile);
         }
-
-        const remove = document.createElement('button');
-        remove.className = 'btn-danger';
-        remove.textContent = 'Remove';
-        remove.onclick = () => {
-          vdoState.sources = v.sources.filter(x => x.id !== src.id);
-          if (vdoState.activeId === src.id) vdoState.activeId = null;
-          pushVdo();
-        };
-        row.appendChild(remove);
-
-        host.appendChild(row);
+        updateVdoTile(tile, src, src.id === v.activeId);
       });
 
       const pre = $('vdoPreload');
@@ -2056,6 +2271,263 @@
           ? `Limit is ${electronAPI.vdoninja.MAX_SOURCES} cameras`
           : '+ Add camera';
       }
+    }
+
+    /** The static skeleton of one tile. Its contents come from updateVdoTile. */
+    function buildVdoTile(id) {
+      const tile = document.createElement('div');
+      tile.className = 'vdo-row';
+      tile.dataset.sourceId = id;
+
+      const thumb = document.createElement('div');
+      thumb.className = 'vdo-thumb';
+      thumb.title = 'Click to put this camera on air';
+      thumb.onclick = () => takeVdoSource(id);
+
+      const tag = document.createElement('span');
+      tag.className = 'thumb-tag';
+      const msg = document.createElement('div');
+      msg.className = 'thumb-msg';
+      thumb.appendChild(tag);
+      thumb.appendChild(msg);
+
+      const meta = document.createElement('div');
+      meta.className = 'vdo-meta';
+      const name = document.createElement('span');
+      name.className = 'vdo-name';
+      const url = document.createElement('span');
+      url.className = 'vdo-url';
+      meta.appendChild(name);
+      meta.appendChild(url);
+
+      const actions = document.createElement('div');
+      actions.className = 'vdo-actions';
+      const take = document.createElement('button');
+      take.className = 'vdo-take';
+      take.onclick = () => takeVdoSource(id);
+      const remove = document.createElement('button');
+      remove.className = 'btn-danger';
+      remove.textContent = '✕';
+      remove.title = 'Remove this camera';
+      remove.onclick = () => {
+        vdoState.sources = electronAPI.vdoninja.normalize(vdoState)
+          .sources.filter(x => x.id !== id);
+        if (vdoState.activeId === id) vdoState.activeId = null;
+        pushVdo();
+      };
+      actions.appendChild(take);
+      actions.appendChild(remove);
+
+      tile.appendChild(thumb);
+      tile.appendChild(meta);
+      tile.appendChild(actions);
+      return tile;
+    }
+
+    /** Refresh one tile's text, badge and thumbnail without rebuilding it. */
+    function updateVdoTile(tile, src, onAir) {
+      tile.classList.toggle('on-air', onAir);
+      tile.querySelector('.vdo-name').textContent = src.label;
+      const url = tile.querySelector('.vdo-url');
+      url.textContent = src.url;
+      url.title = src.url;
+      tile.querySelector('.thumb-tag').textContent = onAir ? '● ON AIR' : 'PREVIEW';
+
+      const take = tile.querySelector('.vdo-take');
+      take.textContent = onAir ? 'On air' : 'Put on air';
+      take.disabled = onAir;
+
+      const thumb = tile.querySelector('.vdo-thumb');
+      const msg = tile.querySelector('.thumb-msg');
+      let frame = thumb.querySelector('iframe');
+
+      if (!previewOn) {
+        if (frame) frame.remove();
+        msg.textContent = 'Previews are off';
+        return;
+      }
+
+      // Re-validated here rather than trusted from state: this is the last
+      // step before an operator-supplied URL reaches an iframe. The validator
+      // also forces the audio flags, so a thumbnail can never make a sound.
+      let safe = '';
+      try {
+        safe = electronAPI.vdoninja.validate(src.url);
+      } catch (e) {
+        if (frame) frame.remove();
+        msg.textContent = e.message || 'That link cannot be previewed.';
+        return;
+      }
+
+      msg.textContent = '';
+      if (!frame) {
+        frame = document.createElement('iframe');
+        frame.setAttribute('allow', 'autoplay');
+        frame.setAttribute('referrerpolicy', 'no-referrer');
+        // Inserted first so the tag and the message stay over the picture.
+        thumb.insertBefore(frame, thumb.firstChild);
+      }
+      // Only ever assign a CHANGED src — re-assigning the same one reloads the
+      // frame and restarts the connection for nothing.
+      if (frame.getAttribute('src') !== safe) frame.src = safe;
+    }
+
+    function takeVdoSource(id) {
+      const v = electronAPI.vdoninja.normalize(vdoState);
+      if (v.activeId === id) return;
+      vdoState.activeId = id;
+      pushVdo();
+      const src = v.sources.find(x => x.id === id);
+      statusBar.textContent = src ? `📷 ${src.label} is now on air` : '📷 Camera cut';
+    }
+
+    /** Turn the previews in THIS window on or off (they cost a connection each). */
+    function setPreviewEnabled(on) {
+      previewOn = !!on;
+      const box = $('camPreviewOn');
+      if (box) box.checked = previewOn;
+      electronAPI.sendCameraCommand('setPreview', previewOn);
+      renderVdo();
+      syncDevicePreview();
+    }
+
+    /**
+     * Ask the machine what cameras exist, and redraw everything that depends
+     * on the answer.
+     *
+     * Done here rather than waiting to be told by the camera screen: that
+     * screen only exists once a display has been given the Camera role, and
+     * the operator opens this tab to set that up. Enumerating opens nothing —
+     * labels are readable without touching a device — so this is free, and it
+     * is what lets the preview know which cameras are real before it asks for
+     * one.
+     */
+    async function refreshCameraDevices() {
+      try {
+        const found = await navigator.mediaDevices.enumerateDevices();
+        renderCameraDevices(electronAPI.cameras.tag(
+          found.filter(d => d.kind === 'videoinput')
+            .map(d => ({ deviceId: d.deviceId, label: d.label })),
+        ));
+      } catch (err) {
+        console.error('Could not list cameras:', err);
+      }
+    }
+
+    // Plugging a camera in (or OBS starting its virtual one) changes the list
+    // under us; follow it rather than making the operator press Rescan.
+    try {
+      navigator.mediaDevices.addEventListener('devicechange', refreshCameraDevices);
+    } catch (_) { /* not every build fires this */ }
+
+    // ── local camera preview ──────────────────────────────────────────
+
+    /**
+     * The local webcam, shown in this window before it reaches the screen.
+     *
+     * Sharper edge than the VDO.Ninja tiles: a webcam is a single physical
+     * device, and on plenty of machines only one process can hold it. The
+     * camera SCREEN must always win that fight, so the preview is released
+     * before the operator goes live and only re-opened as a best effort
+     * afterwards — if the device refuses the second open we say so, rather
+     * than leaving a black box the operator reads as a dead camera.
+     */
+    function syncDevicePreview() {
+      const box = $('camPreviewBox');
+      if (!box) return;
+      const show = previewOn && camState.source === 'device';
+      box.style.display = show ? '' : 'none';
+      box.classList.toggle('on-air', !!camState.live);
+      const tag = $('camPreviewTag');
+      if (tag) tag.textContent = camState.live ? '● ON AIR' : 'PREVIEW';
+      if (!show) { stopDevicePreview(); return; }
+      startDevicePreview();
+    }
+
+    function stopDevicePreview() {
+      clearTimeout(devicePreviewTimer);
+      devicePreviewTimer = null;
+      if (devicePreviewStream) {
+        // Release the device explicitly — a leaked track keeps the camera
+        // light on and can lock the camera screen out of its next open.
+        devicePreviewStream.getTracks().forEach(t => t.stop());
+        devicePreviewStream = null;
+      }
+      const video = $('camPreview');
+      if (video) video.srcObject = null;
+    }
+
+    async function startDevicePreview() {
+      const video = $('camPreview');
+      const msg = $('camPreviewMsg');
+      if (!video) return;
+      stopDevicePreview();
+      if (msg) msg.textContent = '';
+      // Decide WHICH camera before asking for one. A preview that opens the
+      // system default is the worst version of this bug: it takes whatever
+      // Windows calls the default — often OBS Virtual Camera — the moment the
+      // operator so much as visits this tab, and holds it away from Zoom.
+      const chosen = electronAPI.cameras.resolveDeviceId(cameraDevices, camState.deviceId);
+      if (!chosen) {
+        // No real camera known yet. Wait for the device list rather than
+        // opening something blind — renderCameraDevices calls back in.
+        video.style.display = 'none';
+        if (msg) {
+          msg.textContent = cameraDevices.length
+            ? electronAPI.cameras.noCameraReason(cameraDevices)
+            : 'Looking for cameras…';
+        }
+        return;
+      }
+      try {
+        // Deliberately small: this is a confidence check, not a monitor, and a
+        // second 1080p copy of the feed is CPU the show does not need. audio is
+        // false for the same reason it is on the screen — an open mic beside
+        // the PA is an unrecoverable feedback loop.
+        const constraints = {
+          width: { ideal: 640 }, height: { ideal: 360 }, deviceId: { exact: chosen },
+        };
+        devicePreviewStream = await navigator.mediaDevices
+          .getUserMedia({ video: constraints, audio: false });
+        video.srcObject = devicePreviewStream;
+        video.style.display = '';
+        await video.play().catch(() => {});
+        // Match the screen, so what is framed here is what goes out.
+        video.style.transform = camState.mirror ? 'scaleX(-1)' : '';
+      } catch (err) {
+        stopDevicePreview();
+        video.style.display = 'none';
+        if (msg) msg.textContent = describePreviewError(err);
+      }
+    }
+
+    /**
+     * Give the camera screen the device, then try to get a preview back.
+     *
+     * Called on the way into and out of ON AIR. The order is the whole point:
+     * release first, tell the screen second, and only then ask again — so the
+     * one picture that matters is never the one that loses the race.
+     */
+    function reclaimDevicePreview() {
+      stopDevicePreview();
+      if (!previewOn || camState.source !== 'device') return;
+      devicePreviewTimer = setTimeout(syncDevicePreview, 1200);
+    }
+
+    /** Preview-specific wording: the usual cause here is the screen holding it. */
+    function describePreviewError(err) {
+      const name = (err && err.name) || 'Error';
+      if (name === 'NotReadableError') {
+        return camState.live
+          ? 'On air. This camera can only be opened by one thing at a time, so '
+            + 'there is no preview while it is showing on the screen.'
+          : 'Camera is in use by another app. Close it to see a preview.';
+      }
+      if (name === 'NotAllowedError') return 'Camera permission denied.';
+      if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+        return 'That camera is not connected.';
+      }
+      return `No preview: ${(err && err.message) || name}`;
     }
 
     function addVdoSource() {
@@ -2139,19 +2611,37 @@
       if (hosts) hosts.textContent = electronAPI.vdoninja.ALLOWED_HOSTS.join(', ');
 
       // Camera
-      $('camLiveBtn').onclick = () => setCameraLive(!camState.live);
+      $('camLiveBtn').onclick = () => {
+        // If nothing is on the screen, this button can only mean "show it" —
+        // never "turn the source off", which is what toggling on `live` alone
+        // used to do after a RESET.
+        if (camState.visible === false) showCamera();
+        else setCameraLive(!camState.live);
+      };
       $('camResetBtn').onclick = () => {
+        camState.visible = false;
         electronAPI.sendCameraCommand('reset', null);
-        statusBar.textContent = '🚨 Camera screen cleared — whatever is behind it is showing';
+        renderCameraUi();
+        statusBar.textContent = '🚨 Camera screen cleared — press the big button to bring it back';
       };
       $('camDevice').onchange = (e) => {
         camState.deviceId = e.target.value;
+        // Same ordering as going live: let go, hand it over, then look again.
+        stopDevicePreview();
         electronAPI.sendCameraCommand('setDevice', camState.deviceId);
+        reclaimDevicePreview();
       };
-      $('camRescanBtn').onclick = () => electronAPI.sendCameraCommand('rescanDevices', null);
+      $('camPreviewOn').onchange = (e) => setPreviewEnabled(e.target.checked);
+      $('camRescanBtn').onclick = () => {
+        electronAPI.sendCameraCommand('rescanDevices', null);
+        refreshCameraDevices();
+      };
       $('camMirror').onchange = (e) => {
         camState.mirror = e.target.checked;
         electronAPI.sendCameraCommand('mirror', camState.mirror);
+        // The preview is only useful if it lies the same way the screen does.
+        const v = $('camPreview');
+        if (v) v.style.transform = camState.mirror ? 'scaleX(-1)' : '';
       };
       $('camBlank').onchange = (e) => electronAPI.sendCameraCommand('blank', e.target.checked);
       $('camCanvasMode').onchange = (e) => {
@@ -2169,6 +2659,10 @@
         electronAPI.recreateCameraScreens();
         statusBar.textContent = '♻️ Camera screen restarted';
       };
+
+      // A reload or a close must not leave the webcam held open — the light
+      // stays on and the camera screen can be locked out of its next open.
+      window.addEventListener('beforeunload', stopDevicePreview);
 
       // Transition
       $('camTransType').onchange = (e) => { transState.type = e.target.value; pushTransition(); };
@@ -2255,10 +2749,12 @@
         source: ['vdo', 'pattern'].includes(c.source) ? c.source : 'device',
         deviceId: typeof c.deviceId === 'string' ? c.deviceId : '',
         live: !!c.live,
+        visible: c.visible !== false,
         mirror: !!c.mirror,
         transparentWindow: c.transparentWindow !== false,
         renderMode: c.renderMode === 'canvas' ? 'canvas' : 'video',
       };
+      previewOn = c.preview !== false;
       capState = electronAPI.captions.normalize(cfg && cfg.captions);
       logoState = electronAPI.logo.normalize(cfg && cfg.logo);
       transState = electronAPI.transition.normalize(cfg && cfg.transition);
@@ -2268,6 +2764,7 @@
       renderSourceTabs();
       renderVdo();
       renderCameraUi();
+      refreshCameraDevices();
       renderCaptionUi();
       renderLogoUi();
       renderOcrUi();
@@ -2321,9 +2818,13 @@
     });
     // The global panic shortcut fires without the controller being focused.
     electronAPI.onCameraReset(() => {
-      // Reset hides the stage; the camera device itself keeps running, so the
-      // live toggle deliberately stays as it was.
-      statusBar.textContent = '🚨 Camera screen cleared (Ctrl/Cmd+Shift+0)';
+      // Reset hides the stage while the source keeps running. The button has to
+      // follow, or its next press would toggle the SOURCE off instead of
+      // bringing the picture back.
+      camState.visible = false;
+      renderCameraUi();
+      statusBar.textContent = '🚨 Camera screen cleared (Ctrl/Cmd+Shift+0) — '
+        + 'press the big button to bring it back';
     });
 
     initCameraControls();
@@ -3094,10 +3595,14 @@
           // so the phone and the desktop can never drift apart.
           case 'cam.live': clickIf('camLiveBtn'); break;
           case 'cam.off':
-            if (typeof camState !== 'undefined' && camState.live) clickIf('camLiveBtn');
+            // Explicit, not a button click: the big button now SHOWS when the
+            // screen is hidden, so routing "off" through it could turn the
+            // camera on instead.
+            if (typeof camState !== 'undefined' && camState.live) setCameraLive(false);
             break;
           case 'cam.reset': clickIf('camResetBtn'); break;
-          case 'cam.restore': electronAPI.sendCameraCommand('restore', null); break;
+          // Goes through showCamera so the desktop button follows the phone.
+          case 'cam.restore': showCamera(); break;
           case 'cam.blank': {
             const el = document.getElementById('camBlank');
             if (el) { el.checked = !el.checked; el.onchange({ target: el }); }

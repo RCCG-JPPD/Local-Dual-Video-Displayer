@@ -33,6 +33,10 @@ module.exports = {
     volume: 1.0,
     loopPlaylist: false,
     mutePrivateWindow: true,
+    // The curtain on the video screen: false = the screen is black while the
+    // clip plays on behind it. A screen setting, not a transport action, so it
+    // is remembered the way zoom is. See setVisible() in videoDisplay.html.
+    visible: true,
   },
 
   // Per-screen zoom: how media is scaled onto the screen.
@@ -126,6 +130,13 @@ module.exports = {
     mirror: false,           // flip horizontally (front-facing cameras)
     transparentWindow: true, // see above — needs a screen restart to change
     renderMode: 'video',     // 'video' | 'canvas' (compatibility fallback, see cameraDisplay.html)
+
+    // Multiview: show a live preview of each source in the CONTROLLER, so the
+    // operator can see what a camera is pointing at before cutting to it.
+    // Purely an operator convenience — nothing the audience sees depends on
+    // it — and it costs a second connection per remote source, so it can be
+    // turned off on a weak machine or a poor connection.
+    preview: true,
 
     // VDO.Ninja sources: phones and other machines streaming in over WebRTC,
     // the way ../virtualcam-helper works. Up to MAX_SOURCES of them, with one

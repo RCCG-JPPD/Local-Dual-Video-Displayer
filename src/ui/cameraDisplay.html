@@ -186,6 +186,7 @@
     let vdoSettings = { sources: [], activeId: null, preloadAll: true };
 
     let stream = null;       // the live MediaStream, if any
+    let devices = [];        // last enumerateDevices() result, tagged real/virtual
     let deviceId = '';
     let mirror = false;
     let renderMode = 'video';
@@ -272,9 +273,23 @@
 
     async function startStream() {
       stopStream();
+      // Which camera to open is decided BEFORE asking for anything, from the
+      // labels alone. Opening the system default is what quietly takes OBS
+      // Virtual Camera away from Zoom, so it is never done — see
+      // src/utils/cameras.js.
+      await reportDevices();
+      const chosen = electronAPI.cameras.resolveDeviceId(devices, deviceId);
+      if (!chosen) {
+        const why = electronAPI.cameras.noCameraReason(devices);
+        hintEl.classList.remove('hidden');
+        hintEl.textContent = why;
+        log('error', `no real camera to open — ${why}`);
+        electronAPI.sendCameraStatus({ streaming: false, error: why, deviceId });
+        return;
+      }
       try {
         const video = { width: { ideal: 1920 }, height: { ideal: 1080 } };
-        if (deviceId) video.deviceId = { exact: deviceId };
+        video.deviceId = { exact: chosen };
         // audio is ALWAYS false. A live microphone next to the PA is an
         // unrecoverable feedback loop, and this screen never needs sound.
         stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
@@ -284,7 +299,7 @@
         if (renderMode === 'canvas') startCanvasLoop();
         reportDevices();
         log('info', `feed live (${cam.videoWidth}x${cam.videoHeight})`);
-        electronAPI.sendCameraStatus({ streaming: true, error: '', deviceId });
+        electronAPI.sendCameraStatus({ streaming: true, error: '', deviceId: chosen });
       } catch (err) {
         stopStream();
         hintEl.classList.remove('hidden');
@@ -338,18 +353,26 @@
       if (renderMode !== 'canvas' && rafId) { cancelAnimationFrame(rafId); rafId = null; }
     }
 
-    /** Report the available cameras so the controller can populate its picker. */
+    /**
+     * Report the available cameras so the controller can populate its picker.
+     *
+     * Each entry is tagged real or virtual rather than filtered here: the
+     * controller keeps the virtual ones out of the picker but still names them,
+     * so a missing camera is explained instead of just absent. Labels are
+     * readable without opening anything, so this costs no device access.
+     */
     async function reportDevices() {
       try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        electronAPI.sendCameraDevices(
-          devices
-            .filter(d => d.kind === 'videoinput')
+        const found = await navigator.mediaDevices.enumerateDevices();
+        devices = electronAPI.cameras.tag(
+          found.filter(d => d.kind === 'videoinput')
             .map(d => ({ deviceId: d.deviceId, label: d.label })),
         );
+        electronAPI.sendCameraDevices(devices);
       } catch (err) {
         log('error', `enumerateDevices failed: ${err && err.message}`);
       }
+      return devices;
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -668,14 +691,30 @@
     // COMMANDS
     // ════════════════════════════════════════════════════════════════
 
+    /**
+     * Everything needed to put a picture back on the screen.
+     *
+     * Showing the stage is not enough on its own. With VDO.Ninja sources the
+     * picture also depends on the on-air frame's own opacity, and a cut that
+     * was interrupted mid-dip (a RESET, a settings change, two takes in quick
+     * succession) can leave every frame at 0 behind a perfectly visible stage —
+     * which looks exactly like "the camera never came back". Re-asserting the
+     * take is idempotent, so it is safe to do on every show.
+     */
+    function showEverything() {
+      setVisible(true);
+      // A remote stream is already connected in its frame; only a local camera
+      // has to be opened.
+      if (sourceKind === 'device') startStream();
+      else if (sourceKind === 'vdo') takeSource(vdoSettings.activeId);
+      else if (sourceKind === 'pattern') startPattern();
+    }
+
     electronAPI.onCameraCommand((cmd, data) => {
       switch (cmd) {
         case 'live':
           if (data) {
-            setVisible(true);
-            // A remote stream is already connected in its frame; only a local
-            // camera has to be opened.
-            if (sourceKind === 'device') startStream();
+            showEverything();
           } else if (sourceKind === 'device') {
             stopStream();
           }
@@ -691,8 +730,7 @@
         case 'setRenderMode': setRenderMode(data); break;
         case 'reset': setVisible(false); break;
         case 'restore':
-          setVisible(true);
-          if (sourceKind === 'device') startStream();
+          showEverything();
           break;
         case 'blank': blankEl.style.display = data ? 'block' : 'none'; break;
         case 'rescanDevices': reportDevices(); break;
