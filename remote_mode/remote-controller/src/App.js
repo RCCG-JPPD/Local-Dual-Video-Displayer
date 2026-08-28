@@ -228,6 +228,9 @@ export default function App() {
   const yt = s.youtube || { url: '', muted: false, volume: 1, zoom: DEFAULT_ZOOM };
   const web = s.web || { url: '' };
   const excel = s.excel || { sheets: [], active: 0 };
+  const camera = s.camera || { live: false, visible: true, zoom: DEFAULT_ZOOM };
+  const cameras = Array.isArray(camera.cameras) ? camera.cameras : [];
+  const ocr = s.ocr || { running: false, lastText: '' };
   const playlist = Array.isArray(video.playlist) ? video.playlist : [];
   const sheets = Array.isArray(excel.sheets) ? excel.sheets : [];
 
@@ -271,10 +274,48 @@ export default function App() {
         {activePanel === 'youtube' && <>▶️ {yt.url || 'YouTube'}</>}
         {activePanel === 'web' && <>🌐 {web.url || 'Web page'}</>}
         {activePanel === 'excel' && <>📊 {sheets[excel.active] || 'Spreadsheet'}</>}
-        {!['presentation', 'slideshow', 'localvideo', 'youtube', 'web', 'excel'].includes(activePanel) && (
+        {activePanel === 'camera' && (
+          <>📷 {camera.live ? 'Camera ON AIR' : 'Camera off'}{ocr.running ? ' · reading lyrics' : ''}</>
+        )}
+        {!['presentation', 'slideshow', 'localvideo', 'youtube', 'web', 'excel', 'camera'].includes(activePanel) && (
           <>On screen: {activePanel}</>
         )}
       </div>
+
+      {show('camera') && (
+        <section className={`group ${isActive('camera') ? 'active-group' : ''}`}>
+          <h3>📷 Camera</h3>
+          <div className="row">
+            <button className="btn big" onClick={() => send(ACTIONS.camLive)}>
+              {camera.live ? '⏹ Camera off' : '▶ Camera on air'}
+            </button>
+            <button className="btn big" onClick={() => send(ACTIONS.camReset)}>🚨 Clear screen</button>
+          </div>
+          <div className="row">
+            <button className="btn" onClick={() => send(ACTIONS.ocrOn)} disabled={ocr.running}>
+              ▶ Lyrics on
+            </button>
+            <button className="btn" onClick={() => send(ACTIONS.ocrOff)} disabled={!ocr.running}>
+              ⏹ Lyrics off
+            </button>
+          </div>
+          {cameras.length > 0 && (
+            <div className="row" style={{ flexWrap: 'wrap' }}>
+              {cameras.map((name, i) => (
+                <button
+                  key={name + i}
+                  className={`btn ${i === camera.activeCamera ? 'btn-primary' : ''}`}
+                  onClick={() => send(ACTIONS.camTake, i)}
+                >
+                  {i === camera.activeCamera ? '● ' : ''}{name}
+                </button>
+              ))}
+            </div>
+          )}
+          {ocr.lastText && <div className="statusline">🎤 {ocr.lastText}</div>}
+          <ZoomControls zoom={camera.zoom} onChange={(z) => send(ACTIONS.camZoom, z)} />
+        </section>
+      )}
 
       {show('presentation') && (
         <section className={`group ${isActive('presentation') ? 'active-group' : ''}`}>

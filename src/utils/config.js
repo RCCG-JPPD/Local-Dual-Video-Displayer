@@ -3,6 +3,13 @@
  * Defines the structure and defaults for the unified application
  */
 
+// The camera/captions/OCR/logo/transition defaults live with the pure helpers
+// that validate them, so the schema and the normalizers can never drift apart.
+const { DEFAULT_CAPTIONS } = require('./captions');
+const { DEFAULT_OCR } = require('./ocr');
+const { DEFAULT_LOGO } = require('./logo');
+const { DEFAULT_TRANSITION } = require('./transition');
+
 module.exports = {
   // Default display configuration
   displays: [
@@ -10,7 +17,7 @@ module.exports = {
     // {
     //   id: number (unique identifier from electron screen.getAllDisplays())
     //   displayIndex: number (0, 1, 2, etc)
-    //   role: 'video' | 'youtube' | 'web' | 'clock' | 'powerpoint' | 'slideshow' | 'excel' | 'unassigned'
+    //   role: 'video' | 'youtube' | 'web' | 'clock' | 'powerpoint' | 'slideshow' | 'excel' | 'camera' | 'unassigned'
     //         (the same role may be assigned to several screens)
     //   clockOverlay: boolean (optional) — also float a clock widget over this
     //         screen's content (toggled live from the controller's Clock tab)
@@ -26,6 +33,10 @@ module.exports = {
     volume: 1.0,
     loopPlaylist: false,
     mutePrivateWindow: true,
+    // The curtain on the video screen: false = the screen is black while the
+    // clip plays on behind it. A screen setting, not a transport action, so it
+    // is remembered the way zoom is. See setVisible() in videoDisplay.html.
+    visible: true,
   },
 
   // Per-screen zoom: how media is scaled onto the screen.
@@ -38,6 +49,9 @@ module.exports = {
     video: { mode: 'contain', scale: 1.0 },
     slideshow: { mode: 'contain', scale: 1.0 },
     youtube: { mode: 'contain', scale: 1.0 },
+    // The camera screen defaults to Fill: a crowd shot should cover the screen,
+    // not sit letterboxed in the middle of it.
+    camera: { mode: 'cover', scale: 1.0 },
   },
 
   // Controller window preferences
@@ -99,6 +113,57 @@ module.exports = {
   web: {
     url: '',
   },
+
+  // Camera screen (role 'camera'): a live webcam / capture-card feed.
+  //
+  // It runs in a TRANSPARENT always-on-top window, so fading the stage out
+  // reveals whatever is running underneath (at a concert, the lyrics software).
+  // `transparentWindow` is read only at window-creation time — Electron cannot
+  // toggle transparency on a live window — so changing it needs a screen restart.
+  camera: {
+    source: 'device',        // 'device' = local camera, 'vdo' = VDO.Ninja stream,
+                             // 'pattern' = the built-in test pattern (diagnostics)
+    deviceId: '',            // MediaDeviceInfo.deviceId; '' = system default
+    deviceLabel: '',         // remembered so the picker still reads right after a restart
+    live: false,             // is the feed running
+    visible: true,           // false = stage faded out (the RESET state)
+    mirror: false,           // flip horizontally (front-facing cameras)
+    transparentWindow: true, // see above — needs a screen restart to change
+    renderMode: 'video',     // 'video' | 'canvas' (compatibility fallback, see cameraDisplay.html)
+
+    // Multiview: show a live preview of each source in the CONTROLLER, so the
+    // operator can see what a camera is pointing at before cutting to it.
+    // Purely an operator convenience — nothing the audience sees depends on
+    // it — and it costs a second connection per remote source, so it can be
+    // turned off on a weak machine or a poor connection.
+    preview: true,
+
+    // VDO.Ninja sources: phones and other machines streaming in over WebRTC,
+    // the way ../virtualcam-helper works. Up to MAX_SOURCES of them, with one
+    // on air at a time. See src/utils/vdoninja.js — URLs are validated there
+    // and stored with any room password stripped out.
+    vdo: {
+      sources: [],           // [{ id, label, url }]
+      activeId: null,        // which one is on air (null = none)
+      // Keep every source connected in a hidden frame so cutting between
+      // cameras is instant. Costs bandwidth for streams nobody is watching;
+      // turn it off on a poor connection and accept a few seconds per cut.
+      preloadAll: true,
+    },
+  },
+
+  // Lyric captions drawn over the camera feed (src/utils/captions.js).
+  captions: { ...DEFAULT_CAPTIONS },
+
+  // Lyric OCR: read another screen's text and re-render it as captions
+  // (src/utils/ocr.js).
+  ocr: { ...DEFAULT_OCR },
+
+  // Logo / watermark drawn inside the camera screen (src/utils/logo.js).
+  logo: { ...DEFAULT_LOGO },
+
+  // How the camera stage fades in and out (src/utils/transition.js).
+  transition: { ...DEFAULT_TRANSITION },
 
   // Remote Mode (phone/web control) pairing code.
   remote: {

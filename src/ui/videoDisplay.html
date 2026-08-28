@@ -17,6 +17,12 @@
       overflow: hidden;
     }
 
+    /* Fading this container, not the <video>, is what makes the on/off button a
+       CURTAIN rather than a stop: the element keeps decoding and keeps its
+       audio, so the clip runs on behind the black and the operator gets back
+       wherever it has reached. The body underneath is already #000, so there is
+       nothing to reveal — unlike the camera screen, this window is not
+       see-through. Opacity is driven inline by setVisible(). */
     #video-container {
       width: 100%;
       height: 100%;
@@ -25,6 +31,7 @@
       justify-content: center;
       background: #000;
       overflow: hidden; /* a zoom scale > 1 crops instead of spilling */
+      opacity: 1;
     }
 
     /* Default zoom = "fit": 100% box + object-fit lets a small video scale UP to
@@ -38,13 +45,6 @@
       object-fit: contain;
     }
 
-    /* Hidden preview canvas for frame capture */
-    #preview-canvas {
-      display: none;
-      position: absolute;
-      top: -9999px;
-      left: -9999px;
-    }
   </style>
 </head>
 <body>
@@ -52,23 +52,46 @@
     <video id="vid" autoplay playsinline></video>
   </div>
 
-  <!-- Hidden canvas for preview rendering -->
-  <canvas id="preview-canvas"></canvas>
-
   <script>
     // electronAPI is a preload global (contextBridge) — don't redeclare it.
 
     const vid = document.getElementById('vid');
-    const previewCanvas = document.getElementById('preview-canvas');
     const videoContainer = document.getElementById('video-container');
 
     let windowRole = 'video'; // every local-video screen shares this role
     let isPlaying = false;
+    let visible = true;       // false = the screen is black, the clip plays on
+
+    // Read through the normalizer, never raw: an install that predates the
+    // transition setting simply has no `transition` key.
+    let transitionSettings = electronAPI.transition.normalize(null);
 
     /** Apply a { mode, scale } zoom to the video element (see src/utils/zoom.js). */
     function applyZoom(zoom) {
       Object.assign(vid.style, electronAPI.zoom.styles(zoom));
     }
+
+    /**
+     * Show or hide the picture, WITHOUT touching playback.
+     *
+     * The one control an operator needs when a video has to come off the screen
+     * mid-service. Playback is deliberately left alone: the clip (and its
+     * sound) carries on behind the black, so bringing it back shows wherever it
+     * has got to rather than a stale frame. Use Stop or Clear to actually halt.
+     */
+    function setVisible(on) {
+      visible = !!on;
+      Object.assign(videoContainer.style,
+        electronAPI.transition.styles(transitionSettings, visible));
+    }
+
+    /** The same fade the camera screen uses, so the whole show matches. */
+    function applyTransition(t) {
+      transitionSettings = electronAPI.transition.normalize(t);
+      Object.assign(videoContainer.style,
+        electronAPI.transition.styles(transitionSettings, visible));
+    }
+    electronAPI.onTransitionSettings(applyTransition);
 
     // ════════════════════════════════════════════════════════════════
     // WINDOW ROLE & INITIALIZATION
@@ -78,80 +101,45 @@
     electronAPI.onWindowRole((role) => {
       windowRole = role;
       console.log(`Video display window role: ${windowRole}`);
-
-      // Set up canvas for preview rendering
-      setupPreviewCanvas();
     });
 
     // ════════════════════════════════════════════════════════════════
-    // CANVAS PREVIEW SETUP
+    // PLAYBACK STATE
     // ════════════════════════════════════════════════════════════════
 
-    function setupPreviewCanvas() {
-      if (!previewCanvas) return;
+    vid.addEventListener('play', () => { isPlaying = true; });
+    vid.addEventListener('pause', () => { isPlaying = false; });
 
-      previewCanvas.width = videoContainer.offsetWidth;
-      previewCanvas.height = videoContainer.offsetHeight;
-
-      startPreviewCapture();
-    }
-
-    /**
-     * Capture video frame to canvas and send to controller for preview
-     */
-    function capturePreviewFrame() {
+    // Playback stalls are reported so a struggling source (a slow USB stick,
+    // a network drive) is diagnosable instead of just "the video is laggy".
+    // `waiting` fires when playback halts for data; `stalled` when no data has
+    // arrived for a while.
+    let lastStallReport = 0;
+    function reportStall(kind) {
+      const now = Date.now();
+      if (now - lastStallReport < 2000) return; // don't spam a struggling disk
+      lastStallReport = now;
+      let ahead = 0;
       try {
-        if (!previewCanvas || vid.readyState !== 4) return; // Video not ready
-
-        const ctx = previewCanvas.getContext('2d');
-        if (!ctx) return;
-
-        // Draw current video frame to canvas
-        ctx.drawImage(vid, 0, 0, previewCanvas.width, previewCanvas.height);
-
-        // Send preview data to controller
-        const imageData = previewCanvas.toDataURL('image/jpeg', 0.7);
-        electronAPI.sendPreviewData({
-          role: windowRole,
-          imageData: imageData,
-          timestamp: Date.now(),
-          duration: vid.duration,
-          currentTime: vid.currentTime,
-          isPaused: vid.paused,
-        });
-      } catch (error) {
-        console.error('Error capturing preview frame:', error);
-      }
+        for (let i = 0; i < vid.buffered.length; i += 1) {
+          if (vid.buffered.start(i) <= vid.currentTime && vid.currentTime <= vid.buffered.end(i)) {
+            ahead = vid.buffered.end(i) - vid.currentTime;
+          }
+        }
+      } catch (_) { /* buffered can throw before metadata loads */ }
+      const msg = `${kind} at ${vid.currentTime.toFixed(1)}s — `
+        + `${ahead.toFixed(1)}s buffered ahead`;
+      try { electronAPI.log('error', '[video] ' + msg); } catch (_) {}
+      console.warn('[video]', msg);
     }
-
-    /**
-     * Start periodic preview capture
-     */
-    function startPreviewCapture() {
-      // Capture every 500ms or when seeking/playing changes
-      setInterval(capturePreviewFrame, 500);
-
-      vid.addEventListener('play', () => {
-        console.log('Video play event');
-        isPlaying = true;
-        capturePreviewFrame();
-      });
-
-      vid.addEventListener('pause', () => {
-        console.log('Video pause event');
-        isPlaying = false;
-        capturePreviewFrame();
-      });
-
-      vid.addEventListener('seeked', () => {
-        console.log('Video seeked event');
-        capturePreviewFrame();
-      });
-
-      vid.addEventListener('timeupdate', () => {
-        // Don't capture every timeupdate - too frequent
-      });
-    }
+    vid.addEventListener('waiting', () => reportStall('stalled waiting for data'));
+    vid.addEventListener('stalled', () => reportStall('no data arriving'));
+    vid.addEventListener('error', () => {
+      const e = vid.error;
+      const msg = `playback error ${e ? e.code : '?'}: ${e ? e.message : 'unknown'}`;
+      try { electronAPI.log('error', '[video] ' + msg); } catch (_) {}
+      console.error('[video]', msg);
+    });
 
     // ════════════════════════════════════════════════════════════════
     // PLAYBACK COMMANDS
@@ -222,6 +210,11 @@
           isPlaying = false;
           break;
 
+        case 'setVisible':
+          // A curtain, not a transport command — see setVisible().
+          setVisible(data);
+          break;
+
         case 'clear':
           console.log('Clearing video...');
           vid.pause();
@@ -233,8 +226,6 @@
         default:
           console.warn(`Unknown command: ${cmd}`);
       }
-
-      capturePreviewFrame();
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -244,16 +235,8 @@
     // Start paused
     vid.pause();
 
-    // Set up canvas when video metadata loads
     vid.addEventListener('loadedmetadata', () => {
       console.log(`Video loaded: ${vid.videoWidth}x${vid.videoHeight}`);
-      setupPreviewCanvas();
-      capturePreviewFrame();
-    });
-
-    // Handle video errors
-    vid.addEventListener('error', (e) => {
-      console.error('Video error:', e);
     });
 
     // Escape hatch: press Esc to close this fullscreen display window
@@ -262,10 +245,14 @@
       if (e.key === 'Escape') window.close();
     });
 
-    // Restore the saved zoom on startup, so a screen created later (or on the
-    // next run) comes back at whatever the controller last set.
+    // Restore the saved zoom and curtain on startup, so a screen created later
+    // (or on the next run) comes back the way the controller last left it.
     electronAPI.getConfig()
-      .then(cfg => { if (cfg && cfg.zoom) applyZoom(cfg.zoom.video); })
+      .then((cfg) => {
+        if (cfg && cfg.zoom) applyZoom(cfg.zoom.video);
+        applyTransition(cfg && cfg.transition);
+        setVisible(!cfg || !cfg.playback || cfg.playback.visible !== false);
+      })
       .catch(() => {});
 
     // Listen for config loaded to get window role

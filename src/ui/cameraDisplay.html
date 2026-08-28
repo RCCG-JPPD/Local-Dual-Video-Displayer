@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Camera Display</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    /* TRANSPARENT, not black. This window is created with transparent:true so
+       that fading #stage out reveals whatever application is running behind it
+       (at a concert, the lyrics software). A solid background here would defeat
+       the entire point of the reset button. */
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+      cursor: none;
+    }
+
+    /* Everything that can be shown lives inside the stage, so a single opacity
+       fade takes the camera, the captions AND the logo away together. */
+    #stage {
+      position: fixed;
+      inset: 0;
+      opacity: 1;
+    }
+
+    #cam, #cam-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: transparent;
+    }
+
+    /* VDO.Ninja sources. Every configured stream gets its own iframe so a cut
+       between cameras is instant; only the one on air is visible.
+
+       An <iframe>, not a <webview>: a webview is a separate compositing layer
+       and renders NOTHING inside a transparent window (measured), which would
+       break both the feed and the fade-to-see-through reset. */
+    #vdo-layer { position: absolute; inset: 0; }
+    #vdo-layer iframe {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: transparent;
+      opacity: 0;
+      pointer-events: none;
+    }
+    /* Visibility is driven by inline opacity from takeSource(), so a cut can
+       carry the configured transition. */
+    body:not(.vdo-mode) #vdo-layer { display: none; }
+    body.vdo-mode #cam, body.vdo-mode #cam-canvas { display: none; }
+
+    /* Built-in test pattern — see drawPattern(). */
+    #pattern-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: none;
+    }
+    body.pattern-mode #pattern-canvas { display: block; }
+    body.pattern-mode #cam,
+    body.pattern-mode #cam-canvas,
+    body.pattern-mode #vdo-layer { display: none; }
+
+    /* The compatibility renderer: only one of the two is ever live. */
+    #cam-canvas { display: none; }
+    body.canvas-mode #cam { visibility: hidden; }
+    body.canvas-mode #cam-canvas { display: block; }
+
+    #caption-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    /* Two caption elements, not one: a cross-fade needs the outgoing line to
+       still be on screen while the incoming one appears. The single-element
+       show/hide model used by the other display windows cannot do that. */
+    .caption {
+      position: absolute;
+      opacity: 0;
+      will-change: opacity, transform;
+    }
+
+    /* A full-screen blackout, distinct from RESET: this HIDES what is behind
+       the screen, where reset REVEALS it. */
+    #blank-overlay {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      display: none;
+      z-index: 100;
+    }
+
+    /* Shown only before a camera has been chosen, so an assigned-but-idle
+       screen isn't a mystery. Hidden the moment anything goes live. */
+    #hint {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      font: 400 2vh/1.4 system-ui, sans-serif;
+      color: rgba(255, 255, 255, 0.75);
+      text-align: center;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+      padding: 2vh 3vw;
+      background: rgba(0, 0, 0, 0.45);
+      border-radius: 1vh;
+    }
+    #hint.hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <video id="cam" autoplay muted playsinline></video>
+    <canvas id="cam-canvas"></canvas>
+    <div id="vdo-layer"></div>
+    <canvas id="pattern-canvas"></canvas>
+
+    <div id="caption-layer">
+      <div class="caption" id="cap-a"></div>
+      <div class="caption" id="cap-b"></div>
+    </div>
+
+    <img id="logo" alt="">
+
+    <div id="hint">Camera screen ready<br>Choose a camera in the controller</div>
+  </div>
+
+  <div id="blank-overlay"></div>
+
+  <script>
+    // electronAPI is a preload global (contextBridge) — don't redeclare it.
+
+    /**
+     * Report to the main process as well as the local console.
+     *
+     * This screen is the one nobody is looking at during a show — it's on the
+     * projector, not the operator's laptop — so a failure here is invisible
+     * unless it's surfaced. Mirrors the helper in displaySelector.html.
+     */
+    function log(level, msg) {
+      try { electronAPI.log(level, '[camera] ' + msg); } catch (_) {}
+      (level === 'error' ? console.error : console.log)('[camera]', msg);
+    }
+
+    // Nothing on this screen should ever fail silently.
+    window.addEventListener('error', (e) => {
+      log('error', `uncaught: ${e.message} (${e.filename}:${e.lineno})`);
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      log('error', `unhandled rejection: ${(e.reason && e.reason.message) || e.reason}`);
+    });
+
+    const stage = document.getElementById('stage');
+    const cam = document.getElementById('cam');
+    const camCanvas = document.getElementById('cam-canvas');
+    const logoEl = document.getElementById('logo');
+    const hintEl = document.getElementById('hint');
+    const blankEl = document.getElementById('blank-overlay');
+    const capEls = [document.getElementById('cap-a'), document.getElementById('cap-b')];
+
+    // Settings are always read through the pure normalizers, never used raw:
+    // loadConfig() returns the config file verbatim, so an existing install has
+    // none of these keys and every one of them can legitimately be undefined.
+    let captionSettings = electronAPI.captions.normalize(null);
+    let transitionSettings = electronAPI.transition.normalize(null);
+    let zoomSettings = electronAPI.zoom.normalize(null);
+
+    const vdoLayer = document.getElementById('vdo-layer');
+    const patternCanvas = document.getElementById('pattern-canvas');
+
+    let sourceKind = 'device'; // 'device' (local camera) | 'vdo' (remote stream)
+    let vdoSettings = { sources: [], activeId: null, preloadAll: true };
+
+    let stream = null;       // the live MediaStream, if any
+    let devices = [];        // last enumerateDevices() result, tagged real/virtual
+    let deviceId = '';
+    let mirror = false;
+    let renderMode = 'video';
+    let visible = true;      // false = faded out (the RESET state)
+
+    let front = 0;           // which caption element is currently showing
+    let shownText = '';      // what that element says
+    let typeTimer = null;    // typewriter interval
+    let fadeTimer = null;    // delayed track-stop after a fade-out
+    let rafId = null;        // canvas-mode draw loop
+    let patternRaf = null;   // test-pattern draw loop
+    let patternFrame = 0;
+    let takeTimer = null;    // delayed half of a dip-through-nothing cut
+    let hueStrip = null;     // cached 1px-tall rainbow
+
+    // ════════════════════════════════════════════════════════════════
+    // STAGE / TRANSITIONS
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Show or hide everything. Hiding fades to fully transparent, which is the
+     * whole reason this window exists — the operator needs one action that gets
+     * our screen out of the way and shows the app behind it.
+     */
+    function setVisible(on) {
+      visible = !!on;
+      Object.assign(stage.style, electronAPI.transition.styles(transitionSettings, on));
+      clearTimeout(fadeTimer);
+      if (!visible) {
+        // Keep the camera running through the fade, then release it once the
+        // screen is genuinely empty — stopping the tracks immediately would
+        // freeze the last frame mid-fade.
+        const ms = electronAPI.transition.ms(transitionSettings);
+        fadeTimer = setTimeout(() => {
+          if (visible) return;
+          if (sourceKind === 'device') stopStream();
+          // Remote frames stay mounted and connected: the operator expects
+          // RESTORE to be instant, and the stage is invisible anyway.
+        }, ms + 50);
+      }
+    }
+
+    function applyTransition(t) {
+      transitionSettings = electronAPI.transition.normalize(t);
+      Object.assign(stage.style, electronAPI.transition.styles(transitionSettings, visible));
+      // Camera-to-camera cuts use the same setting, so re-arm those frames too.
+      const ms = electronAPI.transition.ms(transitionSettings);
+      const ease = transitionSettings.easing;
+      Array.from(vdoLayer.children).forEach((frame) => {
+        frame.style.transition = ms > 0 ? `opacity ${ms}ms ${ease}` : 'none';
+      });
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // CAMERA
+    // ════════════════════════════════════════════════════════════════
+
+    function applyZoom(zoom) {
+      zoomSettings = electronAPI.zoom.normalize(zoom);
+      const styles = electronAPI.zoom.styles(zoomSettings);
+      Object.assign(cam.style, styles);
+      Object.assign(camCanvas.style, styles);
+      applyMirror();
+    }
+
+    /** Mirroring rides on top of the zoom's transform, so re-apply both together. */
+    function applyMirror() {
+      const base = electronAPI.zoom.styles(zoomSettings).transform || '';
+      const t = mirror ? `${base} scaleX(-1)` : base;
+      cam.style.transform = t;
+      camCanvas.style.transform = t;
+    }
+
+    function stopStream() {
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      if (stream) {
+        // Release the device explicitly: a leaked track keeps the camera light
+        // on and can lock the device out of the next start.
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
+      }
+      cam.srcObject = null;
+    }
+
+    async function startStream() {
+      stopStream();
+      // Which camera to open is decided BEFORE asking for anything, from the
+      // labels alone. Opening the system default is what quietly takes OBS
+      // Virtual Camera away from Zoom, so it is never done — see
+      // src/utils/cameras.js.
+      await reportDevices();
+      const chosen = electronAPI.cameras.resolveDeviceId(devices, deviceId);
+      if (!chosen) {
+        const why = electronAPI.cameras.noCameraReason(devices);
+        hintEl.classList.remove('hidden');
+        hintEl.textContent = why;
+        log('error', `no real camera to open — ${why}`);
+        electronAPI.sendCameraStatus({ streaming: false, error: why, deviceId });
+        return;
+      }
+      try {
+        const video = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+        video.deviceId = { exact: chosen };
+        // audio is ALWAYS false. A live microphone next to the PA is an
+        // unrecoverable feedback loop, and this screen never needs sound.
+        stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+        cam.srcObject = stream;
+        await cam.play().catch(() => {});
+        hintEl.classList.add('hidden');
+        if (renderMode === 'canvas') startCanvasLoop();
+        reportDevices();
+        log('info', `feed live (${cam.videoWidth}x${cam.videoHeight})`);
+        electronAPI.sendCameraStatus({ streaming: true, error: '', deviceId: chosen });
+      } catch (err) {
+        stopStream();
+        hintEl.classList.remove('hidden');
+        hintEl.textContent = describeCameraError(err);
+        log('error', `getUserMedia failed: ${err && err.name} — ${describeCameraError(err)}`);
+        electronAPI.sendCameraStatus({ streaming: false, error: describeCameraError(err), deviceId });
+      }
+    }
+
+    /** Turn a DOMException into something an operator can act on mid-show. */
+    function describeCameraError(err) {
+      const name = err && err.name ? err.name : 'Error';
+      if (name === 'NotReadableError') {
+        return 'Camera is in use by another app. Close it and try again.';
+      }
+      if (name === 'NotAllowedError') {
+        return 'Camera permission denied. Allow camera access, then retry.';
+      }
+      if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+        return 'That camera is no longer connected. Pick another one.';
+      }
+      return `Camera error: ${(err && err.message) || name}`;
+    }
+
+    /**
+     * The compatibility renderer. On some Windows GPU drivers a hardware-
+     * promoted <video> surface composites as black inside a transparent window;
+     * drawing the frames through a canvas always composites correctly, at the
+     * cost of some CPU.
+     */
+    function startCanvasLoop() {
+      const ctx = camCanvas.getContext('2d');
+      const draw = () => {
+        if (renderMode !== 'canvas' || !stream) { rafId = null; return; }
+        if (cam.videoWidth) {
+          if (camCanvas.width !== cam.videoWidth || camCanvas.height !== cam.videoHeight) {
+            camCanvas.width = cam.videoWidth;
+            camCanvas.height = cam.videoHeight;
+          }
+          ctx.drawImage(cam, 0, 0);
+        }
+        rafId = requestAnimationFrame(draw);
+      };
+      if (!rafId) rafId = requestAnimationFrame(draw);
+    }
+
+    function setRenderMode(mode) {
+      renderMode = mode === 'canvas' ? 'canvas' : 'video';
+      document.body.classList.toggle('canvas-mode', renderMode === 'canvas');
+      if (renderMode === 'canvas' && stream) startCanvasLoop();
+      if (renderMode !== 'canvas' && rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    }
+
+    /**
+     * Report the available cameras so the controller can populate its picker.
+     *
+     * Each entry is tagged real or virtual rather than filtered here: the
+     * controller keeps the virtual ones out of the picker but still names them,
+     * so a missing camera is explained instead of just absent. Labels are
+     * readable without opening anything, so this costs no device access.
+     */
+    async function reportDevices() {
+      try {
+        const found = await navigator.mediaDevices.enumerateDevices();
+        devices = electronAPI.cameras.tag(
+          found.filter(d => d.kind === 'videoinput')
+            .map(d => ({ deviceId: d.deviceId, label: d.label })),
+        );
+        electronAPI.sendCameraDevices(devices);
+      } catch (err) {
+        log('error', `enumerateDevices failed: ${err && err.message}`);
+      }
+      return devices;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // BUILT-IN TEST PATTERN
+    // ════════════════════════════════════════════════════════════════
+
+    // Ported from ../virtualcam-helper (pattern_source.py). It exists to cut a
+    // diagnosis in half: when the picture is wrong, the question is always
+    // "is it this screen, or is it the camera/stream?". The pattern needs no
+    // camera, no network and nobody publishing — so if the rainbow appears
+    // with the captions and logo over it, the whole screen path is proven and
+    // anything still broken is upstream.
+    //
+    // Every element earns its place:
+    //   scrolling rainbow  - colour and motion
+    //   vertical shade     - reveals a flipped or squashed picture
+    //   sweeping white bar - proves motion, makes tearing visible
+    //   corner ticks       - if one is missing, something is cropping
+    //   text overlay       - resolution, frame count and a clock, readable
+    //                        from across a room: live, frozen or stretched?
+
+    const PATTERN_FPS = 30;
+
+    /** A one-pixel-tall canvas spanning the full hue circle, built once. */
+    function buildHueStrip(width) {
+      if (hueStrip && hueStrip.width === width) return hueStrip;
+      const strip = document.createElement('canvas');
+      strip.width = width;
+      strip.height = 1;
+      const sctx = strip.getContext('2d');
+      const grad = sctx.createLinearGradient(0, 0, width, 0);
+      for (let i = 0; i <= 12; i += 1) {
+        grad.addColorStop(i / 12, `hsl(${(i / 12) * 360}, 92%, 55%)`);
+      }
+      sctx.fillStyle = grad;
+      sctx.fillRect(0, 0, width, 1);
+      hueStrip = strip;
+      return strip;
+    }
+
+    function drawPattern() {
+      if (sourceKind !== 'pattern') { patternRaf = null; return; }
+
+      const w = Math.max(2, Math.floor(window.innerWidth));
+      const h = Math.max(2, Math.floor(window.innerHeight));
+      if (patternCanvas.width !== w || patternCanvas.height !== h) {
+        patternCanvas.width = w;
+        patternCanvas.height = h;
+        hueStrip = null;
+      }
+      const ctx = patternCanvas.getContext('2d');
+      const strip = buildHueStrip(w);
+      const seconds = patternFrame / PATTERN_FPS;
+
+      // Scroll one full cycle every four seconds, drawn twice so it wraps.
+      const offset = Math.floor((seconds * (w / 4)) % w);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(strip, offset, 0, w, 1, 0, 0, w, h);
+      ctx.drawImage(strip, offset - w, 0, w, 1, 0, 0, w, h);
+
+      // A gentle vertical shade: enough to reveal a flipped or squashed
+      // picture without muddying the colours a format problem shows up in.
+      const shade = ctx.createLinearGradient(0, 0, 0, h);
+      shade.addColorStop(0, 'rgba(0,0,0,0)');
+      shade.addColorStop(1, 'rgba(0,0,0,0.28)');
+      ctx.fillStyle = shade;
+      ctx.fillRect(0, 0, w, h);
+
+      // A bar sweeping left to right.
+      const barW = Math.max(2, Math.floor(w / 120));
+      const barX = Math.floor((seconds * (w / 2)) % w);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(barX, 0, barW, h);
+
+      // Corner ticks: if any is missing, the picture is being cropped.
+      const tick = Math.max(6, Math.floor(Math.min(w, h) / 40));
+      [[0, 0], [w - tick, 0], [0, h - tick], [w - tick, h - tick]]
+        .forEach(([x, y]) => ctx.fillRect(x, y, tick, tick));
+
+      // Readable from across a room.
+      const scale = Math.max(0.45, (Math.min(w, h) / 720));
+      const lines = [
+        'TEST PATTERN',
+        `${w}x${h}  ${PATTERN_FPS}fps`,
+        `frame ${patternFrame}   ${String(Math.floor(seconds / 60)).padStart(2, '0')}`
+          + `:${String(Math.floor(seconds % 60)).padStart(2, '0')}`,
+      ];
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      let y = h * 0.34;
+      lines.forEach((text, i) => {
+        const size = Math.round(scale * (i === 0 ? 46 : 30));
+        ctx.font = `${i === 0 ? '700' : '500'} ${size}px system-ui, sans-serif`;
+        // Drawn twice: black underneath so the text stays readable wherever
+        // the rainbow happens to be light.
+        ctx.lineWidth = Math.max(3, size * 0.16);
+        ctx.strokeStyle = '#000000';
+        ctx.strokeText(text, w / 2, y);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(text, w / 2, y);
+        y += size + h * 0.04;
+      });
+
+      patternFrame += 1;
+      patternRaf = requestAnimationFrame(drawPattern);
+    }
+
+    function startPattern() {
+      hintEl.classList.add('hidden');
+      if (!patternRaf) patternRaf = requestAnimationFrame(drawPattern);
+    }
+
+    function stopPattern() {
+      if (patternRaf) { cancelAnimationFrame(patternRaf); patternRaf = null; }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // VDO.NINJA SOURCES
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Rebuild the frames for the configured sources.
+     *
+     * With `preloadAll` every source stays mounted and connected, so putting a
+     * different camera on air is an instant opacity swap rather than a fresh
+     * WebRTC handshake — the live-production behaviour that matters at a show.
+     * Frames are reused across updates so a settings change never drops a
+     * stream that is already connected.
+     */
+    function applyVdo(settings) {
+      vdoSettings = electronAPI.vdoninja.normalize(settings);
+      const wanted = vdoSettings.preloadAll
+        ? vdoSettings.sources
+        : vdoSettings.sources.filter(src => src.id === vdoSettings.activeId);
+
+      const keep = new Set(wanted.map(src => src.id));
+      Array.from(vdoLayer.children).forEach((frame) => {
+        if (!keep.has(frame.dataset.sourceId)) frame.remove();
+      });
+
+      wanted.forEach((src) => {
+        let frame = vdoLayer.querySelector(`[data-source-id="${CSS.escape(src.id)}"]`);
+        if (!frame) {
+          frame = document.createElement('iframe');
+          frame.dataset.sourceId = src.id;
+          // Receive-only, but VDO.Ninja starts playback itself and needs to be
+          // allowed to autoplay with sound muted.
+          frame.setAttribute('allow', 'autoplay; fullscreen');
+          frame.setAttribute('referrerpolicy', 'no-referrer');
+          vdoLayer.appendChild(frame);
+        }
+        // The URL was validated in the main process; re-validate here so a
+        // malformed one can never reach an iframe src even if it were injected.
+        let safe = '';
+        try {
+          safe = electronAPI.vdoninja.validate(src.url);
+        } catch (err) {
+          log('error', `refusing source "${src.label}": ${err.message}`);
+          frame.remove();
+          return;
+        }
+        if (frame.getAttribute('src') !== safe) frame.src = safe;
+      });
+
+      const active = vdoSettings.sources.find(src => src.id === vdoSettings.activeId);
+      if (sourceKind === 'vdo') {
+        hintEl.classList.toggle('hidden', !!active);
+        if (!active) hintEl.textContent = 'No camera on air — pick one in the controller.';
+      }
+
+      takeSource(vdoSettings.activeId);
+    }
+
+    /**
+     * Put one source on air, using the configured transition.
+     *
+     * Because every source stays mounted and connected, this is a real
+     * cross-fade between two live pictures rather than a reload:
+     *   cut       - instant swap
+     *   crossfade - both visible at once, the outgoing fading as the incoming rises
+     *   fade      - dip through nothing first, then bring the new one up
+     */
+    function takeSource(id) {
+      const frames = Array.from(vdoLayer.children);
+      const ms = electronAPI.transition.ms(transitionSettings);
+      const type = electronAPI.transition.normalize(transitionSettings).type;
+      const ease = electronAPI.transition.normalize(transitionSettings).easing;
+
+      clearTimeout(takeTimer);
+
+      frames.forEach((frame) => {
+        frame.style.transition = ms > 0 ? `opacity ${ms}ms ${ease}` : 'none';
+      });
+
+      const incoming = frames.find(f => f.dataset.sourceId === id);
+      const outgoing = frames.filter(f => f !== incoming && f.style.opacity !== '0');
+
+      if (type === 'fade' && ms > 0 && outgoing.length && incoming) {
+        // Dip through nothing: the old picture leaves before the new arrives,
+        // so the two never overlap on screen.
+        outgoing.forEach((f) => { f.style.opacity = '0'; });
+        takeTimer = setTimeout(() => {
+          incoming.style.opacity = '1';
+        }, ms);
+      } else {
+        // Cut, or cross-fade: everything moves at once.
+        frames.forEach((frame) => {
+          frame.style.opacity = frame === incoming ? '1' : '0';
+        });
+      }
+    }
+
+    /** Switch between a local camera, the remote streams, and the test pattern. */
+    function setSourceKind(kind) {
+      sourceKind = ['vdo', 'pattern'].includes(kind) ? kind : 'device';
+      document.body.classList.toggle('vdo-mode', sourceKind === 'vdo');
+      document.body.classList.toggle('pattern-mode', sourceKind === 'pattern');
+
+      if (sourceKind !== 'pattern') stopPattern();
+      // Nothing should hold the local camera while another source is on air.
+      if (sourceKind !== 'device') stopStream();
+
+      if (sourceKind === 'vdo') {
+        applyVdo(vdoSettings);
+      } else if (sourceKind === 'pattern') {
+        patternFrame = 0;
+        startPattern();
+      } else {
+        hintEl.textContent = 'Camera screen ready';
+        hintEl.classList.toggle('hidden', !!stream);
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // CAPTIONS
+    // ════════════════════════════════════════════════════════════════
+
+    function applyCaptionSettings(settings) {
+      captionSettings = electronAPI.captions.normalize(settings);
+      const styles = electronAPI.captions.styles(captionSettings);
+      capEls.forEach(el => Object.assign(el.style, styles));
+      // Re-assert the resting/hidden states so a settings change mid-song
+      // doesn't leave the idle buffer stuck in a stale transform.
+      const anim = electronAPI.captions.animation(captionSettings);
+      Object.assign(capEls[front].style, anim.shown);
+      Object.assign(capEls[1 - front].style, anim.hidden);
+    }
+
+    /**
+     * Put a new line on screen, animating it in and the old one out.
+     *
+     * Guarded by shouldReplace so an unchanged line never re-animates — the
+     * OCR loop re-reads the same lyric many times a second, and re-triggering
+     * the animation on every read looks broken to an audience. The main process
+     * already filters with the same rule; this is the renderer refusing to
+     * trust the wire.
+     */
+    function setCaption(text) {
+      const next = typeof text === 'string' ? text : '';
+      if (!electronAPI.captions.shouldReplace(shownText, next)) return;
+
+      const anim = electronAPI.captions.animation(captionSettings);
+      const incoming = capEls[1 - front];
+      const outgoing = capEls[front];
+
+      clearInterval(typeTimer);
+      typeTimer = null;
+
+      // Park the incoming element at its start state, then let a frame pass so
+      // the browser has something to animate FROM.
+      incoming.textContent = anim.typewriter ? '' : next;
+      Object.assign(incoming.style, anim.hidden);
+      // Force a reflow so the transition below actually runs.
+      void incoming.offsetWidth;
+
+      Object.assign(incoming.style, anim.shown);
+      Object.assign(outgoing.style, anim.leaving);
+
+      if (anim.typewriter && next) {
+        const perChar = Math.max(8, Math.round((anim.durationMs || 300) / next.length));
+        let i = 0;
+        typeTimer = setInterval(() => {
+          i += 1;
+          incoming.textContent = next.slice(0, i);
+          if (i >= next.length) { clearInterval(typeTimer); typeTimer = null; }
+        }, perChar);
+      }
+
+      // Empty the buffer that just left, once its fade has finished. Without
+      // this the old lyric stays in the DOM indefinitely - invisible, but only
+      // an opacity away from reappearing.
+      clearTimeout(outgoing._clearTimer);
+      outgoing._clearTimer = setTimeout(() => {
+        outgoing.textContent = '';
+      }, (anim.durationMs || 0) + 60);
+
+      front = 1 - front;
+      shownText = next;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // LOGO
+    // ════════════════════════════════════════════════════════════════
+
+    function applyLogo(logo) {
+      const l = electronAPI.logo.normalize(logo);
+      Object.assign(logoEl.style, electronAPI.logo.styles(l));
+      // src="" makes the browser re-request the PAGE, so drop the attribute
+      // entirely when there is no logo.
+      const href = l.source ? electronAPI.toFileURL(l.source) : '';
+      if (!href) logoEl.removeAttribute('src');
+      else if (logoEl.getAttribute('src') !== href) logoEl.src = href;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // COMMANDS
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Everything needed to put a picture back on the screen.
+     *
+     * Showing the stage is not enough on its own. With VDO.Ninja sources the
+     * picture also depends on the on-air frame's own opacity, and a cut that
+     * was interrupted mid-dip (a RESET, a settings change, two takes in quick
+     * succession) can leave every frame at 0 behind a perfectly visible stage —
+     * which looks exactly like "the camera never came back". Re-asserting the
+     * take is idempotent, so it is safe to do on every show.
+     */
+    function showEverything() {
+      setVisible(true);
+      // A remote stream is already connected in its frame; only a local camera
+      // has to be opened.
+      if (sourceKind === 'device') startStream();
+      else if (sourceKind === 'vdo') takeSource(vdoSettings.activeId);
+      else if (sourceKind === 'pattern') startPattern();
+    }
+
+    electronAPI.onCameraCommand((cmd, data) => {
+      switch (cmd) {
+        case 'live':
+          if (data) {
+            showEverything();
+          } else if (sourceKind === 'device') {
+            stopStream();
+          }
+          break;
+        case 'setSource': setSourceKind(data); break;
+        case 'setVdo': applyVdo(data); break;
+        case 'setDevice':
+          deviceId = typeof data === 'string' ? data : '';
+          if (stream) startStream(); // re-open on the new device
+          break;
+        case 'setZoom': applyZoom(data); break;
+        case 'mirror': mirror = !!data; applyMirror(); break;
+        case 'setRenderMode': setRenderMode(data); break;
+        case 'reset': setVisible(false); break;
+        case 'restore':
+          showEverything();
+          break;
+        case 'blank': blankEl.style.display = data ? 'block' : 'none'; break;
+        case 'rescanDevices': reportDevices(); break;
+        default: log('error', `unknown camera command: ${cmd}`);
+      }
+    });
+
+    electronAPI.onCaptionSettings(applyCaptionSettings);
+    electronAPI.onCaptionText((payload) => {
+      setCaption(payload && typeof payload === 'object' ? payload.text : payload);
+    });
+    electronAPI.onLogoSettings(applyLogo);
+    electronAPI.onTransitionSettings(applyTransition);
+
+    // ════════════════════════════════════════════════════════════════
+    // STARTUP
+    // ════════════════════════════════════════════════════════════════
+
+    // Self-restore from config, the same way every other display window does,
+    // so content queued before this screen existed still shows up.
+    electronAPI.getConfig().then((cfg) => {
+      const c = (cfg && cfg.camera) || {};
+      deviceId = typeof c.deviceId === 'string' ? c.deviceId : '';
+      mirror = !!c.mirror;
+      setRenderMode(c.renderMode);
+      vdoSettings = electronAPI.vdoninja.normalize(c.vdo);
+      applyTransition(cfg && cfg.transition);
+      applyZoom(cfg && cfg.zoom && cfg.zoom.camera);
+      applyCaptionSettings(cfg && cfg.captions);
+      applyLogo(cfg && cfg.logo);
+      setVisible(c.visible !== false);
+      setSourceKind(c.source);
+      if (sourceKind === 'device') {
+        if (c.live) startStream(); else reportDevices();
+      } else {
+        reportDevices(); // still populate the picker for when they switch back
+      }
+    }).catch((err) => {
+      log('error', `could not read config: ${err && err.message}`);
+      // Still usable: the normalizers already gave us a working default set.
+      applyCaptionSettings(null);
+      reportDevices();
+    });
+
+    window.addEventListener('beforeunload', () => {
+      stopStream();
+      stopPattern();
+      clearInterval(typeTimer);
+      clearTimeout(fadeTimer);
+      clearTimeout(takeTimer);
+    });
+  </script>
+</body>
+</html>

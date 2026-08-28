@@ -85,11 +85,72 @@
   </div>
 
   <div class="card">
+    <h2>&#128247; Camera + live lyrics</h2>
+    <p>
+      Shows a live camera feed (crowd, musicians) on a screen, and can read the
+      lyrics off <em>another</em> screen &mdash; your lyrics software &mdash; and
+      re-draw them over the camera picture in your own font.
+    </p>
+    <ol>
+      <li>Give a screen the <strong>Camera</strong> role in the screen picker.</li>
+      <li>Open the <strong>&#128247; Camera</strong> tab and pick where the picture comes from:
+        <ul>
+          <li><strong>&#127909; Local camera</strong> &mdash; a webcam or capture card plugged into this machine.</li>
+          <li><strong>&#127760; VDO.Ninja</strong> &mdash; phones and remote cameras. On the phone open
+            <strong>vdo.ninja</strong>, press <strong>Share your camera</strong>, and paste the <strong>view
+            link</strong> into <strong>+ Add camera</strong>. Add up to 6 and press <strong>Put on air</strong>
+            to cut between them &mdash; cuts are instant because every camera stays connected.</li>
+        </ul>
+      </li>
+      <li>Press the big <strong>ON AIR</strong> button.</li>
+      <li>Stuck? Press <strong>&#127752; Test pattern</strong>. It draws a moving rainbow with corner markers
+        using no camera and no network &mdash; if that looks right, this screen is fine and the problem is the
+        camera or the stream. Missing corner markers mean something is cropping.</li>
+      <li>Under <strong>Lyrics</strong>, pick the screen your lyrics software is on, press
+        <strong>Grab a picture of that screen</strong>, then <em>drag a box</em> around
+        where the words appear.</li>
+      <li>Leave <strong>Send lyrics to the screen</strong> switched <em>off</em> while you aim
+        the box &mdash; watch the <strong>Last read</strong> panel until it reads the words
+        cleanly. Then switch it on and press <strong>Start reading lyrics</strong>.</li>
+      <li>Set the look under <strong>Caption style</strong> &mdash; position, size, animation.
+        The preview box matches what the audience sees.</li>
+    </ol>
+    <ul>
+      <li>The <strong>Transition</strong> setting covers turning the camera on and off, RESET, and cutting
+        between cameras: <strong>Fade</strong> dips through nothing, <strong>Cross-fade</strong> overlaps the
+        two pictures, <strong>Cut</strong> is instant.</li>
+      <li><strong>&#128680; RESET</strong> fades the camera screen away completely, so whatever
+        app is running behind it shows through. <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>0</kbd>
+        does the same from anywhere, even when the control panel isn't in front.</li>
+      <li><strong>Your lyrics software must run windowed / borderless-fullscreen</strong>, not
+        true (exclusive) fullscreen. A true-fullscreen app takes over the display and nothing
+        can be drawn on top of it.</li>
+      <li>Lyrics appear roughly <strong>1&ndash;2 seconds</strong> behind the other screen. That is
+        the cost of reading them off a picture; to tighten it, shrink the box to just the
+        words and lower <strong>Confirm reads</strong> to 1 once the box is aimed well.</li>
+      <li>If the camera picture is <strong>black</strong> on the big screen, tick
+        <strong>Compatibility renderer</strong> under Compatibility.</li>
+      <li>If <strong>RESET shows black</strong> instead of the app behind it, check
+        <strong>See-through screen</strong> is on and press <strong>Restart camera screen</strong>
+        &mdash; that setting only applies to a freshly-built screen.</li>
+      <li>On a Mac, allow <strong>Camera</strong> and <strong>Screen Recording</strong> for this app
+        in System Settings &rarr; Privacy &amp; Security. Windows needs neither.</li>
+      <li>VDO.Ninja links are checked before use (https only, and only the official vdo.ninja addresses), and any
+        <strong>room password is removed before the link is saved</strong>. VDO.Ninja itself needs the internet;
+        a local camera does not.</li>
+      <li>Lyric reading works with <strong>no internet</strong> &mdash; the language data ships
+        inside the app.</li>
+    </ul>
+  </div>
+
+  <div class="card">
     <h2>Handy controls</h2>
     <ul>
       <li><strong>Reconfigure Displays</strong> — re-open the screen picker any time to change roles.</li>
       <li><strong>Identify Screens</strong> — flash the screen numbers again.</li>
       <li><kbd>Esc</kbd> on any fullscreen content window closes just that screen (useful when testing on a single screen).</li>
+      <li><kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>0</kbd> &mdash; clear the camera screen from anywhere, even when
+        the control panel isn't the window you're in. Whatever is behind it shows through.</li>
       <li>Closing the <strong>control panel</strong> quits the whole app and closes every screen.</li>
     </ul>
   </div>

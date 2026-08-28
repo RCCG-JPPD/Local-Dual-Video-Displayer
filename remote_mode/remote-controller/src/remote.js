@@ -37,6 +37,16 @@ export const ACTIONS = {
   webFwd: 'web.fwd',
   webReload: 'web.reload',
   excelSheet: 'excel.sheet',
+  camLive: 'cam.live',
+  camOff: 'cam.off',
+  camReset: 'cam.reset',
+  camRestore: 'cam.restore',
+  camBlank: 'cam.blank',
+  camZoom: 'cam.zoom',
+  camTake: 'cam.take',
+  ocrOn: 'ocr.on',
+  ocrOff: 'ocr.off',
+  captionText: 'caption.text',
 };
 
 /** Uppercase + forgive ambiguous typing (O→0, I/L→1), drop non-alphabet chars. */

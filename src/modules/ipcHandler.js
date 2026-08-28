@@ -6,6 +6,12 @@
 const { ipcMain } = require('electron');
 const { createSessionStore } = require('../utils/remote');
 const { normalizeZoom } = require('../utils/zoom');
+const { normalizeCaptions } = require('../utils/captions');
+const { normalizeLogo } = require('../utils/logo');
+const { normalizeTransition } = require('../utils/transition');
+const { normalizeOcr, normalizeRegion } = require('../utils/ocr');
+const vdoninja = require('../utils/vdoninja');
+const OcrEngine = require('./ocrEngine');
 
 class IPCHandler {
   constructor(displayManager, configManager, callbacks = {}) {
@@ -33,23 +39,103 @@ class IPCHandler {
   }
 
   /**
-   * Persist a screen's zoom, coalescing the writes.
+   * Persist a slice of config, coalescing the writes.
    *
-   * Zoom arrives on every tick of the controller's slider, and updateConfig
-   * re-reads and rewrites the whole config file each time — so batch the pending
-   * roles and write once the drag settles. Broadcasting stays immediate, so the
-   * screens still follow the slider live.
-   * @param {'video'|'slideshow'|'youtube'} role
+   * Settings like zoom, caption size and logo opacity arrive on every tick of a
+   * slider, and updateConfig re-reads and rewrites the whole config file each
+   * time — so batch the pending sections and write once the drag settles.
+   * Broadcasting stays immediate, so the screens still follow the slider live.
+   *
+   * @param {string} section top-level config key (e.g. 'zoom', 'captions')
+   * @param {object} patch   merged into whatever is already pending
+   */
+  _persistLater(section, patch) {
+    this._pendingWrite = this._pendingWrite || {};
+    this._pendingWrite[section] = { ...(this._pendingWrite[section] || {}), ...patch };
+    clearTimeout(this._writeTimer);
+    this._writeTimer = setTimeout(() => {
+      const pending = this._pendingWrite;
+      this._pendingWrite = null;
+      if (pending) this.configManager.updateConfig(pending);
+    }, 400);
+  }
+
+  /**
+   * Persist a screen's zoom.
+   * @param {'video'|'slideshow'|'youtube'|'camera'} role
    * @param {{mode: string, scale: number}} zoom
    */
   _persistZoom(role, zoom) {
-    this._pendingZoom = { ...(this._pendingZoom || {}), [role]: zoom };
-    clearTimeout(this._zoomWriteTimer);
-    this._zoomWriteTimer = setTimeout(() => {
-      const pending = this._pendingZoom;
-      this._pendingZoom = null;
-      if (pending) this.configManager.updateConfig({ zoom: pending });
-    }, 400);
+    this._persistLater('zoom', { [role]: zoom });
+  }
+
+  /** True when `event` came from the FIRST window serving `role`.
+   *
+   * Screens report state back to the controller, and a role can be assigned to
+   * several screens at once — without this guard every mirrored screen would
+   * report and the controller would flicker between them.
+   */
+  _isPrimaryFor(role, event) {
+    const [primary] = this.displayManager.getWindowsByRole(role);
+    return !!primary && event.sender.id === primary.webContents.id;
+  }
+
+  /** Send to the controller window, if it's alive. */
+  _toController(channel, ...args) {
+    const controller = this.displayManager.windows.controller;
+    if (controller && !controller.isDestroyed()) controller.webContents.send(channel, ...args);
+  }
+
+  /**
+   * The OCR engine, created on first use.
+   *
+   * Lazy because most runs of this app never read lyrics at all, and the engine
+   * spawns a Tesseract worker process the moment it starts.
+   */
+  _ocr() {
+    if (!this.ocrEngine) {
+      this.ocrEngine = new OcrEngine({
+        // Main is the PRODUCER of caption lines here, so it broadcasts straight
+        // to the screens rather than routing through the controller — captions
+        // must survive a controller reload mid-song.
+        onText: (text) => this._emitCaption({ text, source: 'ocr' }),
+        onStatus: (status) => this._toController('ocr-status', status),
+      });
+    }
+    return this.ocrEngine;
+  }
+
+  /** Fan one caption line out to every camera screen. */
+  _emitCaption(payload) {
+    const line = {
+      text: typeof payload.text === 'string' ? payload.text : '',
+      source: payload.source === 'ocr' ? 'ocr' : 'manual',
+      confidence: Number.isFinite(Number(payload.confidence)) ? Number(payload.confidence) : null,
+      at: Date.now(),
+    };
+    this.broadcastToRole('camera', 'caption-text', line);
+  }
+
+  /**
+   * Clear every camera screen, revealing whatever is behind it.
+   * Called by the global panic-button shortcut as well as the controller, so
+   * it lives here rather than inline in the IPC handler.
+   */
+  resetCameraScreens() {
+    this._persistLater('camera', { visible: false });
+    this.broadcastToRole('camera', 'camera-command', 'reset', null);
+    this._toController('camera-reset');
+  }
+
+  /** Stop background work. Called when the app is shutting down. */
+  dispose() {
+    clearTimeout(this._writeTimer);
+    if (this._pendingWrite) {
+      // Don't lose a slider adjustment made in the last 400ms before quit.
+      this.configManager.updateConfig(this._pendingWrite);
+      this._pendingWrite = null;
+    }
+    if (this.ocrEngine) this.ocrEngine.stop();
   }
 
   /** Send to every live window currently serving `role`. */
@@ -110,6 +196,13 @@ class IPCHandler {
       if (cmd === 'setZoom') {
         payload = normalizeZoom(data);
         this._persistZoom('video', payload);
+      }
+      if (cmd === 'setVisible') {
+        // Like zoom, this is a screen setting rather than a transport action:
+        // a screen created later, or the next run, comes back the way the
+        // operator left it instead of showing a video they had curtained off.
+        payload = !!data;
+        this._persistLater('playback', { visible: payload });
       }
       this.broadcastToRole('video', 'playback-command', cmd, payload);
     });
@@ -320,12 +413,6 @@ class IPCHandler {
     // CANVAS PREVIEW / MIRRORING
     // ════════════════════════════════════════════════════════════════
 
-    ipcMain.on('canvas-preview-data', (event, data) => {
-      const controller = this.displayManager.windows.controller;
-      if (controller && !controller.isDestroyed()) {
-        controller.webContents.send('preview-updated', data);
-      }
-    });
 
     // ════════════════════════════════════════════════════════════════
     // WEB / YOUTUBE
@@ -400,6 +487,210 @@ class IPCHandler {
       } catch (err) {
         console.error('get-screen-previews failed:', err);
         return [];
+      }
+    });
+
+    // ════════════════════════════════════════════════════════════════
+    // CAMERA SCREEN
+    // ════════════════════════════════════════════════════════════════
+
+    // Controller -> every camera screen. Most commands are transport actions,
+    // but the ones that describe how the screen should LOOK are persisted so
+    // they survive a restart, exactly as the video screen treats zoom.
+    ipcMain.on('camera-command', (event, cmd, data) => {
+      let payload = data;
+      switch (cmd) {
+        case 'setZoom':
+          payload = normalizeZoom(data);
+          this._persistZoom('camera', payload);
+          break;
+        case 'live':
+          payload = !!data;
+          // Going live implies the stage is visible; otherwise the operator
+          // turns the camera on and nothing appears.
+          this._persistLater('camera', payload ? { live: true, visible: true } : { live: false });
+          break;
+        case 'setDevice':
+          payload = typeof data === 'string' ? data : '';
+          this._persistLater('camera', { deviceId: payload });
+          break;
+        case 'mirror':
+          payload = !!data;
+          this._persistLater('camera', { mirror: payload });
+          break;
+        case 'setSource':
+          payload = ['vdo', 'pattern'].includes(data) ? data : 'device';
+          this._persistLater('camera', { source: payload });
+          break;
+        case 'setVdo': {
+          // Validate every URL here, and strip room passwords before anything
+          // reaches the config file on disk.
+          const incoming = vdoninja.normalizeVdo(data);
+          const sources = [];
+          for (const src of incoming.sources) {
+            try {
+              vdoninja.validateAndNormalizeUrl(src.url);
+              sources.push({ ...src, url: vdoninja.sanitizeUrlForStorage(src.url) });
+            } catch (err) {
+              console.warn(`Rejecting VDO.Ninja source "${src.label}": ${err.message}`);
+            }
+          }
+          payload = vdoninja.normalizeVdo({ ...incoming, sources });
+          this._persistLater('camera', { vdo: payload });
+          break;
+        }
+        case 'setRenderMode':
+          payload = data === 'canvas' ? 'canvas' : 'video';
+          this._persistLater('camera', { renderMode: payload });
+          break;
+        case 'setPreview':
+          // Controller-only: the multiview thumbnails live in the operator's
+          // window. Remember the choice, but return before the broadcast — the
+          // camera screens have no use for it and would log it as unknown.
+          this._persistLater('camera', { preview: !!data });
+          return;
+        case 'reset':
+          this._persistLater('camera', { visible: false });
+          break;
+        case 'restore':
+          this._persistLater('camera', { visible: true, live: true });
+          break;
+        default:
+          break; // blank / rescanDevices are transient
+      }
+      this.broadcastToRole('camera', 'camera-command', cmd, payload);
+    });
+
+    // Only the first camera screen reports back, or every mirrored screen would.
+    ipcMain.on('camera-status', (event, status) => {
+      if (this._isPrimaryFor('camera', event)) this._toController('camera-status', status);
+    });
+
+    ipcMain.on('camera-devices', (event, devices) => {
+      if (!this._isPrimaryFor('camera', event)) return;
+      this._cameraDevices = Array.isArray(devices) ? devices : [];
+      this._toController('camera-devices', this._cameraDevices);
+    });
+
+    // Electron fixes a window's transparency at creation, so the only way to
+    // honour a change to it is to build the window again.
+    ipcMain.on('camera-recreate', () => {
+      this.displayManager.recreateCameraWindows(this.configManager.loadConfig());
+    });
+
+    // ════════════════════════════════════════════════════════════════
+    // CAPTIONS / LOGO / TRANSITIONS
+    // ════════════════════════════════════════════════════════════════
+
+    ipcMain.on('caption-settings', (event, settings) => {
+      const payload = normalizeCaptions(settings);
+      this._persistLater('captions', payload);
+      this.broadcastToRole('camera', 'caption-settings', payload);
+    });
+
+    // Caption LINES are never persisted — they change every few seconds, and a
+    // whole-file config write per lyric would be absurd. Both OCR and the
+    // controller's manual input arrive here, so the caption layer works
+    // identically whether or not OCR is running.
+    ipcMain.on('caption-text', (event, payload) => {
+      this._emitCaption(payload && typeof payload === 'object' ? payload : { text: payload });
+    });
+
+    ipcMain.on('logo-settings', (event, settings) => {
+      const payload = normalizeLogo(settings);
+      this._persistLater('logo', payload);
+      this.broadcastToRole('camera', 'logo-settings', payload);
+    });
+
+    ipcMain.on('transition-settings', (event, settings) => {
+      const payload = normalizeTransition(settings);
+      this._persistLater('transition', payload);
+      this.broadcastToRole('camera', 'transition-settings', payload);
+      // The video screen's curtain uses the same fade, so one setting keeps
+      // every screen in the show moving the same way.
+      this.broadcastToRole('video', 'transition-settings', payload);
+    });
+
+    ipcMain.handle('select-logo-file', async () => {
+      const [file] = await this._openFiles(
+        'Choose a logo image',
+        [{ name: 'Images', extensions: ['png', 'webp', 'jpg', 'jpeg', 'gif', 'svg'] }],
+        false,
+      );
+      return file || '';
+    });
+
+    // ════════════════════════════════════════════════════════════════
+    // LYRIC OCR
+    // ════════════════════════════════════════════════════════════════
+
+    ipcMain.on('ocr-command', (event, cmd, data) => {
+      const cfg = this.configManager.loadConfig();
+      const current = normalizeOcr(cfg.ocr);
+
+      switch (cmd) {
+        case 'start':
+          this._persistLater('ocr', { enabled: true });
+          this._ocr().start({ ...current, enabled: true });
+          break;
+        case 'stop':
+          this._persistLater('ocr', { enabled: false });
+          this._ocr().stop();
+          break;
+        case 'setRegion': {
+          const region = normalizeRegion(data && data.region);
+          const displayId = data && Number.isFinite(Number(data.displayId))
+            ? Number(data.displayId)
+            : current.displayId;
+          const next = { ...current, region, displayId };
+          this._persistLater('ocr', { region, displayId });
+          this._ocr().update(next);
+          break;
+        }
+        case 'setTuning': {
+          const next = normalizeOcr({ ...current, ...(data || {}) });
+          this._persistLater('ocr', next);
+          this._ocr().update(next);
+          break;
+        }
+        case 'setOutput': {
+          const outputToScreen = !!data;
+          this._persistLater('ocr', { outputToScreen });
+          this._ocr().update({ ...current, outputToScreen });
+          break;
+        }
+        case 'once':
+          this._ocr().readOnce({ ...current });
+          break;
+        default:
+          console.warn('Unknown OCR command:', cmd);
+      }
+    });
+
+    ipcMain.handle('ocr-get-state', () => this._ocr().getState());
+
+    // A full still of one screen, so the controller can draw the region picker.
+    ipcMain.handle('ocr-capture-frame', async (event, opts) => {
+      const { desktopCapturer, screen } = require('electron');
+      const size = (opts && opts.thumbnailSize) || { width: 1600, height: 1000 };
+      try {
+        const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: size });
+        const wanted = opts && Number.isFinite(Number(opts.displayId)) ? Number(opts.displayId) : null;
+        const source = (wanted !== null && sources.find(s => Number(s.display_id) === wanted))
+          || sources[0];
+        if (!source) return null;
+        return {
+          displayId: source.display_id ? Number(source.display_id) : null,
+          name: source.name,
+          dataURL: source.thumbnail.toDataURL(),
+          size: source.thumbnail.getSize(),
+          displays: screen.getAllDisplays().map((d, i) => ({
+            id: d.id, index: i, label: d.label || `Display ${i + 1}`, bounds: d.bounds,
+          })),
+        };
+      } catch (err) {
+        console.error('ocr-capture-frame failed:', err);
+        return null;
       }
     });
 

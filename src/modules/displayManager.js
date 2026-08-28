@@ -138,7 +138,10 @@ class DisplayManager {
    * always-on-top window on the given display, shows it after load, and
    * tracks it under `role`.
    */
-  _createContentWindow(displayIndex, role, htmlFile, extraWebPreferences = {}, onLoad = null) {
+  _createContentWindow(displayIndex, role, htmlFile, extraWebPreferences = {}, onLoad = null, windowOpts = {}) {
+    // `focusOnShow` is ours, not Electron's — pull it out so it never reaches
+    // the BrowserWindow constructor as an unknown option.
+    const { focusOnShow = true, ...browserWindowOpts } = windowOpts;
     const displays = this.detectDisplays();
 
     if (displayIndex == null || displayIndex < 0 || displayIndex >= displays.length) {
@@ -168,6 +171,10 @@ class DisplayManager {
         ...extraWebPreferences,
       },
       show: false,
+      // Roles that need a different kind of window (the camera screen is
+      // transparent so it can fade away and reveal the app behind it).
+      // `transparent` in particular CANNOT be toggled after creation.
+      ...browserWindowOpts,
     });
 
     window.loadFile(path.join(UI_DIR, htmlFile));
@@ -180,10 +187,17 @@ class DisplayManager {
         width: Math.floor(display.bounds.width),
         height: Math.floor(display.bounds.height),
       });
-      window.show();
+      // An overlay screen must not pull focus away from the app underneath it —
+      // at a concert that would yank the operator out of their lyrics software
+      // every time the screen reloads.
+      if (focusOnShow) {
+        window.show();
+      } else {
+        window.showInactive();
+      }
       window.setAlwaysOnTop(true, 'screen-saver');
       window.moveTop();
-      window.focus();
+      if (focusOnShow) window.focus();
       if (onLoad) onLoad(window);
     });
 
@@ -296,6 +310,84 @@ class DisplayManager {
       });
   }
 
+  /**
+   * Camera screen — a live webcam / capture-card feed with lyric captions and
+   * a logo composited over it.
+   *
+   * Unlike every other content screen this window is TRANSPARENT and
+   * click-through, because its "reset" is to fade to nothing and let whatever
+   * is running behind it (the lyrics software) show through. Electron cannot
+   * turn transparency on or off after creation, so the flag is read from config
+   * here and changing it requires recreateCameraWindows().
+   */
+  createCameraWindow(displayIndex, cameraSettings = {}) {
+    const transparent = cameraSettings.transparentWindow !== false;
+    const windowOpts = {
+      focusOnShow: false, // never steal focus from the app underneath
+      skipTaskbar: true,
+      hasShadow: false,
+      roundedCorners: false, // macOS would otherwise round a fullscreen overlay
+      ...(transparent ? { transparent: true, backgroundColor: '#00000000' } : {}),
+    };
+
+    return this._createContentWindow(displayIndex, 'camera', 'cameraDisplay.html', {}, (window) => {
+      // Decoration, not a target: clicks must reach the app behind the screen.
+      window.setIgnoreMouseEvents(true, { forward: false });
+      // Without this the overlay never covers a fullscreen app on a macOS Space.
+      window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+      // KEEP IT ON TOP, the way the clock overlay does.
+      //
+      // _createContentWindow pins this once, at load. That is not enough for a
+      // window whose whole job is to sit over somebody else's application: the
+      // lyrics software raises its own output window whenever the operator
+      // changes song, and Windows puts it above an always-on-top window that
+      // has not re-asserted itself. From then on the camera is behind it —
+      // still running, still "visible" as far as every bit of state here is
+      // concerned, and completely invisible to the audience. Nothing reports
+      // it, and no amount of pressing the on-air button brings it back,
+      // because the button was never the problem.
+      //
+      // The clock overlay has always re-asserted this every second, which is
+      // why it never suffered from this. Same treatment.
+      const enforce = setInterval(() => {
+        if (window.isDestroyed()) { clearInterval(enforce); return; }
+        window.setAlwaysOnTop(true, 'screen-saver');
+        window.moveTop();
+        // A clock overlay on this same screen re-asserts itself on its own
+        // 1s timer, so without this the two would trade places every second
+        // and the clock would flicker behind an opaque camera picture. The
+        // clock belongs on top of the camera, so put it back immediately.
+        this.contentWindows
+          .filter(e => e.role === 'clock' && e.overlay && e.displayIndex === displayIndex)
+          .forEach((e) => {
+            if (e.window && !e.window.isDestroyed()) e.window.moveTop();
+          });
+      }, 1000);
+      window.on('closed', () => clearInterval(enforce));
+
+      window.webContents.send('window-role', 'camera');
+    }, windowOpts);
+  }
+
+  /**
+   * Close and rebuild every camera screen from the current config.
+   *
+   * This exists for one reason: `transparent` is fixed at window creation, so
+   * the only way to honour a change to it is to make a new window.
+   */
+  recreateCameraWindows(config = {}) {
+    const targets = [...new Set(this.contentWindows
+      .filter(e => e.role === 'camera' && e.window && !e.window.isDestroyed())
+      .map(e => e.displayIndex))];
+
+    this.contentWindows
+      .filter(e => e.role === 'camera' && e.window && !e.window.isDestroyed())
+      .forEach(e => e.window.close());
+
+    return targets.map(displayIndex => this.createCameraWindow(displayIndex, config.camera || {}));
+  }
+
   createWebWindow(displayIndex) {
     // webviewTag lets <webview> embed sites that refuse <iframe> (X-Frame-Options).
     return this._createContentWindow(displayIndex, 'web', 'webBrowser.html', { webviewTag: true });
@@ -376,6 +468,9 @@ class DisplayManager {
           }
           case 'excel':
             this.createExcelWindow(displayConfig.displayIndex);
+            break;
+          case 'camera':
+            this.createCameraWindow(displayConfig.displayIndex, config.camera || {});
             break;
           default:
             console.warn(`Unknown display role: ${role}`);
@@ -546,6 +641,7 @@ class DisplayManager {
       powerpoint: this.getWindowsByRole('powerpoint').length,
       slideshow: this.getWindowsByRole('slideshow').length,
       excel: this.getWindowsByRole('excel').length,
+      camera: this.getWindowsByRole('camera').length,
     };
     return status;
   }

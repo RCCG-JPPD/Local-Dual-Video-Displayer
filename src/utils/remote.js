@@ -28,6 +28,12 @@ const REMOTE_ACTIONS = [
   'yt.play', 'yt.pause', 'yt.mute', 'yt.volume', 'yt.load', 'yt.zoom',
   'web.load', 'web.back', 'web.fwd', 'web.reload',
   'excel.sheet',
+  // Camera screen. `cam.reset` is the one a phone most needs at a concert:
+  // it clears our screen and reveals whatever is running behind it.
+  'cam.live', 'cam.off', 'cam.reset', 'cam.restore', 'cam.blank', 'cam.zoom',
+  // Cut to camera N — the reason to have a phone remote at a concert.
+  'cam.take',
+  'ocr.on', 'ocr.off', 'caption.text',
 ];
 
 // Value requirement per action (actions not listed take no value):
@@ -48,8 +54,11 @@ const VALUE_SPECS = {
   'video.zoom': 'zoom',
   'slide.zoom': 'zoom',
   'yt.zoom': 'zoom',
+  'cam.zoom': 'zoom',
+  'cam.take': 'index',
+  'caption.text': 'string',
 };
-const STRING_MAX = { 'yt.load': 300, 'web.load': 1024 };
+const STRING_MAX = { 'yt.load': 300, 'web.load': 1024, 'caption.text': 240 };
 
 /**
  * Generate a random session code from the unambiguous alphabet.
@@ -171,6 +180,8 @@ function buildStateSnapshot(input = {}, now = Date.now()) {
   const y = input.youtube || {};
   const w = input.web || {};
   const x = input.excel || {};
+  const c = input.camera || {};
+  const o = input.ocr || {};
   const r = input.roles;
   return {
     activePanel: String(input.activePanel || 'previews'),
@@ -179,6 +190,7 @@ function buildStateSnapshot(input = {}, now = Date.now()) {
     roles: r ? {
       presentation: !!r.presentation, slideshow: !!r.slideshow, video: !!r.video,
       youtube: !!r.youtube, web: !!r.web, excel: !!r.excel,
+      camera: !!r.camera,
     } : null,
     presentation: { index: num(p.index), total: num(p.total) },
     slideshow: {
@@ -204,6 +216,15 @@ function buildStateSnapshot(input = {}, now = Date.now()) {
     },
     web: { url: str(w.url, 1024) },
     excel: { sheets: list(x.sheets, 50, 80), active: num(x.active) },
+    camera: {
+      live: !!c.live, visible: c.visible !== false, zoom: normalizeZoom(c.zoom),
+      source: c.source === 'vdo' ? 'vdo' : 'device',
+      // Labels only: the phone shows a button per camera, and the URLs (which
+      // can carry a room password) never leave the desktop.
+      cameras: list(c.cameras, 6, 40),
+      activeCamera: num(c.activeCamera, -1),
+    },
+    ocr: { running: !!o.running, lastText: str(o.lastText, 240) },
     updatedAt: num(now),
   };
 }
