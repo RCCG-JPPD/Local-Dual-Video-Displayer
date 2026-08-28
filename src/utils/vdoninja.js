@@ -210,6 +210,13 @@ function normalizeSource(input, index = 0) {
  * Coerce the whole VDO.Ninja settings block into something safe.
  * Caps the list at MAX_SOURCES and guarantees `activeId` names a real source
  * (or is null), so the screen can never be told to show one that isn't there.
+ *
+ * `preloadAll` must survive this, not be dropped: the camera screen reads it
+ * back off the normalized object to decide whether to keep every source
+ * mounted. Losing it here leaves only the on-air camera connected, which turns
+ * every cut into a fresh WebRTC handshake and makes a cross-fade between two
+ * cameras impossible — there is no outgoing picture left to fade from.
+ * Defaults to true, matching the config default and the controller checkbox.
  * @param {*} input
  */
 function normalizeVdo(input) {
@@ -220,7 +227,7 @@ function normalizeVdo(input) {
     .filter(s => s.url);
 
   const activeId = sources.some(s => s.id === src.activeId) ? src.activeId : null;
-  return { sources, activeId };
+  return { sources, activeId, preloadAll: src.preloadAll !== false };
 }
 
 /** The source currently on air, or null. */

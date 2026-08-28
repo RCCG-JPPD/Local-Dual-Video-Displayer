@@ -234,19 +234,30 @@ function reduceOcr(state, sample, opts) {
   const text = cleanOcrText(raw.text, o.maxChars);
   const confidence = Number(raw.confidence);
 
-  // A low-confidence read tells us nothing. Holding the current caption is
-  // always better than flickering on a guess.
-  if (text && (!Number.isFinite(confidence) || confidence < o.minConfidence)) {
-    return { state: s, emit: null };
-  }
-
-  if (!text) {
+  // Nothing readable is on the screen. That is NOT the same as "no characters
+  // came back": a blanked projector still yields stray marks - measured off a
+  // real blank screen as "re" at confidence 9 - and treating those as a
+  // low-confidence line meant `blanks` never advanced, `blankReads` was
+  // unreachable, and the last lyric stayed burned over the camera for the rest
+  // of the service. Anything under half of minConfidence is the recogniser's
+  // noise floor rather than a hard-to-read line: genuine but marginal text
+  // scores in the 40s, noise off an empty screen scores under 15.
+  const noise = Number.isFinite(confidence) && confidence < o.minConfidence / 2;
+  if (!text || noise) {
     const blanks = s.blanks + 1;
     // Only clear once we're sure the screen really is empty.
     if (blanks >= o.blankReads && s.shown !== '') {
       return { state: { candidate: '', hits: 0, shown: '', blanks }, emit: '' };
     }
     return { state: { ...s, candidate: '', hits: 0, blanks }, emit: null };
+  }
+
+  // Readable characters, but not confidently enough to put on a screen. Hold
+  // what is showing rather than flickering on a guess - and do NOT count this
+  // as a blank, or a hard-to-read background would clear a lyric that is still
+  // being projected.
+  if (!Number.isFinite(confidence) || confidence < o.minConfidence) {
+    return { state: s, emit: null };
   }
 
   const key = normalizeForCompare(text);

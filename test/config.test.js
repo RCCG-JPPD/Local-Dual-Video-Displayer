@@ -20,10 +20,10 @@ test('every default section survives its own normalizer unchanged', () => {
   assert.deepEqual(normalizeOcr(defaults.ocr), defaults.ocr);
   assert.deepEqual(normalizeLogo(defaults.logo), defaults.logo);
   assert.deepEqual(normalizeTransition(defaults.transition), defaults.transition);
-  assert.deepEqual(normalizeVdo(defaults.camera.vdo), {
-    sources: defaults.camera.vdo.sources,
-    activeId: defaults.camera.vdo.activeId,
-  });
+  // Round-trips whole, like every section above it. Spelling out a subset here
+  // is what let normalizeVdo quietly drop preloadAll: the default said the
+  // setting existed, the normalizer threw it away, and this test agreed.
+  assert.deepEqual(normalizeVdo(defaults.camera.vdo), defaults.camera.vdo);
 });
 
 test('every screen listed in zoom normalizes cleanly', () => {
@@ -99,7 +99,9 @@ test('a config from before this feature yields usable settings everywhere', () =
   assert.deepEqual(normalizeOcr(cfg.ocr), defaults.ocr);
   assert.deepEqual(normalizeLogo(cfg.logo), defaults.logo);
   assert.deepEqual(normalizeTransition(cfg.transition), defaults.transition);
-  assert.deepEqual(normalizeVdo(cfg.camera && cfg.camera.vdo), { sources: [], activeId: null });
+  // No vdo block at all, so an upgrading user lands on the shipped default -
+  // no sources, nothing on air, and preloading on.
+  assert.deepEqual(normalizeVdo(cfg.camera && cfg.camera.vdo), defaults.camera.vdo);
   // The zoom block exists in a legacy config but has no camera entry.
   assert.deepEqual(normalizeZoom((cfg.zoom || {}).camera), { mode: 'contain', scale: 1 });
 });

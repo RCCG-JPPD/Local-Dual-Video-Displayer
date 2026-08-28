@@ -157,11 +157,24 @@ test('activeId can never name a source that is not there', () => {
   assert.equal(ok.activeId, 'a');
 });
 
+test('normalizeVdo carries preloadAll through', () => {
+  // The camera screen reads preloadAll back off the NORMALIZED object to decide
+  // whether to keep every source mounted. Dropping it here left only the on-air
+  // camera connected, so every cut became a fresh WebRTC handshake and a
+  // cross-fade had no outgoing picture to fade from.
+  assert.equal(normalizeVdo({ sources: [], preloadAll: true }).preloadAll, true);
+  assert.equal(normalizeVdo({ sources: [], preloadAll: false }).preloadAll, false);
+  // Absent means on, matching the config default and the controller checkbox.
+  assert.equal(normalizeVdo({ sources: [] }).preloadAll, true);
+  assert.equal(normalizeVdo(null).preloadAll, true);
+});
+
 test('normalizeVdo never throws on junk', () => {
   for (const bad of [null, undefined, 42, 'x', { sources: 'no' }, { sources: [1, 2] }]) {
     const v = normalizeVdo(bad);
     assert.ok(Array.isArray(v.sources), String(bad));
     assert.equal(v.activeId, null);
+    assert.equal(typeof v.preloadAll, 'boolean', String(bad));
   }
 });
 
