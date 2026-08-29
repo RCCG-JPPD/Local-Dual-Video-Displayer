@@ -470,24 +470,46 @@ class IPCHandler {
 
     // Live thumbnails of each physical display's current contents so the user
     // can tell which screen is which when assigning roles.
+    //
+    // Capturing every screen costs a few hundred milliseconds of GPU and CPU
+    // work per display, and it competes directly with video decoding — two of
+    // these running at once is what turns a preview refresh into a visible
+    // stutter on the video screen. Renderers pace themselves, but nothing
+    // stops two of them (or a reload mid-capture) overlapping here, so
+    // identical in-flight requests share one capture instead of starting a
+    // second.
+    let previewInFlight = null;
+    let previewInFlightKey = '';
+
     ipcMain.handle('get-screen-previews', async (event, opts) => {
       const { desktopCapturer } = require('electron');
       // Caller may request a larger capture (used by the click-to-enlarge lightbox).
       const thumbnailSize = (opts && opts.thumbnailSize) || { width: 320, height: 200 };
-      try {
-        const sources = await desktopCapturer.getSources({
-          types: ['screen'],
-          thumbnailSize,
-        });
-        return sources.map(s => ({
-          id: s.display_id ? Number(s.display_id) : null,
-          name: s.name,
-          dataURL: s.thumbnail.toDataURL(),
-        }));
-      } catch (err) {
-        console.error('get-screen-previews failed:', err);
-        return [];
-      }
+      const key = `${thumbnailSize.width}x${thumbnailSize.height}`;
+      if (previewInFlight && previewInFlightKey === key) return previewInFlight;
+
+      previewInFlightKey = key;
+      previewInFlight = (async () => {
+        try {
+          const sources = await desktopCapturer.getSources({
+            types: ['screen'],
+            thumbnailSize,
+          });
+          return sources.map(s => ({
+            id: s.display_id ? Number(s.display_id) : null,
+            name: s.name,
+            dataURL: s.thumbnail.toDataURL(),
+          }));
+        } catch (err) {
+          console.error('get-screen-previews failed:', err);
+          return [];
+        } finally {
+          previewInFlight = null;
+          previewInFlightKey = '';
+        }
+      })();
+
+      return previewInFlight;
     });
 
     // ════════════════════════════════════════════════════════════════

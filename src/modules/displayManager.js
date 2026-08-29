@@ -168,6 +168,13 @@ class DisplayManager {
         contextIsolation: true,
         sandbox: false, // unsandboxed preload so it can require src/utils/* and Node builtins
         preload: PRELOAD,
+        // A content screen is NEVER the focused window — the operator is always
+        // in the controller. Chromium's default is to throttle a renderer it
+        // considers backgrounded, and on Windows a frameless always-on-top
+        // window on a second monitor can also be reported as occluded, which
+        // starves the video screen of the timers and frames it needs. These
+        // windows are the output; they are never really in the background.
+        backgroundThrottling: false,
         ...extraWebPreferences,
       },
       show: false,

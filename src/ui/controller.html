@@ -1325,6 +1325,9 @@
       // looking at should hold one, so let go on the way out of the tab and
       // look again on the way back in.
       if (name === 'camera') refreshCameraDevices(); else stopDevicePreview();
+      // Screen capture is expensive enough to stutter video playing on another
+      // screen, so it follows the same rule: only while it is being looked at.
+      if (name === 'previews') startScreenPreviews(); else stopScreenPreviews();
     }
     navItems.forEach(n => n.addEventListener('click', () => {
       // Action items (e.g. Clear All Content) have no data-tab.
@@ -1441,12 +1444,60 @@
     }
 
     // ── Live WHOLE-SCREEN previews (desktopCapturer): one card per assigned screen ──
+    //
+    // Capturing a whole screen is expensive: a single `getSources` call costs
+    // a few hundred milliseconds of GPU and CPU work PER DISPLAY, and on
+    // Windows it drags the compositor off the direct-flip path that a
+    // fullscreen video window depends on. On a fixed 1.5s interval that ran
+    // for the entire life of the app — even with the previews tab closed —
+    // and it is what made local video buffer and freeze regardless of whether
+    // the file sat on a network volume or the internal disk. So:
+    //
+    //   * only capture while the operator is actually looking at the previews
+    //     (the same rule the camera tab already applies to its device
+    //     preview), and
+    //   * chain the next capture off the END of the last one instead of firing
+    //     on an interval, so a slow capture can never queue up behind itself.
     let previewTimer = null;
+    let previewsWanted = false;
+    let enlargeOpen = false;   // set by openEnlarge/closeEnlarge, below
+    const PREVIEW_GAP_MS = 2500; // gap BETWEEN captures, not a fixed period
+
     function startScreenPreviews() {
-      refreshScreenPreviews();
-      if (previewTimer) clearInterval(previewTimer);
-      previewTimer = setInterval(refreshScreenPreviews, 1500);
+      previewsWanted = true;
+      if (previewTimer) return; // already looping
+      previewTick();
     }
+
+    function stopScreenPreviews() {
+      previewsWanted = false;
+      if (previewTimer) { clearTimeout(previewTimer); previewTimer = null; }
+    }
+
+    /** True only when a capture would actually end up in front of somebody. */
+    function previewsVisible() {
+      if (!previewsWanted) return false;
+      if (document.visibilityState === 'hidden') return false; // minimised controller
+      const panel = document.querySelector('.tab-panel[data-panel="previews"]');
+      return !!(panel && panel.classList.contains('active'));
+    }
+
+    async function previewTick() {
+      previewTimer = null;
+      if (!previewsWanted) return;
+      // The lightbox runs its own, much larger, capture while it is open —
+      // never have both of them on the screen capturer at the same time.
+      if (previewsVisible() && !enlargeOpen) {
+        try { await refreshScreenPreviews(); } catch (_) {}
+      }
+      if (previewsWanted) previewTimer = setTimeout(previewTick, PREVIEW_GAP_MS);
+    }
+
+    // Give the capturer up the moment the controller is minimised, and take it
+    // back when the operator returns.
+    document.addEventListener('visibilitychange', () => {
+      if (previewsVisible() && !previewTimer) previewTick();
+    });
 
     async function refreshScreenPreviews() {
       let previews = [];
@@ -2841,7 +2892,9 @@
         renderPlaylist();
       }
       refreshControllerForConfig(cfg);
-      refreshScreenPreviews();
+      // Only repaint the thumbnails if they are on screen — a config change is
+      // no reason to capture every display behind the operator's back.
+      if (previewsVisible() && !enlargeOpen) refreshScreenPreviews();
       electronAPI.getWindowStatus().then(updateDisplayStatus).catch(() => {});
     });
 
@@ -3384,15 +3437,29 @@
       document.getElementById('enlarge-title').textContent = `Screen ${num} · ${ROLE_LABELS[d.role] || d.role}`;
       enlargeNav.style.display = (d.role === 'powerpoint' || d.role === 'slideshow') ? 'flex' : 'none';
       enlargeOverlay.classList.add('show');
-      refreshEnlarge();
-      if (enlargeTimer) clearInterval(enlargeTimer);
-      enlargeTimer = setInterval(refreshEnlarge, 1200);
+      enlargeOpen = true; // pauses the thumbnail-grid loop while this is up
+      if (enlargeTimer) { clearTimeout(enlargeTimer); enlargeTimer = null; }
+      enlargeTick();
+    }
+
+    /**
+     * Refresh the lightbox on a gap measured between captures. At 1280x800 a
+     * capture takes longer than the 1200ms period this used to run on, so the
+     * calls piled up on top of each other and kept the capturer permanently
+     * busy behind whatever was playing.
+     */
+    async function enlargeTick() {
+      enlargeTimer = null;
+      if (!enlargeDisplay) return;
+      try { await refreshEnlarge(); } catch (_) {}
+      if (enlargeDisplay) enlargeTimer = setTimeout(enlargeTick, 1200);
     }
 
     function closeEnlarge() {
       enlargeOverlay.classList.remove('show');
       enlargeDisplay = null;
-      if (enlargeTimer) { clearInterval(enlargeTimer); enlargeTimer = null; }
+      enlargeOpen = false;
+      if (enlargeTimer) { clearTimeout(enlargeTimer); enlargeTimer = null; }
     }
 
     function enlargeNavigate(dir) {
