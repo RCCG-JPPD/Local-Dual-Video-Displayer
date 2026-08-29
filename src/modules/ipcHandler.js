@@ -238,7 +238,11 @@ class IPCHandler {
 
       if (!canceled) {
         const currentConfig = this.configManager.loadConfig();
-        const updatedPlaylist = [...(currentConfig.playback.playlist || []), ...filePaths];
+        // A config written by an older build (or a hand-edited one) may have no
+        // `playback` section at all, and reading .playlist off undefined threw
+        // right after the operator picked their files.
+        const existing = (currentConfig.playback && currentConfig.playback.playlist) || [];
+        const updatedPlaylist = [...existing, ...filePaths];
         this.configManager.updateConfig({ playback: { playlist: updatedPlaylist } });
       }
 
@@ -335,7 +339,11 @@ class IPCHandler {
     ipcMain.on('presentation-index', (event, index) => {
       const [primary] = this.displayManager.getWindowsByRole('powerpoint');
       if (primary && event.sender.id === primary.webContents.id && typeof index === 'number') {
-        this.configManager.updateConfig({ presentation: { index } });
+        // Coalesced: the screen reports its index twice a second, and a
+        // straight updateConfig() re-reads, re-merges and rewrites the WHOLE
+        // config file synchronously on the main thread — the same thread that
+        // relays playback IPC to the video screen.
+        this._persistLater('presentation', { index });
         const controller = this.displayManager.windows.controller;
         if (controller && !controller.isDestroyed()) {
           controller.webContents.send('presentation-index', index);
@@ -470,24 +478,46 @@ class IPCHandler {
 
     // Live thumbnails of each physical display's current contents so the user
     // can tell which screen is which when assigning roles.
+    //
+    // Capturing every screen costs a few hundred milliseconds of GPU and CPU
+    // work per display, and it competes directly with video decoding — two of
+    // these running at once is what turns a preview refresh into a visible
+    // stutter on the video screen. Renderers pace themselves, but nothing
+    // stops two of them (or a reload mid-capture) overlapping here, so
+    // identical in-flight requests share one capture instead of starting a
+    // second.
+    let previewInFlight = null;
+    let previewInFlightKey = '';
+
     ipcMain.handle('get-screen-previews', async (event, opts) => {
       const { desktopCapturer } = require('electron');
       // Caller may request a larger capture (used by the click-to-enlarge lightbox).
       const thumbnailSize = (opts && opts.thumbnailSize) || { width: 320, height: 200 };
-      try {
-        const sources = await desktopCapturer.getSources({
-          types: ['screen'],
-          thumbnailSize,
-        });
-        return sources.map(s => ({
-          id: s.display_id ? Number(s.display_id) : null,
-          name: s.name,
-          dataURL: s.thumbnail.toDataURL(),
-        }));
-      } catch (err) {
-        console.error('get-screen-previews failed:', err);
-        return [];
-      }
+      const key = `${thumbnailSize.width}x${thumbnailSize.height}`;
+      if (previewInFlight && previewInFlightKey === key) return previewInFlight;
+
+      previewInFlightKey = key;
+      previewInFlight = (async () => {
+        try {
+          const sources = await desktopCapturer.getSources({
+            types: ['screen'],
+            thumbnailSize,
+          });
+          return sources.map(s => ({
+            id: s.display_id ? Number(s.display_id) : null,
+            name: s.name,
+            dataURL: s.thumbnail.toDataURL(),
+          }));
+        } catch (err) {
+          console.error('get-screen-previews failed:', err);
+          return [];
+        } finally {
+          previewInFlight = null;
+          previewInFlightKey = '';
+        }
+      })();
+
+      return previewInFlight;
     });
 
     // ════════════════════════════════════════════════════════════════
