@@ -49,7 +49,11 @@
 </head>
 <body>
   <div id="video-container">
-    <video id="vid" autoplay playsinline></video>
+    <!-- preload="auto" lets Chromium read as far ahead of the playhead as it
+         wants. The default heuristic keeps only a small buffer, which is fine
+         on a local disk and not fine on a network volume: one slow read and
+         playback is sitting at the end of the buffer with nothing to show. -->
+    <video id="vid" autoplay playsinline preload="auto"></video>
   </div>
 
   <script>
