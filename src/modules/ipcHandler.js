@@ -238,7 +238,11 @@ class IPCHandler {
 
       if (!canceled) {
         const currentConfig = this.configManager.loadConfig();
-        const updatedPlaylist = [...(currentConfig.playback.playlist || []), ...filePaths];
+        // A config written by an older build (or a hand-edited one) may have no
+        // `playback` section at all, and reading .playlist off undefined threw
+        // right after the operator picked their files.
+        const existing = (currentConfig.playback && currentConfig.playback.playlist) || [];
+        const updatedPlaylist = [...existing, ...filePaths];
         this.configManager.updateConfig({ playback: { playlist: updatedPlaylist } });
       }
 
@@ -335,7 +339,11 @@ class IPCHandler {
     ipcMain.on('presentation-index', (event, index) => {
       const [primary] = this.displayManager.getWindowsByRole('powerpoint');
       if (primary && event.sender.id === primary.webContents.id && typeof index === 'number') {
-        this.configManager.updateConfig({ presentation: { index } });
+        // Coalesced: the screen reports its index twice a second, and a
+        // straight updateConfig() re-reads, re-merges and rewrites the WHOLE
+        // config file synchronously on the main thread — the same thread that
+        // relays playback IPC to the video screen.
+        this._persistLater('presentation', { index });
         const controller = this.displayManager.windows.controller;
         if (controller && !controller.isDestroyed()) {
           controller.webContents.send('presentation-index', index);

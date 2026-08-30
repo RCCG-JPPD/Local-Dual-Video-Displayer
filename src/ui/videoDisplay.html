@@ -138,12 +138,34 @@
     }
     vid.addEventListener('waiting', () => reportStall('stalled waiting for data'));
     vid.addEventListener('stalled', () => reportStall('no data arriving'));
-    vid.addEventListener('error', () => {
-      const e = vid.error;
-      const msg = `playback error ${e ? e.code : '?'}: ${e ? e.message : 'unknown'}`;
+    function reportError(msg) {
       try { electronAPI.log('error', '[video] ' + msg); } catch (_) {}
       console.error('[video]', msg);
+    }
+
+    vid.addEventListener('error', () => {
+      const e = vid.error;
+      reportError(`playback error ${e ? e.code : '?'}: ${e ? e.message : 'unknown'}`);
     });
+
+    /**
+     * Start playback, handling the promise play() returns.
+     *
+     * play() rejects routinely — loading the next clip while the last one is
+     * still starting aborts it with 'The play() request was interrupted by a
+     * new load request'. Left unhandled those became uncaught rejections, so
+     * the console filled with noise that looked like a fault and buried the
+     * stall diagnostics below, which are what actually matter here.
+     */
+    function startPlayback() {
+      const p = vid.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch((err) => {
+          if (err && err.name === 'AbortError') return; // superseded by a newer load
+          reportError(`could not start playback: ${err && err.message ? err.message : err}`);
+        });
+      }
+    }
 
     // ════════════════════════════════════════════════════════════════
     // PLAYBACK COMMANDS
@@ -174,13 +196,13 @@
           // Build a correct file:// URL (handles Windows C:\ paths & spaces)
           vid.src = electronAPI.toFileURL(data);
           vid.currentTime = 0;
-          vid.play();
+          startPlayback();
           isPlaying = true;
           break;
 
         case 'play':
           console.log('Playing...');
-          vid.play();
+          startPlayback();
           isPlaying = true;
           break;
 

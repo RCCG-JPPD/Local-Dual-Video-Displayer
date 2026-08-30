@@ -309,10 +309,22 @@
         if (url) el.innerHTML = `<img src="${url}" alt="Screen ${d.index + 1} preview">`;
       });
     }
+    // Chain the next capture off the end of the last one rather than firing on
+    // a fixed period. A whole-screen capture costs a few hundred milliseconds
+    // per display, so on a three-screen setup a 2s interval could not keep up
+    // and the calls stacked, pinning the screen capturer while the operator
+    // was still choosing roles.
     function startScreenPreviews() {
-      refreshScreenPreviews();
-      if (previewTimer) clearInterval(previewTimer);
-      previewTimer = setInterval(refreshScreenPreviews, 2000);
+      if (previewTimer) return;
+      previewTick();
+    }
+
+    async function previewTick() {
+      previewTimer = null;
+      if (document.visibilityState !== 'hidden') {
+        try { await refreshScreenPreviews(); } catch (_) {}
+      }
+      previewTimer = setTimeout(previewTick, 2000);
     }
 
     function renderDisplays() {

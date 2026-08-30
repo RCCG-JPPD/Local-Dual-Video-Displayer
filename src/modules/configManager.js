@@ -95,7 +95,21 @@ class ConfigManager {
     try {
       config.lastModified = new Date().toISOString();
       const data = JSON.stringify(config, null, 2);
-      fs.writeFileSync(this.configFile, data, 'utf8');
+
+      // Write to a sibling temp file and rename over the real one. A rename
+      // within a directory is atomic, so a reader only ever sees the old file
+      // or the complete new one.
+      //
+      // Writing in place was a real hazard for this app: config is rewritten
+      // constantly (every slider, every slide, every playlist edit), and this
+      // runs on machines that get shut down hard at the end of a service. A
+      // kill part-way through left a truncated file, JSON.parse threw on next
+      // launch, loadConfig fell back to defaults, and the operator arrived to
+      // find every screen assignment and the whole playlist gone.
+      const tmp = `${this.configFile}.tmp`;
+      fs.writeFileSync(tmp, data, 'utf8');
+      fs.renameSync(tmp, this.configFile);
+
       console.log('Config saved to:', this.configFile);
       return true;
     } catch (error) {
@@ -121,7 +135,12 @@ class ConfigManager {
     const result = { ...target };
 
     for (const key in source) {
-      if (source.hasOwnProperty(key)) {
+      // JSON.parse happily produces a literal '__proto__' key, and assigning
+      // it here would write through to Object.prototype rather than to this
+      // object. Config is local, but a corrupt or hand-edited file should not
+      // be able to change the shape of every object in the process.
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+      if (Object.prototype.hasOwnProperty.call(source, key)) {
         if (typeof source[key] === 'object' && source[key] !== null && !Array.isArray(source[key])) {
           result[key] = this.deepMerge(result[key] || {}, source[key]);
         } else {

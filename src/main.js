@@ -31,7 +31,12 @@ let userConfig;
 // (app.getPath('userData')), which works in both dev and packaged builds —
 // see ConfigManager. We intentionally do NOT redirect userData into the app
 // folder, because that folder is read-only inside a packaged app.asar.
-if (!app.requestSingleInstanceLock()) {
+// `app.quit()` is asynchronous — it asks Electron to shut down, it does NOT
+// stop this script. Without a flag to check, a second launch went on to
+// register handlers and run startup(), briefly opening a second selector and
+// letting a losing instance write to the shared config file on its way out.
+const gotInstanceLock = app.requestSingleInstanceLock();
+if (!gotInstanceLock) {
   app.quit();
 }
 
@@ -43,6 +48,17 @@ if (!app.requestSingleInstanceLock()) {
  * Initialize modules and managers
  */
 function initializeManagers() {
+  // Idempotent on purpose. On macOS `window-all-closed` does not quit, so
+  // clicking the dock icon fires 'activate' → startup() → here a SECOND time.
+  // Re-running setupListeners() calls ipcMain.handle() on channels that are
+  // already registered, which THROWS ('Attempted to register a second handler
+  // for ...'). startup()'s catch then quit the app — so closing every window
+  // and clicking the dock icon killed the app instead of reopening it.
+  if (ipcHandler) {
+    console.log('Managers already initialized - reusing');
+    return;
+  }
+
   console.log('Initializing managers...');
 
   configManager = new ConfigManager(app);
@@ -207,6 +223,9 @@ function setupMediaPermissions() {
 }
 
 app.on('ready', () => {
+  // A losing second instance must not touch the config or open any window;
+  // the quit requested above may not have taken effect yet.
+  if (!gotInstanceLock) return;
   console.log('Electron app ready');
   setupYouTubeEmbedReferer();
   setupMediaPermissions();
